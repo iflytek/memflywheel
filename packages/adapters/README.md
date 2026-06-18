@@ -161,8 +161,38 @@ const { scribe, sdk } = createHostMemScribe({ toolCompletion });
 const dispose = hermesAdapter.attach(scribe, host);   // session/prompt/turn-end/idle
 ```
 
+Skill recall and learning-loop wiring are opt-in. A host can either pass custom
+SDK hooks or ask `createHostMemScribe` to assemble the file-native learned-skill
+store from `@memscribe/skills`:
+
+```ts
+const { scribe } = createHostMemScribe({
+  toolCompletion,
+  learnedSkills: {
+    skillsRoot: "/path/to/skills",
+    checkpointRoot: "/path/to/.skill-checkpoints",
+  },
+  learningLoop: {
+    gate: { minDoneTurns: 3, cooldownTurns: 2, minToolCalls: 6 },
+  },
+});
+
+scribe.recordSkillUsage({
+  sessionId,
+  skillName: "memscribe-learned-release-review",
+  outcome: "completed",
+});
+```
+
 - With `toolCompletion`: real semantic extraction AND dream consolidation run as
   tool-calling subagents on the **host's own model**, writing memory files directly.
+- With `learnedSkills`: the bridge creates a learned-skill store, recall
+  provider, and `runSkillEvolutionAgent`; turn-end can run extraction -> skill
+  evolution -> dream, and the next prompt sees the learned-skill route.
+- With `skillRecall` / `skillPreludeBuilder`: prompt build appends learned-skill
+  routes and recent usage signals through the same SDK prompt context.
+- With custom `learningLoop.skillEvolution`: hosts may replace the default
+  learned-skill runner while keeping SDK gate/dream coordination.
 - Without `toolCompletion` (and no explicit `agent` / `dreamRunner`): the scribe is
   **recall-only** — memory is injected on prompt build, turns never extract, and
   dream runs only its deterministic structural pre-pass.

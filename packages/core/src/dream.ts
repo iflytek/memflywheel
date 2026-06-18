@@ -54,6 +54,7 @@ export interface DreamCoordination {
   reason: string;
   memoryAction: string;
   topics: string[];
+  targetSkill?: string;
 }
 
 /**

@@ -1,7 +1,7 @@
 {
-  "name": "@memscribe/adapters",
+  "name": "@memscribe/skills",
   "version": "0.1.0",
-  "description": "Host lifecycle adapters for wiring MemScribe into agent runtimes.",
+  "description": "File-native learned skill layer for MemScribe agent runtimes.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,14 +16,12 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "!dist/**/*.test.js",
-    "!dist/**/*.test.d.ts",
-    "!dist/test-helpers.js",
-    "!dist/test-helpers.d.ts"
+    "!dist/**/*.test.d.ts"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/iflytek/memscribe.git",
-    "directory": "packages/adapters"
+    "directory": "packages/skills"
   },
   "bugs": {
     "url": "https://github.com/iflytek/memscribe/issues"
@@ -31,7 +29,7 @@
   "homepage": "https://github.com/iflytek/memscribe#readme",
   "keywords": [
     "agent-memory",
-    "adapters",
+    "learned-skills",
     "llm",
     "memory",
     "typescript"
@@ -46,10 +44,6 @@
     "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b",
     "test": "tsc -b && node --test \"dist/**/*.test.js\"",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
-  },
-  "dependencies": {
-    "@memscribe/sdk": "workspace:*",
-    "@memscribe/skills": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

@@ -44,7 +44,7 @@ export interface MemoryToolContext {
   ctx: StorageContext;
   /**
    * Optional hard-secret gate. Default OFF — privacy leans on the prompt,
-   * matching the reference implementation. <private> redaction is always on.
+   * matching the default prompt-led privacy model. <private> redaction is always on.
    */
   refuseSecrets?: boolean;
 }

@@ -44,7 +44,12 @@ export interface ToolMessage {
 /** A tool advertised to the model. */
 export interface ToolSpec {
   type: "function";
-  function: { name: string; description: string; parameters: JsonSchemaObject };
+  function: {
+    name: string;
+    description: string;
+    parameters: JsonSchemaObject;
+    strict?: boolean;
+  };
 }
 
 /** One model round-trip request. */

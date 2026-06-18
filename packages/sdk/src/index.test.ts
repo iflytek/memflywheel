@@ -9,6 +9,7 @@ import {
   ExtractionResult,
   type ExtractionAgentRunner,
   type DreamAgentRunner,
+  type SkillUsageRecord,
 } from "./index.js";
 import { readDreamState, markDreamConsolidated } from "@memscribe/core";
 
@@ -53,6 +54,50 @@ test("onPromptBuild returns stable rules + system-reminder-wrapped index, empty 
     assert.match(ctx.preludePrompt, /<system-reminder>[\s\S]*<\/system-reminder>/);
     assert.match(ctx.preludePrompt, /没有可用记忆条目/);
     assert.equal(scribe.instructionPrompt(), ctx.systemPrompt);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("onPromptBuild injects learned skill routing and recent usage feedback", async () => {
+  const root = await tempRoot();
+  try {
+    const seenUsageRecords: SkillUsageRecord[][] = [];
+    const scribe = createMemScribe({
+      root,
+      skillRecall: async ({ usageRecords }) => {
+        seenUsageRecords.push([...usageRecords]);
+        return {
+          entries: [
+            {
+              name: "memscribe-learned-release-review",
+              displayName: "Release Review",
+              description: "Review release readiness with a repeatable checklist.",
+              relativePath: "memscribe-learned-release-review/SKILL.md",
+              triggerHints: ["release prep", "pre-publish review"],
+            },
+          ],
+        };
+      },
+    });
+
+    scribe.recordSkillUsage({
+      sessionId: "s1",
+      skillName: "memscribe-learned-release-review",
+      outcome: "failed",
+      trigger: "release prep",
+      note: "Checklist missed package metadata.",
+    });
+
+    const ctx = await scribe.onPromptBuild("s1");
+    assert.match(ctx.systemPrompt, /# 技能/);
+    assert.match(ctx.preludePrompt, /## 可用技能/);
+    assert.match(ctx.preludePrompt, /memscribe-learned-release-review/);
+    assert.match(ctx.preludePrompt, /pre-publish review/);
+    assert.match(ctx.preludePrompt, /## 最近技能使用信号/);
+    assert.match(ctx.preludePrompt, /failed/);
+    assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
+    assert.equal(seenUsageRecords[0]?.[0]?.outcome, "failed");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -130,6 +175,159 @@ test("after-turn extraction: the agent writes a memory, it is indexed; cursor ad
     // only over the new window; the agent returns no changes ⇒ Skipped.
     const turn2 = await scribe.onTurnEnd("s1", []);
     assert.equal(turn2.result, ExtractionResult.Skipped);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("onTurnEnd runs the integrated learning loop and routes skill memory compression to dream", async () => {
+  const root = await tempRoot();
+  try {
+    const events: string[] = [];
+    const { fn } = onceAgent({
+      type: "workflow",
+      name: "release prep",
+      description: "reusable release workflow",
+      body: "Run package metadata checks, README checks, and dry-run pack checks.",
+    });
+    const dreamRunner: DreamAgentRunner = async ({ coordination }) => {
+      events.push(`dream:${coordination?.memoryAction}:${coordination?.topics.join(",")}:${coordination?.targetSkill}`);
+      return { changed: [] };
+    };
+    const scribe = createMemScribe({
+      root,
+      agent: fn,
+      dreamRunner,
+      learningLoop: {
+        enabled: true,
+        source: "local",
+        skillLearningEnabled: true,
+        gate: { minDoneTurns: 1, cooldownTurns: 0, minToolCalls: 1 },
+        skillEvolution: async ({ usageRecords, lastExtraction }) => {
+          events.push(`skill:${lastExtraction.result}:${usageRecords.length}`);
+          return {
+            coordination: {
+              decision: "update",
+              targetSkill: "memscribe-learned-release-review",
+              why: "Release prep has become a reusable procedure.",
+              memoryAction: "compress-memory",
+              memoryTopics: ["release prep"],
+              supportingFiles: ["memscribe-learned-release-review/SKILL.md"],
+            },
+            changedSkills: ["memscribe-learned-release-review"],
+            changedFiles: ["memscribe-learned-release-review/SKILL.md"],
+          };
+        },
+      },
+    });
+
+    scribe.recordSkillUsage({
+      sessionId: "s1",
+      skillName: "memscribe-learned-release-review",
+      outcome: "completed",
+      trigger: "release prep",
+    });
+    const turn = await scribe.onTurnEnd("s1", [
+      {
+        role: "assistant",
+        text: "release prep done",
+        toolCalls: [{ name: "pnpm", input: { command: "pnpm run ci" }, output: "ok" }],
+      },
+    ]);
+
+    assert.equal(turn.result, ExtractionResult.Completed);
+    assert.equal(turn.learningLoop?.extraction.ran, true);
+    assert.equal(turn.learningLoop?.skillEvolution.ran, true);
+    assert.equal(turn.learningLoop?.dream.ran, true);
+    assert.deepEqual(events, [
+      "skill:completed:1",
+      "dream:compress-memory:release prep:memscribe-learned-release-review",
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("onTurnEnd learning loop does not evolve skills when extraction writes nothing", async () => {
+  const root = await tempRoot();
+  try {
+    const events: string[] = [];
+    const agent: ExtractionAgentRunner = async () => ({ changed: [] });
+    const scribe = createMemScribe({
+      root,
+      agent,
+      learningLoop: {
+        enabled: true,
+        source: "local",
+        skillLearningEnabled: true,
+        gate: { minDoneTurns: 1, cooldownTurns: 0, minToolCalls: 0 },
+        skillEvolution: async () => {
+          events.push("skill");
+          throw new Error("must not run");
+        },
+      },
+    });
+
+    const turn = await scribe.onTurnEnd("s1", userTurn("nothing durable"));
+
+    assert.equal(turn.result, ExtractionResult.Skipped);
+    assert.equal(turn.learningLoop?.extraction.ran, true);
+    assert.equal(turn.learningLoop?.skillEvolution.ran, false);
+    assert.equal(turn.learningLoop?.skillEvolution.reason, "extraction-not-completed");
+    assert.equal(turn.learningLoop?.dream.ran, false);
+    assert.deepEqual(events, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("onTurnEnd learning loop uses captured tool calls and internal cooldown counters by default", async () => {
+  const root = await tempRoot();
+  try {
+    const events: string[] = [];
+    const { fn } = onceAgent({
+      type: "workflow",
+      name: "release prep",
+      description: "reusable release workflow",
+      body: "Run package metadata checks, README checks, and dry-run pack checks.",
+    });
+    const scribe = createMemScribe({
+      root,
+      agent: fn,
+      learningLoop: {
+        enabled: true,
+        source: "local",
+        skillLearningEnabled: true,
+        gate: { minDoneTurns: 1, cooldownTurns: 0, minToolCalls: 1 },
+        skillEvolution: async () => {
+          events.push("skill");
+          return {
+            coordination: {
+              decision: "noop",
+              targetSkill: null,
+              why: "No change needed.",
+              memoryAction: "noop",
+              memoryTopics: [],
+              supportingFiles: [],
+            },
+            changedSkills: [],
+            changedFiles: [],
+          };
+        },
+      },
+    });
+
+    const turn = await scribe.onTurnEnd("s1", [
+      {
+        role: "assistant",
+        text: "release prep done",
+        toolCalls: [{ name: "pnpm", input: { command: "pnpm run ci" }, output: "ok" }],
+      },
+    ]);
+
+    assert.equal(turn.result, ExtractionResult.Completed);
+    assert.equal(turn.learningLoop?.skillEvolution.ran, true);
+    assert.deepEqual(events, ["skill"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

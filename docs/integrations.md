@@ -53,15 +53,8 @@ core's deterministic steps and forwards the model-driven calls to the host's fun
 
 ## Adapters (`@memscribe/adapters`)
 
-An adapter translates one host's concrete lifecycle into the three events above. Targeted
-hosts:
-
-- Hermes
-- OpenCode
-- OpenClaw
-- Pi
-- Codex
-- Claude Code
+An adapter translates one host's concrete lifecycle into the three events above.
+Targeted host mappings are documented by the adapter package.
 
 Each adapter's job is narrow: hook the host's turn-start to inject the two recall segments,
 hook the host's turn-completion to trigger extraction with that host's message format mapped
@@ -71,8 +64,8 @@ session ids are read, how the host's LLM channel is wrapped into a `ToolCompleti
 extraction/dream subagents) live in the adapter; the memory semantics stay in the core. `connect`
 installs the host-side wiring and round-trip-verifies it from disk.
 
-Runnable minimal integrations live under [`../examples/`](../examples/) — one per targeted
-host (OpenClaw, Hermes, Pi) — showing the full path: wrap the host LLM into a `ToolCompletion`,
+Runnable minimal integrations live under [`../examples/`](../examples/), showing
+the full path: wrap the host LLM into a `ToolCompletion`,
 build the default extraction and dream subagents, mount the lifecycle, and install + verify the wiring.
 
 ## MCP server (`@memscribe/mcp-server`)

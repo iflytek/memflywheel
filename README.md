@@ -4,8 +4,8 @@ A clean, minimal, file-backed long-term memory subsystem for LLM agents. MemScri
 file-native long-term memory design — a single file-backed store, full-index recall, and an
 LLM-driven extraction and consolidation flow — as a dependency-free TypeScript library with
 adapter and MCP entry points. It ships a high-quality **default extractor** so that giving it
-one API key is enough to start writing memory, and direct integrations for OpenClaw, Hermes,
-and Pi.
+one API key is enough to start writing memory, plus direct integrations for selected agent
+hosts.
 
 ## What MemScribe is
 
@@ -37,6 +37,8 @@ and Pi.
   built-in defaults.
 - **Adapter- and MCP-first.** MemScribe is meant to be wired into an existing agent runtime
   via host lifecycle adapters or exposed over MCP, not to be a standalone product.
+- **Skills are host-executed.** MemScribe can store, validate, route, and evolve learned
+  skill packages, but the host owns skill loading, policy, and execution.
 
 ## What MemScribe is not
 
@@ -50,6 +52,8 @@ and Pi.
   `agent` / `project` / `session`.
 - **No standalone `search` tool.** The MCP surface exposes context / read / save only;
   inspection and maintenance live in the CLI.
+- **No default skill injection in CLI/MCP.** CLI and MCP are memory-facing surfaces unless
+  a host explicitly wires learned-skill recall through the SDK hooks.
 
 ## Packages
 
@@ -57,9 +61,10 @@ and Pi.
 |---|---|
 | `@memscribe/core` | Memory kernel: storage, derived index, recall, extraction, dream, privacy, locking, atomic writes, audit. No LLM, no host coupling. |
 | `@memscribe/sdk` | Lifecycle hooks and wiring for the `ExtractionAgentRunner` / `DreamAgentRunner` injection points, the `createExtractionAgentRunner` / `createDreamAgentRunner` factories, and a built-in fetch-based tool completion (OpenAI-compatible). |
+| `@memscribe/skills` | File-native learned skill store with staging, strict validation, prompt recall, finalize, and rollback. |
 | `@memscribe/cli` | `context` / `list` / `read` / `write` / `doctor` / `dream` / `rebuild-index`. |
 | `@memscribe/mcp-server` | MCP tools: `memory_context` / `memory_read` / `memory_save`. |
-| `@memscribe/adapters` | Host lifecycle mappings for Hermes, OpenCode, OpenClaw, Pi, Codex, and Claude Code. |
+| `@memscribe/adapters` | Host lifecycle mappings for selected agent runtimes. |
 
 ## Default extraction subagent (give it one API key)
 
@@ -97,13 +102,13 @@ The adapter package wires MemScribe into a host runtime: it wraps the host's own
 LLM channel into a `toolCompletion`, feeds it to the default extraction subagent, mounts the
 full lifecycle (session start / prompt build / turn end / agent end / idle), and can install
 and round-trip-verify the host-side wiring. Runnable minimal integrations live under
-[`examples/`](examples/) for OpenClaw, Hermes, and Pi.
+[`examples/`](examples/).
 
 ## Supported hosts
 
 The adapter package maps each host's turn lifecycle (turn-start recall injection,
-after-turn extraction trigger, idle/scheduled dream) onto the core. Targeted hosts:
-Hermes, OpenCode, OpenClaw, Pi, Codex, Claude Code.
+after-turn extraction trigger, idle/scheduled dream) onto the core. Targeted
+hosts are documented by the adapter package and examples.
 
 ## Constraints
 
@@ -120,6 +125,12 @@ Hermes, OpenCode, OpenClaw, Pi, Codex, Claude Code.
 - [`docs/memory-schema.md`](docs/memory-schema.md) — frontmatter, the six types, aging.
 - [`docs/recall.md`](docs/recall.md) — full-index injection and model self-selection.
 - [`docs/extraction.md`](docs/extraction.md) — the pluggable extractor and the write path.
+- [`docs/skill-learning.md`](docs/skill-learning.md) — skill vs memory layering and the skill learning loop.
+
+Skill learning is exposed as SDK primitives and opt-in hooks: prompt build can
+include learned-skill routes and recent usage signals, and host/adapters can wire
+turn end to run extraction, skill evolution, and dream memory compression in
+order. It is not enabled for every entry point by default.
 - [`docs/integrations.md`](docs/integrations.md) — adapters and MCP.
 
 ## Develop

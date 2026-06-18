@@ -5,10 +5,12 @@
   "type": "module",
   "description": "Runnable minimal host integration examples for MemScribe.",
   "scripts": {
-    "smoke": "USE_FAKE=1 node pi/run.mjs && USE_FAKE=1 node hermes/run.mjs && USE_FAKE=1 node openclaw/run.mjs"
+    "smoke": "USE_FAKE=1 node pi/run.mjs && USE_FAKE=1 node hermes/run.mjs && USE_FAKE=1 node openclaw/run.mjs && USE_FAKE=1 node learning-loop/run.mjs"
   },
   "dependencies": {
+    "@memscribe/core": "workspace:*",
     "@memscribe/adapters": "workspace:*",
+    "@memscribe/skills": "workspace:*",
     "@memscribe/sdk": "workspace:*"
   }
 }

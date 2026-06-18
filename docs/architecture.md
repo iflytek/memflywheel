@@ -77,7 +77,7 @@ descending, and caps the result at `MAX_SCAN_ENTRIES` (200). Its output is the
 model. Each entry becomes one line:
 
 ```
-- [<name>](<absolute-path>) - <description> (type: <type>, path: <type>/<file>.md)
+- [<name>](<type>/<file>.md) - <description> (type: <type>, path: <type>/<file>.md)
 ```
 
 `syncMemoryIndex(root, entries)` rewrites the file. Before injection the content is passed
@@ -149,7 +149,7 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 @memscribe/sdk       wires injection points + turn lifecycle
    ▲
    │
-@memscribe/adapters  per-host lifecycle mapping (Hermes / OpenCode / OpenClaw / Pi / Codex / Claude Code)
+@memscribe/adapters  per-host lifecycle mapping
 @memscribe/mcp-server context / read / save tools over MCP
 @memscribe/cli       context / list / read / write / doctor / dream / rebuild-index
 ```

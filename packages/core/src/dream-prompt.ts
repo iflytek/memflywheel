@@ -52,7 +52,7 @@ Fix > supplement > create > delete. Always prefer updating an existing typed fil
 
 # Coordination directive
 
-If a coordination directive sets memoryAction to compress-memory for a topic, the matching memory must keep only a short routing cue toward the target skill — never execution steps. Preserve its name / description / type. Never read, rewrite, or guess skill content; never write skill execution steps back into memory.
+If a coordination directive sets memoryAction to compress-memory for a topic, the matching memory must keep only a short routing cue toward the targetSkill — never execution steps. Preserve its name / description / type. Never read, rewrite, or guess skill content; never write skill execution steps back into memory. The routing cue must name targetSkill exactly when targetSkill is provided.
 
 # Per-type consolidation rules
 
@@ -118,6 +118,9 @@ export function buildDreamAgentUserMessage(input: {
     lines.push(`- reason: ${input.coordination.reason}`);
     lines.push(`- memoryAction: ${input.coordination.memoryAction}`);
     lines.push(`- topics: ${input.coordination.topics.join(", ")}`);
+    if (input.coordination.targetSkill) {
+      lines.push(`- targetSkill: ${input.coordination.targetSkill}`);
+    }
     lines.push("");
   }
 

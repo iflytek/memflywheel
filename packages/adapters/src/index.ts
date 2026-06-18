@@ -60,8 +60,15 @@ export {
 // Host-scribe bridge: wrap a host LLM channel into a batteries-included scribe.
 export {
   type ToolCompletion,
+  type HostLearnedSkillEvolutionInput,
+  type HostLearnedSkillsOptions,
   type HostMemScribeOptions,
+  type HostMemScribeAdapter,
   type HostMemScribe,
+  type MemScribeLearningLoopConfig,
+  type SkillPreludeBuilder,
+  type SkillRecallProvider,
+  type SkillUsageRecord,
   createHostMemScribe,
   adaptSdkMemScribe,
 } from "./host-memscribe.js";

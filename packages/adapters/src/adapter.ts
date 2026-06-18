@@ -41,6 +41,8 @@ export interface MemScribeContext {
   systemPrompt: string;
   /** DYNAMIC full-index prelude, wrapped in <system-reminder>, injected per turn. */
   preludePrompt: string;
+  /** Optional learned-skill prelude appended by the SDK when skill recall is configured. */
+  skillPreludePrompt?: string;
   enabled: boolean;
 }
 
@@ -51,7 +53,7 @@ export interface MemScribeContext {
 export interface MemScribe {
   onSessionStart(input: { sessionId: string }): Promise<void>;
   onPromptBuild(input: { sessionId: string }): Promise<MemScribeContext>;
-  onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<void>;
+  onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<unknown>;
   onSessionEnd(input: { sessionId: string }): Promise<void>;
   onIdle(input?: { force?: boolean }): Promise<void>;
 }

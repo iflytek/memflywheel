@@ -9,7 +9,12 @@ The SDK owns:
 - a single per-root `StorageContext` + audit logger,
 - the per-session extraction cursor store,
 - the **two pluggable LLM injection points** (`agent`, `dreamRunner`),
+- optional learned-skill prompt routing and skill usage feedback,
 - the host lifecycle hooks that decide *when* core runs.
+
+The SDK does not execute learned skills. It can expose routing metadata and
+record host-observed skill usage, while the host owns skill loading, execution
+policy, permissions, and tool calls.
 
 The SDK orchestrates after-turn extraction; the actual LLM work is externalized
 to an `ExtractionAgentRunner` — a tool-calling subagent that writes the memory
@@ -81,17 +86,21 @@ await scribe.onTurnEnd("session-1", [
 await scribe.onSessionEnd("session-1");
 ```
 
-## Two-segment recall
+## Prompt recall
 
-`onPromptBuild()` returns `{ systemPrompt, preludePrompt, enabled }`:
+`onPromptBuild()` returns `{ systemPrompt, preludePrompt, enabled, skillPreludePrompt? }`:
 
 | Segment | Content | Cadence |
 | --- | --- | --- |
 | `systemPrompt` | Stable memory **rules** — constant text, identical every turn | inject once / cache as a stable prefix |
-| `preludePrompt` | **Full MEMORY.md index** wrapped in `<system-reminder>` | inject every turn |
+| `preludePrompt` | **Full MEMORY.md index** plus optional learned-skill routes wrapped in `<system-reminder>` | inject every turn |
+| `skillPreludePrompt` | Optional learned-skill route index plus recent usage signals | inject when `skillRecall` is configured |
 
 There is no retrieval, top-k, scoring, or embedding. The full index is injected
 and the main model self-selects whether to `Read` any memory body.
+
+When `skillRecall` is configured, the SDK also injects learned-skill routing
+metadata. The host still owns actual skill loading and execution.
 
 ## The two pluggable LLM injection points
 
@@ -118,7 +127,7 @@ type DreamAgentRunner = (input: {
   typeReview: TypeReviewItem[];
   manifest: string;
   index: string;
-  coordination?: { reason: string; memoryAction: string; topics: string[] };
+  coordination?: { reason: string; memoryAction: string; topics: string[]; targetSkill?: string };
 }) => Promise<{ changed: string[] }>;   // the relative paths it touched
 ```
 
@@ -135,7 +144,7 @@ into a merge) before writing the replacement.
 | `onSessionStart(id)` | session opens | ensure memory dir, register session state |
 | `onTurnStart(id)` | new turn begins | register session state |
 | `onPromptBuild(id?)` | assembling the prompt | return the two recall segments |
-| `onTurnEnd(id, msgs)` | turn finished | append turn → run the after-turn extraction subagent via `agent` |
+| `onTurnEnd(id, msgs)` | turn finished | append turn -> run extraction; with an opt-in `learningLoop`, host/adapters can also run skill evolution and forced dream coordination |
 | `onSessionEnd(id)` | session closes | drop session state |
 | `onAgentEnd(id)` | auxiliary/agent run ends | final extraction sweep over not-yet-processed messages |
 | `onIdle(gate?)` | idle / scheduled | gate-check then `runDreamSession`: deterministic pre-pass, then the consolidation subagent via `dreamRunner` |
@@ -147,8 +156,76 @@ into a merge) before writing the replacement.
 - `save(options)` — `memory_save`: explicit validated write under the lock, then
   index sync.
 - `runDream(coordination?)` — force a dream pass regardless of the gate.
+- `recordSkillUsage(record)` — record host-observed learned-skill selected,
+  completed, failed, or missed outcomes.
+- `getSkillUsageRecords(sessionId?)` — inspect recorded usage signals.
 
 There is deliberately **no search tool** — MemScribe has no lexical retrieval.
+CLI and MCP remain memory-facing surfaces by default. They do not inject learned
+skills or execute skills unless a future host explicitly adds that surface.
+
+## Skill learning loop
+
+The SDK exposes primitives and opt-in hooks without becoming a full agent
+framework. Host/adapters can assemble the loop:
+
+```text
+prompt-build
+  -> memory recall
+  -> learned skill routes + recent usage signals
+
+turn-end
+  -> extraction
+  -> skillEvolution({ usageRecords, lastExtraction })
+  -> dream({ memoryAction: "compress-memory", topics }) when the skill packet asks for it
+```
+
+```ts
+createMemScribe({
+  agent,
+  dreamRunner,
+  skillRecall: async ({ sessionId, usageRecords }) => ({
+    entries: [
+      {
+        name: "memscribe-learned-release-review",
+        displayName: "Release Review",
+        description: "Review release readiness with a repeatable checklist.",
+        relativePath: "memscribe-learned-release-review/SKILL.md",
+        triggerHints: ["release prep"],
+      },
+    ],
+    usageRecords,
+  }),
+  learningLoop: {
+    source: "local",
+    skillLearningEnabled: true,
+    skillEvolution: async ({ usageRecords, lastExtraction }) => {
+      // Custom SDK hook; adapters can also assemble this with learnedSkills.
+      return {
+        coordination: {
+          decision: "update",
+          targetSkill: "memscribe-learned-release-review",
+          why: "Release prep became a reusable procedure.",
+          memoryAction: "compress-memory",
+          memoryTopics: ["release prep"],
+          supportingFiles: ["memscribe-learned-release-review/SKILL.md"],
+        },
+        changedSkills: ["memscribe-learned-release-review"],
+        changedFiles: ["memscribe-learned-release-review/SKILL.md"],
+      };
+    },
+  },
+});
+```
+
+Hosts call `recordSkillUsage()` when a learned skill is selected, completes,
+fails, or is missed. Those signals are visible in the next prompt build and are
+passed into the skill-evolution callback.
+
+If `toolCalls` and `turnsSinceLastSkillEvolution` are omitted, the SDK counts
+captured `ExtractionMessage.toolCalls` and tracks the last skill-evolution turn
+per session. Skill evolution runs only after extraction returns `Completed`;
+skipped or failed extraction returns `extraction-not-completed`.
 
 ## After-turn extraction semantics
 
@@ -181,6 +258,9 @@ createMemScribe({
   refuseSecrets?: boolean,  // optional hard-secret gate (default off; <private> redaction always on)
   audit?: AuditLogger,      // default: file-backed at <root>/.audit.log
   cursorStore?: CursorStore, // default: in-memory
+  skillRecall?: SkillRecallProvider,
+  skillPreludeBuilder?: SkillPreludeBuilder,
+  learningLoop?: MemScribeLearningLoopConfig,
 });
 ```
 

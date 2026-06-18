@@ -60,6 +60,13 @@ import {
 } from "./tool-completion.js";
 import { createExtractionAgentRunner } from "./extraction-agent.js";
 import { createDreamAgentRunner } from "./dream-agent.js";
+import {
+  type LearningLoopResult,
+  type LearningLoopSource,
+  type SkillEvolutionLoopResult,
+  type SkillLearningGate,
+  runLearningLoop,
+} from "./learning-loop.js";
 
 // Re-export the core injection-point contracts so hosts depend only on the SDK.
 export type {
@@ -121,6 +128,99 @@ export {
   runDreamAgent,
   createDreamAgentRunner,
 } from "./dream-agent.js";
+export {
+  type SkillEvolutionDecision,
+  type SkillEvolutionMemoryAction,
+  type SkillEvolutionCoordinationPacket,
+  type SkillEvolutionToolResult,
+  type SkillEvolutionTool,
+  type SkillCheckpoint,
+  type LearnedSkillsCatalog,
+  type LearnedSkillChangeSet,
+  type SkillEvolutionLearningSummary,
+  type SkillEvolutionStore,
+  type RunSkillEvolutionAgentOptions,
+  type SkillEvolutionAgentResult,
+  DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT,
+  validateSkillEvolutionCoordinationPacket,
+  validateSkillEvolutionChangeSet,
+  runSkillEvolutionAgent,
+} from "./skill-evolution-agent.js";
+export {
+  type LearningLoopTrigger,
+  type LearningLoopSource,
+  type SkillLearningGate,
+  type SkillLearningGateInput,
+  type SkillLearningGateReason,
+  type SkillLearningGateResult,
+  type DreamCoordinationFromSkill,
+  type SkillEvolutionLoopResult,
+  type RunLearningLoopOptions,
+  type LearningLoopStepResult,
+  type LearningLoopResult,
+  DEFAULT_SKILL_LEARNING_GATE,
+  shouldRunSkillEvolution,
+  runLearningLoop,
+} from "./learning-loop.js";
+
+export type SkillUsageOutcome = "selected" | "completed" | "failed" | "missed";
+
+export interface SkillUsageRecord {
+  sessionId?: string;
+  skillName: string;
+  outcome: SkillUsageOutcome;
+  trigger?: string;
+  note?: string;
+  errorMessage?: string;
+  occurredAt?: string;
+}
+
+export interface SkillRecallEntry {
+  name: string;
+  displayName: string;
+  description: string;
+  relativePath: string;
+  triggerHints?: string[];
+}
+
+export interface SkillRecallPacket {
+  entries: SkillRecallEntry[];
+  usageRecords?: SkillUsageRecord[];
+}
+
+export type SkillRecallProvider = (input: {
+  sessionId?: string;
+  usageRecords: readonly SkillUsageRecord[];
+}) => Promise<SkillRecallPacket>;
+
+export type SkillPreludeBuilder = (packet: SkillRecallPacket) => string;
+
+export interface MemScribeLearningLoopConfig {
+  enabled?: boolean;
+  source?: LearningLoopSource;
+  skillLearningEnabled?: boolean;
+  gate?: Partial<SkillLearningGate>;
+  /**
+   * Optional host override for the learning gate. When omitted, the SDK counts
+   * tool calls from the session's captured ExtractionMessage.toolCalls.
+   */
+  toolCalls?: number | (() => number);
+  /**
+   * Optional host override for the learning cooldown gate. When omitted, the SDK
+   * tracks the turn number of the previous skill-evolution pass per session.
+   */
+  turnsSinceLastSkillEvolution?: number | (() => number);
+  skillEvolution?: (input: {
+    sessionId: string;
+    usageRecords: SkillUsageRecord[];
+    lastExtraction: TurnEndResult;
+    session: SessionState;
+  }) => Promise<SkillEvolutionLoopResult>;
+}
+
+export interface MemScribeBuildContextResult extends BuildContextResult {
+  skillPreludePrompt?: string;
+}
 
 /** Configuration for a memory scribe. The host supplies the LLM injection points. */
 export interface MemScribeConfig {
@@ -143,7 +243,7 @@ export interface MemScribeConfig {
   dreamRunner?: DreamAgentRunner;
   /**
    * Hard secret gate for the memory write tools. Default OFF — privacy leans on
-   * the prompt (matching the reference implementation). <private> redaction is
+   * the prompt (matching the default prompt-led privacy model). <private> redaction is
    * always on regardless.
    */
   refuseSecrets?: boolean;
@@ -151,6 +251,12 @@ export interface MemScribeConfig {
   audit?: AuditLogger;
   /** Custom cursor store (e.g. persisted). Defaults to an in-memory store. */
   cursorStore?: CursorStore;
+  /** Optional learned-skill recall source used during prompt build. */
+  skillRecall?: SkillRecallProvider;
+  /** Optional renderer for learned-skill recall packets. Defaults to a compact prompt prelude. */
+  skillPreludeBuilder?: SkillPreludeBuilder;
+  /** Optional turn-end learning loop. When set, onTurnEnd runs extraction -> skill -> dream. */
+  learningLoop?: MemScribeLearningLoopConfig;
 }
 
 /** What a single session collects between session-start and turn-ends. */
@@ -167,6 +273,8 @@ export interface TurnEndResult {
   result: ExtractionResult;
   /** True when the scribe is disabled or no extraction agent is configured. */
   skipped: boolean;
+  /** Present when createMemScribe owns the turn-end learning loop. */
+  learningLoop?: LearningLoopResult;
 }
 
 /** Result of a dream pass surfaced to the host. */
@@ -206,6 +314,68 @@ export interface DreamGateInput {
   coordination?: DreamCoordination;
 }
 
+function buildSkillInstructionPrompt(): string {
+  return `# 技能
+
+系统可能会提供一组可用 learned skill。技能是可执行流程包，不是普通记忆。
+
+## 技能规则
+
+- 可用技能条目只是路由线索，只有当用户请求和技能明确相关时才使用
+- 不要把技能步骤复制进普通记忆
+- 技能的加载、执行、权限和工具调用由宿主负责，MemScribe 只提供路由和反馈信号
+- 如果最近技能使用信号显示失败或未命中，应优先让后续学习闭环修正技能，而不是在回答里编造步骤`;
+}
+
+function buildDefaultSkillPrelude(packet: SkillRecallPacket): string {
+  const usageRecords = packet.usageRecords ?? [];
+  if (packet.entries.length === 0 && usageRecords.length === 0) return "";
+
+  const lines = ["<system-reminder>", "## 可用技能", ""];
+  if (packet.entries.length === 0) {
+    lines.push("当前没有可用 learned skill。");
+  } else {
+    for (const entry of packet.entries) {
+      lines.push(`- ${entry.name}: ${entry.displayName} — ${entry.description}`);
+      lines.push(`  path: ${entry.relativePath}`);
+      if (entry.triggerHints && entry.triggerHints.length > 0) {
+        lines.push(`  triggers: ${entry.triggerHints.join(", ")}`);
+      }
+    }
+  }
+
+  if (usageRecords.length > 0) {
+    lines.push("", "## 最近技能使用信号", "");
+    for (const record of usageRecords) {
+      const detail = [
+        record.trigger ? `trigger=${record.trigger}` : "",
+        record.note ? `note=${record.note}` : "",
+        record.errorMessage ? `error=${record.errorMessage}` : "",
+      ].filter(Boolean);
+      lines.push(`- ${record.skillName}: ${record.outcome}${detail.length > 0 ? ` (${detail.join("; ")})` : ""}`);
+    }
+  }
+
+  lines.push(
+    "",
+    "仅当当前请求明确命中技能时才请求宿主加载/执行技能；不要向用户暴露技能索引、路径或内部学习过程。",
+    "</system-reminder>",
+  );
+  return lines.join("\n");
+}
+
+function resolveCounter(value: number | (() => number)): number {
+  return typeof value === "function" ? value() : value;
+}
+
+function countToolCalls(messages: readonly ExtractionMessage[]): number {
+  let total = 0;
+  for (const message of messages) {
+    total += message.toolCalls?.length ?? 0;
+  }
+  return total;
+}
+
 /** The host-facing memory scribe. */
 export interface MemScribe {
   readonly root: string;
@@ -223,7 +393,7 @@ export interface MemScribe {
    *  - systemPrompt: STABLE memory rules (cache-friendly prefix)
    *  - preludePrompt: DYNAMIC full MEMORY.md index wrapped in <system-reminder>
    */
-  onPromptBuild(sessionId?: string): Promise<BuildContextResult>;
+  onPromptBuild(sessionId?: string): Promise<MemScribeBuildContextResult>;
   /**
    * A turn finished. The host passes the turn's user+assistant messages; the SDK
    * appends them to session state and runs after-turn extraction via the
@@ -247,7 +417,7 @@ export interface MemScribe {
   // ---- Explicit operations (MCP tools / CLI) ----
 
   /** memory_context: return the full-index prelude (and stable rules). */
-  context(): Promise<BuildContextResult>;
+  context(): Promise<MemScribeBuildContextResult>;
   /** memory_read: read one memory document body by relativePath. */
   read(relativePath: string): Promise<MemoryDocument | null>;
   /** memory_save: explicit, validated, ADD-only write (under lock, syncs index). */
@@ -261,6 +431,10 @@ export interface MemScribe {
   instructionPrompt(): string;
   /** Snapshot a session's collected state (or undefined if unknown). */
   getSession(sessionId: string): SessionState | undefined;
+  /** Record a host-observed learned-skill selection, completion, miss, or failure. */
+  recordSkillUsage(record: SkillUsageRecord): void;
+  /** Read recorded skill usage signals, optionally scoped to one session. */
+  getSkillUsageRecords(sessionId?: string): SkillUsageRecord[];
 }
 
 /** True when an API key for the default tool completion is resolvable from env. */
@@ -311,8 +485,13 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
   const agent = config.agent;
   const dreamRunner = config.dreamRunner;
   const refuseSecrets = config.refuseSecrets;
+  const skillRecall = config.skillRecall;
+  const skillPreludeBuilder = config.skillPreludeBuilder ?? buildDefaultSkillPrelude;
+  const learningLoop = config.learningLoop;
 
   const sessions = new Map<string, SessionState>();
+  const skillUsageRecords: SkillUsageRecord[] = [];
+  const lastSkillEvolutionTurn = new Map<string, number>();
 
   function ensureSession(sessionId: string): SessionState {
     let state = sessions.get(sessionId);
@@ -388,6 +567,102 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
     };
   }
 
+  function getUsageRecords(sessionId?: string): SkillUsageRecord[] {
+    return skillUsageRecords
+      .filter((record) => sessionId === undefined || record.sessionId === undefined || record.sessionId === sessionId)
+      .map((record) => ({ ...record }));
+  }
+
+  async function buildPromptContext(sessionId?: string): Promise<MemScribeBuildContextResult> {
+    const memoryContext = await buildContext({ root, enabled });
+    if (!enabled || !skillRecall) return memoryContext;
+
+    const usageRecords = getUsageRecords(sessionId);
+    const packet = await skillRecall({ sessionId, usageRecords });
+    const normalizedPacket = {
+      ...packet,
+      usageRecords: packet.usageRecords ?? usageRecords,
+    };
+    const skillPreludePrompt = skillPreludeBuilder(normalizedPacket);
+    if (!skillPreludePrompt) return { ...memoryContext, skillPreludePrompt: "" };
+
+    return {
+      ...memoryContext,
+      systemPrompt: [memoryContext.systemPrompt, buildSkillInstructionPrompt()].filter(Boolean).join("\n\n"),
+      preludePrompt: [memoryContext.preludePrompt, skillPreludePrompt].filter(Boolean).join("\n\n"),
+      skillPreludePrompt,
+    };
+  }
+
+  async function runTurnEndLearningLoop(
+    sessionId: string,
+    turnMessages: ExtractionMessage[],
+  ): Promise<TurnEndResult> {
+    let lastExtraction: TurnEndResult | null = null;
+    const stateBeforeTurn = ensureSession(sessionId);
+    const doneTurns = stateBeforeTurn.turns + (turnMessages.length > 0 ? 1 : 0);
+    const toolCalls =
+      learningLoop!.toolCalls !== undefined
+        ? resolveCounter(learningLoop!.toolCalls)
+        : countToolCalls([...stateBeforeTurn.messages, ...turnMessages]);
+    const turnsSinceLastSkillEvolution =
+      learningLoop!.turnsSinceLastSkillEvolution !== undefined
+        ? resolveCounter(learningLoop!.turnsSinceLastSkillEvolution)
+        : doneTurns - (lastSkillEvolutionTurn.get(sessionId) ?? 0);
+    const loop = await runLearningLoop({
+      trigger: "turn-end",
+      source: learningLoop?.source ?? "local",
+      enabled: enabled && learningLoop?.enabled !== false,
+      skillLearningEnabled: learningLoop?.skillLearningEnabled !== false,
+      doneTurns,
+      turnsSinceLastSkillEvolution,
+      toolCalls,
+      gate: learningLoop?.gate,
+      extraction: async () => {
+        lastExtraction = await extract(sessionId, turnMessages);
+        return lastExtraction;
+      },
+      skillEvolutionPrerequisite: ({ extraction }) => {
+        const extractionResult = extraction.value as TurnEndResult | undefined;
+        if (extractionResult?.result !== ExtractionResult.Completed) {
+          return { ok: false, reason: "extraction-not-completed" };
+        }
+        return { ok: true, reason: "ok" };
+      },
+      skillEvolution: learningLoop?.skillEvolution
+        ? async () => {
+            if (!lastExtraction) throw new Error("skill learning requires extraction to run first");
+            return learningLoop.skillEvolution!({
+              sessionId,
+              usageRecords: getUsageRecords(sessionId),
+              lastExtraction,
+              session: { ...ensureSession(sessionId), messages: [...ensureSession(sessionId).messages] },
+            });
+          }
+        : undefined,
+      dream: async (coordination) =>
+        dream({
+          coordination: {
+            reason: coordination.reason,
+            memoryAction: coordination.memoryAction,
+            topics: coordination.topics,
+            targetSkill: coordination.targetSkill,
+          },
+          force: true,
+        }, true),
+    });
+
+    if (loop.skillEvolution.ran) {
+      lastSkillEvolutionTurn.set(sessionId, ensureSession(sessionId).turns);
+    }
+
+    const extractionResult = loop.extraction.value as TurnEndResult | undefined;
+    return {
+      ...(extractionResult ?? { result: ExtractionResult.Skipped, skipped: true }),
+      learningLoop: loop,
+    };
+  }
+
   return {
     root,
     enabled,
@@ -404,19 +679,23 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
       ensureSession(sessionId);
     },
 
-    async onPromptBuild(_sessionId?: string): Promise<BuildContextResult> {
-      return buildContext({ root, enabled });
+    async onPromptBuild(sessionId?: string): Promise<MemScribeBuildContextResult> {
+      return buildPromptContext(sessionId);
     },
 
     async onTurnEnd(
       sessionId: string,
       turnMessages: ExtractionMessage[],
     ): Promise<TurnEndResult> {
+      if (learningLoop) {
+        return runTurnEndLearningLoop(sessionId, turnMessages);
+      }
       return extract(sessionId, turnMessages);
     },
 
     async onSessionEnd(sessionId: string): Promise<void> {
       sessions.delete(sessionId);
+      lastSkillEvolutionTurn.delete(sessionId);
       // Count this ended session toward the dream gate's session threshold.
       if (enabled) {
         try {
@@ -436,8 +715,8 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
       return dream(opts, false);
     },
 
-    async context(): Promise<BuildContextResult> {
-      return buildContext({ root, enabled });
+    async context(): Promise<MemScribeBuildContextResult> {
+      return buildPromptContext();
     },
 
     async read(relativePath: string): Promise<MemoryDocument | null> {
@@ -491,6 +770,29 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
 
     getSession(sessionId: string): SessionState | undefined {
       return sessions.get(sessionId);
+    },
+
+    recordSkillUsage(record: SkillUsageRecord): void {
+      if (typeof record.skillName !== "string" || record.skillName.trim() === "") {
+        throw new Error("skillName must be a non-empty string");
+      }
+      if (
+        record.outcome !== "selected" &&
+        record.outcome !== "completed" &&
+        record.outcome !== "failed" &&
+        record.outcome !== "missed"
+      ) {
+        throw new Error("skill usage outcome must be selected, completed, failed, or missed");
+      }
+      skillUsageRecords.push({
+        ...record,
+        skillName: record.skillName.trim(),
+        occurredAt: record.occurredAt ?? new Date().toISOString(),
+      });
+    },
+
+    getSkillUsageRecords(sessionId?: string): SkillUsageRecord[] {
+      return getUsageRecords(sessionId);
     },
   };
 }

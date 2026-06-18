@@ -1,11 +1,11 @@
 /**
  * Path resolution, typed directories, and filename validation.
  *
- * Mirrors the reference memory-paths design minus workspace scoping. `root` is
+ * Keeps the memory-path design explicit and host-neutral. `root` is
  * threaded explicitly (no module singleton) so the kernel is testable and embeddable.
  *
- * Root resolution replaces the reference implementation's Electron
- * `app.getPath('appData')` coupling with a pure-Node strategy: MEMSCRIBE_HOME env
+ * Root resolution avoids host-specific Electron `app.getPath('appData')`
+ * coupling with a pure-Node strategy: MEMSCRIBE_HOME env
  * wins, else an OS data dir.
  */
 

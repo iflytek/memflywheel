@@ -1,5 +1,5 @@
 /**
- * Per-root write mutex. Mirrors the reference implementation's acquireLock / releaseLock.
+ * Per-root write mutex with explicit acquire/release semantics.
  *
  * Lock file is JSON { pid, owner, startedAt }. A lock is stale when the holder
  * process is gone (process.kill(pid,0) throws) OR it has exceeded the timeout.

@@ -21,11 +21,22 @@ import {
   type ExtractionAgentRunner,
   type ExtractionMessage,
   type MemScribe as SdkMemScribe,
+  type MemScribeLearningLoopConfig,
+  type SessionState,
+  type SkillPreludeBuilder,
+  type SkillRecallProvider,
+  type SkillUsageRecord,
   type ToolCompletion,
+  type TurnEndResult,
   createDreamAgentRunner,
   createExtractionAgentRunner,
   createMemScribe,
+  runSkillEvolutionAgent,
 } from "@memscribe/sdk";
+import {
+  createLearnedSkillRecallProvider,
+  createLearnedSkillStore,
+} from "@memscribe/skills";
 
 import type { MemScribe, MemScribeContext, MemScribeMessage } from "./adapter.js";
 
@@ -35,7 +46,44 @@ import type { MemScribe, MemScribeContext, MemScribeMessage } from "./adapter.js
  *  - `ToolCompletion`: OpenAI-compatible tool-calling channel — drives BOTH the
  *    extraction subagent and the dream consolidation subagent.
  */
-export type { ToolCompletion } from "@memscribe/sdk";
+export type {
+  MemScribeLearningLoopConfig,
+  SessionState,
+  SkillPreludeBuilder,
+  SkillRecallProvider,
+  SkillUsageRecord,
+  ToolCompletion,
+} from "@memscribe/sdk";
+
+export interface HostLearnedSkillEvolutionInput {
+  sessionId: string;
+  usageRecords: SkillUsageRecord[];
+  lastExtraction: TurnEndResult;
+  session: SessionState;
+}
+
+export interface HostLearnedSkillsOptions {
+  /** Directory where learned skills are finalized as file-native packages. */
+  skillsRoot: string;
+  /** Directory for staged skill checkpoints. Defaults to <skillsRoot>/.checkpoints. */
+  checkpointRoot?: string;
+  /** Public-name residues rejected from generated skill text. */
+  forbiddenPublicNames?: readonly string[];
+  /** Include current skill content in the skill-evolution prompt. */
+  includeSkillContent?: boolean;
+  /** Override the skill-evolution system prompt. */
+  systemPrompt?: string;
+  /** Max tool-calling rounds for the skill-evolution subagent. */
+  maxSteps?: number;
+  /** Build the review packet sent to the skill-evolution subagent. */
+  reviewPacket?: (input: HostLearnedSkillEvolutionInput) => unknown;
+  /** Build the tool trajectory sent to the skill-evolution subagent. */
+  toolTrajectory?: (input: HostLearnedSkillEvolutionInput) => unknown;
+  /** Build artifact path hints sent to the skill-evolution subagent. */
+  artifactPaths?: (input: HostLearnedSkillEvolutionInput) => string[];
+  /** Build quality signals sent to the skill-evolution subagent. */
+  qualitySignals?: (input: HostLearnedSkillEvolutionInput) => unknown;
+}
 
 /** Options for {@link createHostMemScribe}. */
 export interface HostMemScribeOptions {
@@ -67,12 +115,36 @@ export interface HostMemScribeOptions {
    * (deterministic structural pre-pass only).
    */
   dreamRunner?: DreamAgentRunner | null;
+  /** Optional learned-skill recall source used during prompt build. */
+  skillRecall?: SkillRecallProvider;
+  /** Optional renderer for learned-skill recall packets. Defaults to the SDK renderer. */
+  skillPreludeBuilder?: SkillPreludeBuilder;
+  /** Optional turn-end learning loop. When set, onTurnEnd runs extraction -> skill -> dream. */
+  learningLoop?: MemScribeLearningLoopConfig;
+  /**
+   * Opt-in learned-skill assembly. When set with `toolCompletion`, the
+   * bridge creates a file-native learned-skill store, recall provider, and
+   * skill-evolution runner. Hosts may still override `learningLoop` gates or
+   * packet builders, but no custom callback is required for the closed path.
+   */
+  learnedSkills?: HostLearnedSkillsOptions;
+}
+
+/**
+ * Adapter-ready scribe returned by {@link createHostMemScribe}. It satisfies the
+ * adapter lifecycle contract and also exposes SDK skill-usage feedback hooks so
+ * hosts can report selected/completed/failed/missed skill runs.
+ */
+export interface HostMemScribeAdapter extends MemScribe {
+  onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<TurnEndResult>;
+  recordSkillUsage(record: SkillUsageRecord): void;
+  getSkillUsageRecords(sessionId?: string): SkillUsageRecord[];
 }
 
 /** The result of {@link createHostMemScribe}: an adapter-ready scribe + the SDK scribe. */
 export interface HostMemScribe {
   /** The adapter-facing scribe — pass straight to `adapter.attach(scribe, host)`. */
-  scribe: MemScribe;
+  scribe: HostMemScribeAdapter;
   /** The underlying SDK scribe, for explicit ops (context/read/save/runDream). */
   sdk: SdkMemScribe;
 }
@@ -94,6 +166,56 @@ function toExtractionMessages(messages: AnyTurnMessage[]): ExtractionMessage[] {
   return out;
 }
 
+function compactMessages(messages: readonly ExtractionMessage[]): unknown[] {
+  return messages.slice(-12).map((message) => ({
+    role: message.role,
+    text: message.text,
+    toolCalls: (message.toolCalls ?? []).map((call) => ({
+      name: call.name,
+      input: call.input,
+      output: call.output,
+    })),
+  }));
+}
+
+function defaultToolTrajectory(input: HostLearnedSkillEvolutionInput): unknown[] {
+  return input.session.messages.flatMap((message) =>
+    (message.toolCalls ?? []).map((call) => ({
+      role: message.role,
+      name: call.name,
+      input: call.input,
+      output: call.output,
+    })),
+  );
+}
+
+function defaultReviewPacket(input: HostLearnedSkillEvolutionInput): unknown {
+  return {
+    goal: "Review the latest local memory and tool trajectory; create or update one learned skill only when a reusable executable method is present.",
+    sessionId: input.sessionId,
+    lastExtraction: {
+      result: input.lastExtraction.result,
+      skipped: input.lastExtraction.skipped,
+    },
+    recentMessages: compactMessages(input.session.messages),
+    observedSkillUsages: input.usageRecords,
+  };
+}
+
+function defaultQualitySignals(input: HostLearnedSkillEvolutionInput): unknown {
+  const toolTrajectory = defaultToolTrajectory(input);
+  return {
+    source: "local",
+    doneTurns: input.session.turns,
+    toolCalls: toolTrajectory.length,
+    skillUsageOutcomes: input.usageRecords.map((record) => ({
+      skillName: record.skillName,
+      outcome: record.outcome,
+      trigger: record.trigger,
+    })),
+  };
+}
+
 /**
  * Adapt an SDK `MemScribe` (hooks take positional args, onPromptBuild returns a
  * BuildContextResult) to the adapter-facing `MemScribe` (hooks take a single
@@ -102,7 +224,7 @@ function toExtractionMessages(messages: AnyTurnMessage[]): ExtractionMessage[] {
  * `onSessionEnd` so the adapter lifecycle's session-end runs a final sweep over
  * any not-yet-extracted messages before dropping the session.
  */
-export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribe {
+export function adaptSdkMemScribe(sdk: SdkMemScribe): HostMemScribeAdapter {
   return {
     async onSessionStart(input: { sessionId: string }): Promise<void> {
       await sdk.onSessionStart(input.sessionId);
@@ -112,11 +234,12 @@ export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribe {
       return {
         systemPrompt: ctx.systemPrompt,
         preludePrompt: ctx.preludePrompt,
+        skillPreludePrompt: ctx.skillPreludePrompt,
         enabled: ctx.enabled,
       };
     },
-    async onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<void> {
-      await sdk.onTurnEnd(input.sessionId, toExtractionMessages(input.messages));
+    async onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<TurnEndResult> {
+      return sdk.onTurnEnd(input.sessionId, toExtractionMessages(input.messages));
     },
     async onSessionEnd(input: { sessionId: string }): Promise<void> {
       // Final sweep over any messages not yet behind the cursor, then drop state.
@@ -125,6 +248,12 @@ export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribe {
     },
     async onIdle(input?: { force?: boolean }): Promise<void> {
       await sdk.onIdle({ force: input?.force });
+    },
+    recordSkillUsage(record: SkillUsageRecord): void {
+      sdk.recordSkillUsage(record);
+    },
+    getSkillUsageRecords(sessionId?: string): SkillUsageRecord[] {
+      return sdk.getSkillUsageRecords(sessionId);
     },
   };
 }
@@ -142,7 +271,16 @@ export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribe {
  *   dream runs only its deterministic structural pre-pass.
  */
 export function createHostMemScribe(options: HostMemScribeOptions = {}): HostMemScribe {
-  const { toolCompletion, root, enabled, refuseSecrets } = options;
+  const {
+    toolCompletion,
+    root,
+    enabled,
+    refuseSecrets,
+    skillRecall,
+    skillPreludeBuilder,
+    learningLoop,
+    learnedSkills,
+  } = options;
 
   const agent =
     options.agent ??
@@ -157,6 +295,54 @@ export function createHostMemScribe(options: HostMemScribeOptions = {}): HostMem
     dreamRunner = createDreamAgentRunner({ toolCompletion });
   }
 
-  const sdk = createMemScribe({ root, enabled, agent, dreamRunner, refuseSecrets });
+  let sdkSkillRecall = skillRecall;
+  let sdkLearningLoop = learningLoop;
+  if (learnedSkills) {
+    if (!toolCompletion) {
+      throw new Error("learnedSkills requires toolCompletion");
+    }
+    const store = createLearnedSkillStore({
+      skillsRoot: learnedSkills.skillsRoot,
+      checkpointRoot: learnedSkills.checkpointRoot,
+      forbiddenPublicNames: learnedSkills.forbiddenPublicNames,
+    });
+    sdkSkillRecall ??= createLearnedSkillRecallProvider({
+      skillsRoot: learnedSkills.skillsRoot,
+      forbiddenPublicNames: learnedSkills.forbiddenPublicNames,
+    });
+    const assembledSkillEvolution = async (input: HostLearnedSkillEvolutionInput) =>
+      runSkillEvolutionAgent({
+        toolCompletion,
+        store,
+        sessionId: input.sessionId,
+        reviewPacket: (learnedSkills.reviewPacket ?? defaultReviewPacket)(input),
+        observedSkillUsages: input.usageRecords,
+        toolTrajectory: (learnedSkills.toolTrajectory ?? defaultToolTrajectory)(input),
+        artifactPaths: learnedSkills.artifactPaths ? learnedSkills.artifactPaths(input) : [],
+        qualitySignals: (learnedSkills.qualitySignals ?? defaultQualitySignals)(input),
+        includeSkillContent: learnedSkills.includeSkillContent,
+        systemPrompt: learnedSkills.systemPrompt,
+        maxSteps: learnedSkills.maxSteps,
+      });
+
+    sdkLearningLoop = {
+      enabled: true,
+      source: "local",
+      skillLearningEnabled: true,
+      ...learningLoop,
+      skillEvolution: learningLoop?.skillEvolution ?? assembledSkillEvolution,
+    };
+  }
+
+  const sdk = createMemScribe({
+    root,
+    enabled,
+    agent,
+    dreamRunner,
+    refuseSecrets,
+    skillRecall: sdkSkillRecall,
+    skillPreludeBuilder,
+    learningLoop: sdkLearningLoop,
+  });
   return { scribe: adaptSdkMemScribe(sdk), sdk };
 }
