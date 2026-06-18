@@ -1,0 +1,67 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { scanMemoryFiles, readAllMemoryContents, formatManifest } from "./scan.js";
+import { makeRoot, cleanup, writeFixture, writeRaw } from "./test-helpers.js";
+
+test("scanMemoryFiles finds typed files, skips reserved/hidden/invalid", async () => {
+  const root = await makeRoot();
+  try {
+    await writeFixture(root, "identity", "user-name.md", {
+      name: "用户称呼",
+      description: "称呼",
+      body: "叫小钟",
+      mtime: 2000,
+    });
+    await writeFixture(root, "workflow", "debug.md", {
+      name: "调试",
+      body: "先看日志",
+      mtime: 3000,
+    });
+    await writeRaw(root, "MEMORY.md", "- index line");
+    await writeRaw(root, ".hidden.md", "ignored");
+    await writeRaw(root, "context/broken.md", "no frontmatter here");
+
+    const entries = await scanMemoryFiles(root);
+    assert.equal(entries.length, 2);
+    // Sorted by mtime DESC: workflow (3000) before identity (2000).
+    assert.equal(entries[0]!.relativePath, "workflow/debug.md");
+    assert.equal(entries[1]!.relativePath, "identity/user-name.md");
+    assert.equal(entries[1]!.description, "称呼");
+  } finally {
+    await cleanup(root);
+  }
+});
+
+test("scanMemoryFiles returns [] for missing root", async () => {
+  const entries = await scanMemoryFiles("/tmp/does-not-exist-memscribe-xyz");
+  assert.deepEqual(entries, []);
+});
+
+test("readAllMemoryContents concatenates bodies", async () => {
+  const root = await makeRoot();
+  try {
+    await writeFixture(root, "identity", "n.md", { name: "Name", body: "body one", mtime: 1000 });
+    const out = await readAllMemoryContents(root);
+    assert.ok(out.includes("### Name (identity)"));
+    assert.ok(out.includes("body one"));
+  } finally {
+    await cleanup(root);
+  }
+});
+
+test("formatManifest renders lines or empty marker", () => {
+  assert.equal(formatManifest([]), "（无现有记忆）");
+  const line = formatManifest([
+    {
+      filename: "u.md",
+      relativePath: "identity/u.md",
+      name: "n",
+      description: "d",
+      type: "identity",
+      mtime: 0,
+    },
+  ]);
+  assert.ok(line.startsWith("- [identity] identity/u.md ("));
+  assert.ok(line.endsWith("): d"));
+});

@@ -1,0 +1,38 @@
+{
+  "name": "memscribe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "File-native long-term memory layer for AI agents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "keywords": [
+    "agent-memory",
+    "llm",
+    "memory",
+    "mcp",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iflytek/memscribe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iflytek/memscribe/issues"
+  },
+  "homepage": "https://github.com/iflytek/memscribe#readme",
+  "packageManager": "pnpm@11.5.2",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "clean": "pnpm -r run clean",
+    "ci": "pnpm run clean && pnpm run build && pnpm run test && pnpm run pack:dry-run",
+    "pack:dry-run": "pnpm -r --filter './packages/*' exec npm pack --dry-run --json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4"
+  }
+}

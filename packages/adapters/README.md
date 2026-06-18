@@ -1,0 +1,197 @@
+# @memscribe/adapters
+
+Host lifecycle mappings for MemScribe. Each adapter translates a host's lifecycle
+events — session start, prompt assembly, turn end, idle/scheduled — onto a
+`MemScribe`'s hooks. Adapters contain **no memory logic**: they are pure event
+translation plus a real, round-trippable install of the host-side wiring.
+
+Zero runtime dependencies (Node stdlib + TypeScript only).
+
+## Built-in adapters
+
+| id            | host        | session start          | prompt build            | turn end             | idle/scheduled    | integration  |
+| ------------- | ----------- | ---------------------- | ----------------------- | -------------------- | ----------------- | ------------ |
+| `pi`          | Pi kernel   | `session:ensure`       | `turn:build`            | `agent_end`          | `learning:idle`   | real         |
+| `hermes`      | Hermes      | `on_session_start`     | `pre_llm_call`          | `post_llm_call`      | `on_session_end`  | real         |
+| `openclaw`    | OpenClaw    | `before_agent_start`   | `context:inject`        | `agent_end`          | `idle:watch`      | best-effort¹ |
+| `opencode`    | OpenCode    | `session.init`         | `message.build`         | `response.complete`  | `timer.background`| usable       |
+| `codex`       | Codex       | `task:start`           | `instructions:assemble` | `task:complete`      | `job:scheduled`   | usable       |
+| `claude-code` | Claude Code | `SessionStart`         | `UserPromptSubmit`      | `Stop`               | `Idle`            | usable       |
+
+¹ **best-effort, but still runnable.** OpenClaw exposes no in-process model-call
+API, so a plugin cannot drive inference itself. Recall + injection are
+first-class via hooks (`registerMemoryCapability` + `context:inject`), while
+extraction runs on MemScribe's own default fetch-completion (set
+`MEMSCRIBE_LLM_API_KEY`). An MCP bridge (`@memscribe/mcp-server`) is also available.
+
+- **`pi`** — real: a Pi `.js` extension wraps the per-session auxiliary completion
+  as `complete`; `~/.pi/agent/settings.json` carries the wiring marker.
+  `session:ensure` → `onSessionStart`; per-turn assembly → `onPromptBuild` (the
+  scribe's `systemPrompt` merges into the per-session system prompt and
+  `preludePrompt` is prepended to the prelude list); `agent_end` →
+  `onTurnEnd` (fire-and-forget); learning-loop idle tick → `onIdle`.
+- **`hermes`** — real: a Hermes plugin's `register(ctx)` wraps `ctx.llm.acomplete`
+  as `complete`. `on_session_start` → `onSessionStart`; `pre_llm_call` →
+  `onPromptBuild` (inject prelude as `{"context": ...}`); `post_llm_call` →
+  `onTurnEnd` (reads `user_message` + `assistant_response`, or an explicit
+  `transcript`); `on_session_end` → `onIdle`.
+
+Each adapter declares a `defaultConfigRelPath` (the host config under `$HOME`) and
+an `integrationNote` describing how the host actually consumes the scribe.
+
+## The `HostAdapter` contract
+
+```ts
+interface HostAdapter {
+  readonly id: string;
+  readonly name: string;
+  readonly lifecycle: LifecycleMap;        // host event → scribe hook, per hook
+
+  attach(scribe: MemScribe, host: HostRuntime): () => void;   // wire events, returns disposer
+  install(target: InstallTarget, opts?: { apply?: boolean }): Promise<InstallPlan | InstallResult>;
+  verify(target: InstallTarget): Promise<VerifyResult>;      // real round-trip from disk
+  doctor(target: InstallTarget): Promise<DoctorFinding[]>;
+}
+```
+
+### attach — pure event translation
+
+`attach` binds each host event to the matching scribe hook and returns a disposer
+that removes every listener. The `MemScribe` interface here is structurally
+identical to `@memscribe/sdk`'s — any object with the lifecycle hooks satisfies
+it, including a real `createMemScribe(...)`.
+
+```ts
+import { piAdapter } from "@memscribe/adapters";
+
+const dispose = piAdapter.attach(scribe, host);
+// ... later
+dispose();
+```
+
+- `onTurnEnd` is fire-and-forget: a rejecting extractor never blocks or throws
+  into the host's stream.
+- `onPromptBuild` returns the two recall segments (`systemPrompt`,
+  `preludePrompt`). Hosts that need the result attach a `respond` callback to the
+  emitted payload; the adapter delivers the `Promise<MemScribeContext>` to it.
+
+### install — plan / apply (never "write and hope")
+
+Install always **plans first**. The plan is a pure read that reports the steps it
+would take and whether the on-disk wiring is already current (`satisfied`).
+Passing `{ apply: true }` then merges a versioned wiring marker into the host
+config and writes it atomically (temp file + rename), preserving all other keys.
+
+```ts
+const plan = await piAdapter.install({ configPath });   // no writes
+if (!plan.satisfied) {
+  await piAdapter.install({ configPath }, { apply: true });
+}
+```
+
+Apply is idempotent: re-applying current wiring writes nothing. Stale (older
+version) or corrupt configs are detected and rewritten.
+
+### verify — real round-trip
+
+`verify` re-reads the host config **from disk** and confirms the wiring marker is
+present, belongs to this adapter, matches the current version, and has the exact
+expected bindings. It never reports success from an in-memory write — a
+post-install tamper is caught.
+
+```ts
+const v = await piAdapter.verify({ configPath });
+if (!v.ok) console.error(v.problems);
+```
+
+### doctor — diagnose installed state
+
+```ts
+for (const f of await piAdapter.doctor({ configPath })) {
+  console.log(f.code, f.message); // not-installed | stale-wiring | corrupt-config | ok
+}
+```
+
+## Custom adapters
+
+Build one from a lifecycle map + payload translators with `makeAdapter`:
+
+```ts
+import { makeAdapter, normalizeMessages, readString } from "@memscribe/adapters";
+
+export const myAdapter = makeAdapter({
+  id: "my-host",
+  name: "My Host",
+  lifecycle: {
+    onSessionStart: { hook: "onSessionStart", hostEvent: "start", note: "..." },
+    onPromptBuild:  { hook: "onPromptBuild",  hostEvent: "build", note: "..." },
+    onTurnEnd:      { hook: "onTurnEnd",      hostEvent: "done",  note: "..." },
+    onIdle:         { hook: "onIdle",         hostEvent: "idle",  note: "..." },
+  },
+  translators: {
+    sessionId: (p) => readString(p, "sessionId"),
+    turnEnd: (p) => ({
+      sessionId: readString(p, "sessionId"),
+      messages: normalizeMessages((p as { messages?: unknown }).messages),
+    }),
+  },
+});
+```
+
+Install/verify/doctor come for free.
+
+## Direct integration: `createHostMemScribe`
+
+An adapter contains no memory or LLM logic. To make a host work out of the box,
+wrap its own tool-calling LLM channel into a `toolCompletion` and pass it to
+`createHostMemScribe`. That builds the SDK default extraction AND dream consolidation
+subagents (default prompts + memory tools) on top of the single `toolCompletion`,
+assembles a real `createMemScribe`, and returns an adapter-ready `MemScribe`
+plus the underlying SDK scribe for explicit ops. One channel drives both subagents:
+
+```ts
+import { createHostMemScribe, hermesAdapter } from "@memscribe/adapters";
+
+// Wrap the host's own tool-calling channel — no API key needed; the host owns
+// creds. The extraction subagent drives this to write memory files directly.
+const toolCompletion = async ({ messages, tools, signal }) =>
+  ctx.llm.chatWithTools({ messages, tools, signal }); // returns { message, finishReason }
+
+const { scribe, sdk } = createHostMemScribe({ toolCompletion });
+const dispose = hermesAdapter.attach(scribe, host);   // session/prompt/turn-end/idle
+```
+
+- With `toolCompletion`: real semantic extraction AND dream consolidation run as
+  tool-calling subagents on the **host's own model**, writing memory files directly.
+- Without `toolCompletion` (and no explicit `agent` / `dreamRunner`): the scribe is
+  **recall-only** — memory is injected on prompt build, turns never extract, and
+  dream runs only its deterministic structural pre-pass.
+- The adapter-facing `onSessionEnd` runs a final agent-end sweep (extracting any
+  not-yet-processed messages) before dropping the session.
+
+Hosts with no in-process model-call API (OpenClaw, Claude Code) pass MemScribe's
+own default fetch-based tool completion instead:
+
+```ts
+import { defaultExtractionAgentFromEnv } from "@memscribe/sdk";
+const { scribe } = createHostMemScribe({ agent: defaultExtractionAgentFromEnv() });
+```
+
+## Connect: install + round-trip verify in one call
+
+`connect` resolves the target (an explicit path or the adapter's
+`defaultConfigRelPath` under `$HOME`), plans the wiring, and — with `apply` —
+applies it and immediately re-reads from disk to verify the marker round-trips:
+
+```ts
+import { connect, piAdapter } from "@memscribe/adapters";
+
+const plan = await connect(piAdapter);                 // plan only, no writes
+const res  = await connect(piAdapter, { apply: true }); // write + verify
+if (!res.verify!.ok) console.error(res.verify!.problems);
+```
+
+Runnable minimal integrations live under [`examples/`](https://github.com/iflytek/memscribe/tree/main/examples),
+one per targeted host (Pi, Hermes, OpenClaw): wrap the host LLM into `complete`,
+build the scribe with `createHostMemScribe`, mount the lifecycle, and `connect`
+(install + verify) the wiring.

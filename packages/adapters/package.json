@@ -1,0 +1,57 @@
+{
+  "name": "@memscribe/adapters",
+  "version": "0.1.0",
+  "description": "Host lifecycle adapters for wiring MemScribe into agent runtimes.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.d.ts",
+    "!dist/test-helpers.js",
+    "!dist/test-helpers.d.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iflytek/memscribe.git",
+    "directory": "packages/adapters"
+  },
+  "bugs": {
+    "url": "https://github.com/iflytek/memscribe/issues"
+  },
+  "homepage": "https://github.com/iflytek/memscribe#readme",
+  "keywords": [
+    "agent-memory",
+    "adapters",
+    "llm",
+    "memory",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b",
+    "test": "tsc -b && node --test \"dist/**/*.test.js\"",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@memscribe/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4"
+  }
+}

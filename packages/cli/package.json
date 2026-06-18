@@ -1,0 +1,59 @@
+{
+  "name": "@memscribe/cli",
+  "version": "0.1.0",
+  "description": "Command-line governance tools for MemScribe memory roots.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "memscribe": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.d.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iflytek/memscribe.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/iflytek/memscribe/issues"
+  },
+  "homepage": "https://github.com/iflytek/memscribe#readme",
+  "keywords": [
+    "agent-memory",
+    "cli",
+    "llm",
+    "memory",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b",
+    "test": "tsc -b && node --test \"dist/**/*.test.js\"",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@memscribe/core": "workspace:*",
+    "@memscribe/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4"
+  }
+}

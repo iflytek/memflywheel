@@ -1,0 +1,14 @@
+{
+  "name": "@memscribe/examples",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Runnable minimal host integration examples for MemScribe.",
+  "scripts": {
+    "smoke": "USE_FAKE=1 node pi/run.mjs && USE_FAKE=1 node hermes/run.mjs && USE_FAKE=1 node openclaw/run.mjs"
+  },
+  "dependencies": {
+    "@memscribe/adapters": "workspace:*",
+    "@memscribe/sdk": "workspace:*"
+  }
+}
