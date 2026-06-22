@@ -1,19 +1,17 @@
 /**
  * OpenClaw plugin glue (best-effort, still runnable).
  *
- * OpenClaw exposes no in-process model-call API, so the plugin cannot drive
- * inference itself. Recall + injection are first-class via hooks +
- * registerMemoryCapability; the extraction subagent runs on MemScribe's own
- * default fetch tool-completion (the user provides MEMSCRIBE_LLM_API_KEY).
+ * OpenClaw native model-loop support is not wired in phase 1. The plugin claims
+ * recall/injection only; a later OpenClaw adapter must map llm-runtime into
+ * HostHarnessPort before MemScribe can run extraction/dream/skill loops natively.
  *
  * `register(api)`:
  *  - claims the memory slot via registerMemoryCapability,
- *  - builds the scribe with the env-driven default extraction subagent,
+ *  - builds the scribe in explicit recall-only mode,
  *  - binds `openclawAdapter` to OpenClaw's hooks.
  */
 
-import { createHostMemScribe, openclawAdapter } from "@memscribe/adapters";
-import { defaultExtractionAgentFromEnv } from "@memscribe/sdk";
+import { createMemScribeHarnessRuntime, openclawAdapter } from "@memscribe/adapters";
 
 const plugin = {
   id: "memscribe",
@@ -21,9 +19,7 @@ const plugin = {
 
   /** @param {any} api - the OpenClaw plugin API */
   register(api) {
-    // The extraction subagent uses the default fetch tool-completion (no host
-    // model-call API).
-    const { scribe } = createHostMemScribe({ agent: defaultExtractionAgentFromEnv() });
+    const { scribe } = createMemScribeHarnessRuntime({ mode: "recall-only" });
 
     if (typeof api.registerMemoryCapability === "function") {
       api.registerMemoryCapability({

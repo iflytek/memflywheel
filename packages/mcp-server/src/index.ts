@@ -2,7 +2,7 @@
 /**
  * @memscribe/mcp-server — stdio JSON-RPC MCP server over @memscribe/core.
  *
- * Tools:     memory_context, memory_read, memory_save  (NO search tool)
+ * Tools:     read, write, edit, bash, glob, grep
  * Resources: memscribe://index, memscribe://manifest
  * Prompt:    memscribe.with_memory
  *

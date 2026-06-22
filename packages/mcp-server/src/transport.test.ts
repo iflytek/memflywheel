@@ -21,7 +21,7 @@ function collect(output: PassThrough): { lines: () => any[] } {
   };
 }
 
-test("stdio transport handles initialize + tools/list + tools/call over streams", async () => {
+test("stdio transport handles initialize + tools/list + prompt over streams", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "memscribe-mcp-tp-"));
   try {
     const input = new PassThrough();
@@ -33,9 +33,7 @@ test("stdio transport handles initialize + tools/list + tools/call over streams"
     input.write('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n');
     input.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     input.write('{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n');
-    input.write(
-      '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"memory_context","arguments":{}}}\n',
-    );
+    input.write('{"jsonrpc":"2.0","id":3,"method":"prompts/get","params":{"name":"memscribe.with_memory"}}\n');
     input.end();
 
     await done;
@@ -49,10 +47,10 @@ test("stdio transport handles initialize + tools/list + tools/call over streams"
 
     const tools = responses.find((r) => r.id === 2);
     const names = tools.result.tools.map((t: any) => t.name).sort();
-    assert.deepEqual(names, ["memory_context", "memory_read", "memory_save"]);
+    assert.deepEqual(names, ["bash", "edit", "glob", "grep", "read", "write"]);
 
     const ctx = responses.find((r) => r.id === 3);
-    assert.ok(ctx.result.content[0].text.includes("# 记忆"));
+    assert.ok(ctx.result.messages[0].content.text.includes("# 记忆"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

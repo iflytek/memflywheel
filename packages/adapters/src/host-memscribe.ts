@@ -1,19 +1,15 @@
 /**
- * Host-scribe bridge — turn a host's own LLM channel into a fully-wired,
- * batteries-included memory scribe the adapters can drive directly.
+ * Host harness runtime — turn a host-owned canonical model channel into a
+ * fully-wired memory scribe the adapters can drive directly.
  *
  * Both memory subagents are tool-calling loops: the SDK ships
- * `createExtractionAgentRunner({ toolCompletion })` and
- * `createDreamAgentRunner({ toolCompletion })`, loops that call core's
- * memory-write tools to write files directly. The only thing a host must supply
- * is `toolCompletion`: the thinnest possible OpenAI-compatible tool-calling
- * channel over its own model. This module wraps it into both subagents, builds a
- * real `createMemScribe`, and exposes it through the adapter-facing `MemScribe`
- * structural contract (see adapter.ts) so any built-in adapter can `attach` it
- * to a live host with no extra glue.
+ * `createExtractionAgentRunner({ model })` and `createDreamAgentRunner({ model })`,
+ * loops that call core's memory-write tools to write files directly. The only
+ * model contract here is @memscribe/model's canonical protocol; provider wire
+ * shapes and host runtimes are mapped before they enter this file.
  *
- * Nothing here calls an LLM itself — the network call lives only inside the
- * host-provided `toolCompletion` (or the SDK's default fetch transport).
+ * Nothing here owns provider auth or performs model transport by itself. The
+ * host supplies the canonical model object, usually via a HostHarnessPort.
  */
 
 import {
@@ -25,8 +21,6 @@ import {
   type SessionState,
   type SkillPreludeBuilder,
   type SkillRecallProvider,
-  type SkillUsageRecord,
-  type ToolCompletion,
   type TurnEndResult,
   createDreamAgentRunner,
   createExtractionAgentRunner,
@@ -34,30 +28,32 @@ import {
   runSkillEvolutionAgent,
 } from "@memscribe/sdk";
 import {
+  type LearnedSkillStoreCheckpoint,
   createLearnedSkillRecallProvider,
   createLearnedSkillStore,
 } from "@memscribe/skills";
+import type { CanonicalModelCompletion } from "@memscribe/model";
 
 import type { MemScribe, MemScribeContext, MemScribeMessage } from "./adapter.js";
+import {
+  classifyHostCapabilities,
+  type HostHarnessPort,
+  type HostIntegrationMode,
+} from "./harness-port.js";
 
 /**
- * The thin LLM transport a host wraps around its own model channel. Re-exported
- * from the SDK so hosts/adapters depend only on `@memscribe/adapters`.
- *  - `ToolCompletion`: OpenAI-compatible tool-calling channel — drives BOTH the
- *    extraction subagent and the dream consolidation subagent.
+ * Re-exported SDK contracts so hosts/adapters depend only on `@memscribe/adapters`.
  */
 export type {
   MemScribeLearningLoopConfig,
   SessionState,
   SkillPreludeBuilder,
   SkillRecallProvider,
-  SkillUsageRecord,
-  ToolCompletion,
 } from "@memscribe/sdk";
+export type { CanonicalModelCompletion } from "@memscribe/model";
 
 export interface HostLearnedSkillEvolutionInput {
   sessionId: string;
-  usageRecords: SkillUsageRecord[];
   lastExtraction: TurnEndResult;
   session: SessionState;
 }
@@ -85,16 +81,22 @@ export interface HostLearnedSkillsOptions {
   qualitySignals?: (input: HostLearnedSkillEvolutionInput) => unknown;
 }
 
-/** Options for {@link createHostMemScribe}. */
-export interface HostMemScribeOptions {
+export type MemScribeHarnessMode = "native" | "recall-only";
+
+/** Options for {@link createMemScribeHarnessRuntime}. */
+export interface MemScribeHarnessRuntimeOptions {
   /**
-   * The host's tool-calling LLM channel. Drives BOTH subagents — extraction and
-   * dream consolidation — which write memories directly via core's memory tools.
-   * When omitted (and no explicit `agent` / `dreamRunner`), the scribe is
-   * recall-only: it injects memory but never extracts, and dream runs only the
-   * deterministic structural pre-pass.
+   * Optional host port. Phase 1 uses the port's canonical model; lifecycle
+   * binding remains explicit so existing adapter attach tests stay focused.
    */
-  toolCompletion?: ToolCompletion;
+  port?: HostHarnessPort;
+  /**
+   * Host-owned canonical model channel. Drives BOTH subagents — extraction and
+   * dream consolidation — which write memories directly via core's tools.
+   */
+  model?: CanonicalModelCompletion;
+  /** Explicit runtime mode. No implicit recall-only fallback. */
+  mode?: MemScribeHarnessMode;
   /** Memory root override. Falls back to MEMSCRIBE_HOME / OS data dir. */
   root?: string;
   /** Master switch. When false, every hook becomes a no-op. */
@@ -105,13 +107,13 @@ export interface HostMemScribeOptions {
    */
   refuseSecrets?: boolean;
   /**
-   * Provide an extraction agent explicitly instead of building one from
-   * `toolCompletion`. Takes precedence over `toolCompletion` for extraction.
+   * Provide an extraction agent explicitly instead of building one from `model`.
+   * Takes precedence over `model` for extraction.
    */
   agent?: ExtractionAgentRunner;
   /**
-   * Provide a dream consolidation subagent explicitly. Defaults to one built
-   * from `toolCompletion`; pass `null` to disable semantic consolidation
+   * Provide a dream consolidation subagent explicitly. Defaults to one built from
+   * `model`; pass `null` to disable semantic consolidation
    * (deterministic structural pre-pass only).
    */
   dreamRunner?: DreamAgentRunner | null;
@@ -122,8 +124,8 @@ export interface HostMemScribeOptions {
   /** Optional turn-end learning loop. When set, onTurnEnd runs extraction -> skill -> dream. */
   learningLoop?: MemScribeLearningLoopConfig;
   /**
-   * Opt-in learned-skill assembly. When set with `toolCompletion`, the
-   * bridge creates a file-native learned-skill store, recall provider, and
+   * Opt-in learned-skill assembly. When set with `model`, the bridge creates a
+   * file-native learned-skill store, recall provider, and
    * skill-evolution runner. Hosts may still override `learningLoop` gates or
    * packet builders, but no custom callback is required for the closed path.
    */
@@ -131,22 +133,21 @@ export interface HostMemScribeOptions {
 }
 
 /**
- * Adapter-ready scribe returned by {@link createHostMemScribe}. It satisfies the
- * adapter lifecycle contract and also exposes SDK skill-usage feedback hooks so
- * hosts can report selected/completed/failed/missed skill runs.
+ * Adapter-ready scribe returned by {@link createMemScribeHarnessRuntime}. It
+ * satisfies the adapter lifecycle contract.
  */
-export interface HostMemScribeAdapter extends MemScribe {
+export interface MemScribeHarnessRuntimeAdapter extends MemScribe {
   onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<TurnEndResult>;
-  recordSkillUsage(record: SkillUsageRecord): void;
-  getSkillUsageRecords(sessionId?: string): SkillUsageRecord[];
 }
 
-/** The result of {@link createHostMemScribe}: an adapter-ready scribe + the SDK scribe. */
-export interface HostMemScribe {
+/** The result of {@link createMemScribeHarnessRuntime}. */
+export interface MemScribeHarnessRuntime {
   /** The adapter-facing scribe — pass straight to `adapter.attach(scribe, host)`. */
-  scribe: HostMemScribeAdapter;
-  /** The underlying SDK scribe, for explicit ops (context/read/save/runDream). */
+  scribe: MemScribeHarnessRuntimeAdapter;
+  /** The underlying SDK scribe, for explicit ops (context/save/runDream). */
   sdk: SdkMemScribe;
+  /** Runtime mode after capability/options resolution. */
+  mode: HostIntegrationMode | MemScribeHarnessMode;
 }
 
 /** A turn message in either the adapter or core shape. */
@@ -198,7 +199,6 @@ function defaultReviewPacket(input: HostLearnedSkillEvolutionInput): unknown {
       skipped: input.lastExtraction.skipped,
     },
     recentMessages: compactMessages(input.session.messages),
-    observedSkillUsages: input.usageRecords,
   };
 }
 
@@ -208,11 +208,6 @@ function defaultQualitySignals(input: HostLearnedSkillEvolutionInput): unknown {
     source: "local",
     doneTurns: input.session.turns,
     toolCalls: toolTrajectory.length,
-    skillUsageOutcomes: input.usageRecords.map((record) => ({
-      skillName: record.skillName,
-      outcome: record.outcome,
-      trigger: record.trigger,
-    })),
   };
 }
 
@@ -224,7 +219,7 @@ function defaultQualitySignals(input: HostLearnedSkillEvolutionInput): unknown {
  * `onSessionEnd` so the adapter lifecycle's session-end runs a final sweep over
  * any not-yet-extracted messages before dropping the session.
  */
-export function adaptSdkMemScribe(sdk: SdkMemScribe): HostMemScribeAdapter {
+export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribeHarnessRuntimeAdapter {
   return {
     async onSessionStart(input: { sessionId: string }): Promise<void> {
       await sdk.onSessionStart(input.sessionId);
@@ -249,30 +244,21 @@ export function adaptSdkMemScribe(sdk: SdkMemScribe): HostMemScribeAdapter {
     async onIdle(input?: { force?: boolean }): Promise<void> {
       await sdk.onIdle({ force: input?.force });
     },
-    recordSkillUsage(record: SkillUsageRecord): void {
-      sdk.recordSkillUsage(record);
-    },
-    getSkillUsageRecords(sessionId?: string): SkillUsageRecord[] {
-      return sdk.getSkillUsageRecords(sessionId);
-    },
   };
 }
 
 /**
- * Build a batteries-included scribe from a host's LLM channel. Wraps
- * `toolCompletion` into both the extraction and dream consolidation subagents,
- * builds the SDK scribe, and returns both the adapter-facing view and the
- * underlying SDK scribe.
+ * Build a batteries-included scribe from a host's canonical model channel.
  *
- * - With `toolCompletion`: real semantic extraction + consolidation run as
+ * - With `model`: real semantic extraction + consolidation run as
  *   tool-calling subagents on the host's own model, writing memory files directly.
- * - Without `toolCompletion` (and no explicit `agent` / `dreamRunner`):
- *   recall-only — memory is injected on prompt build, turns never extract, and
- *   dream runs only its deterministic structural pre-pass.
+ * - Without `model` and without an explicit `agent`: pass `mode:"recall-only"`
+ *   explicitly, or construction fails.
  */
-export function createHostMemScribe(options: HostMemScribeOptions = {}): HostMemScribe {
+export function createMemScribeHarnessRuntime(
+  options: MemScribeHarnessRuntimeOptions = {},
+): MemScribeHarnessRuntime {
   const {
-    toolCompletion,
     root,
     enabled,
     refuseSecrets,
@@ -281,25 +267,33 @@ export function createHostMemScribe(options: HostMemScribeOptions = {}): HostMem
     learningLoop,
     learnedSkills,
   } = options;
+  const model = options.model ?? options.port?.model;
+  const requestedMode = options.mode ?? "native";
+
+  if (requestedMode !== "recall-only" && !model && !options.agent) {
+    throw new Error(
+      'createMemScribeHarnessRuntime requires a canonical model or explicit extraction agent; pass mode:"recall-only" to disable extraction.',
+    );
+  }
 
   const agent =
     options.agent ??
-    (toolCompletion ? createExtractionAgentRunner({ toolCompletion }) : undefined);
+    (requestedMode === "recall-only" || !model ? undefined : createExtractionAgentRunner({ model }));
 
   let dreamRunner: DreamAgentRunner | undefined;
   if (options.dreamRunner === null) {
     dreamRunner = undefined;
   } else if (options.dreamRunner) {
     dreamRunner = options.dreamRunner;
-  } else if (toolCompletion) {
-    dreamRunner = createDreamAgentRunner({ toolCompletion });
+  } else if (requestedMode !== "recall-only" && model) {
+    dreamRunner = createDreamAgentRunner({ model });
   }
 
   let sdkSkillRecall = skillRecall;
   let sdkLearningLoop = learningLoop;
   if (learnedSkills) {
-    if (!toolCompletion) {
-      throw new Error("learnedSkills requires toolCompletion");
+    if (!model) {
+      throw new Error("learnedSkills requires a canonical model");
     }
     const store = createLearnedSkillStore({
       skillsRoot: learnedSkills.skillsRoot,
@@ -311,12 +305,11 @@ export function createHostMemScribe(options: HostMemScribeOptions = {}): HostMem
       forbiddenPublicNames: learnedSkills.forbiddenPublicNames,
     });
     const assembledSkillEvolution = async (input: HostLearnedSkillEvolutionInput) =>
-      runSkillEvolutionAgent({
-        toolCompletion,
+      runSkillEvolutionAgent<LearnedSkillStoreCheckpoint>({
+        model,
         store,
         sessionId: input.sessionId,
         reviewPacket: (learnedSkills.reviewPacket ?? defaultReviewPacket)(input),
-        observedSkillUsages: input.usageRecords,
         toolTrajectory: (learnedSkills.toolTrajectory ?? defaultToolTrajectory)(input),
         artifactPaths: learnedSkills.artifactPaths ? learnedSkills.artifactPaths(input) : [],
         qualitySignals: (learnedSkills.qualitySignals ?? defaultQualitySignals)(input),
@@ -344,5 +337,9 @@ export function createHostMemScribe(options: HostMemScribeOptions = {}): HostMem
     skillPreludeBuilder,
     learningLoop: sdkLearningLoop,
   });
-  return { scribe: adaptSdkMemScribe(sdk), sdk };
+  return {
+    scribe: adaptSdkMemScribe(sdk),
+    sdk,
+    mode: options.port ? classifyHostCapabilities(options.port.capabilities) : requestedMode,
+  };
 }

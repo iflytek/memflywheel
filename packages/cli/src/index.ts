@@ -6,8 +6,8 @@
  * dream (plan|apply) / mcp.
  *
  * The CLI never calls an LLM. `dream apply` runs only the deterministic plan;
- * `write` is the deterministic, manual equivalent of the memory_save tool the
- * extraction subagent uses. Both LLM injection points live in the SDK, not here.
+ * `write` is the deterministic, manual equivalent of writing a validated typed
+ * Markdown file. Both LLM injection points live in the SDK, not here.
  */
 
 import { spawn } from "node:child_process";
@@ -128,7 +128,7 @@ Global options:
   --json                     Machine-readable output where supported
   --no-audit                 Do not write the audit log for this invocation
 
-write options (manual equivalent of the memory_save tool):
+write options (manual typed Markdown write):
   --type <type>              identity preference style workflow context ambient
   --filename <name.md>       Flat *.md filename (optional; derived from --name)
   --name <name>              Frontmatter name (required)

@@ -6,7 +6,7 @@
  * points, privacy redaction, per-root write locking, atomic writes, audit log.
  *
  * Core never calls an LLM. Both extraction and dream write through a subagent
- * that calls the memory tools directly (ExtractionAgentRunner / DreamAgentRunner);
+ * that calls ordinary file tools directly (ExtractionAgentRunner / DreamAgentRunner);
  * both are injected — core owns only the session closure.
  */
 
@@ -96,16 +96,18 @@ export {
   SecretRefusedError,
 } from "./privacy.js";
 
-// Memory write tools (subagent-facing handlers + JSON schemas)
+// File tools (subagent-facing handlers + JSON schemas)
 export {
   type JsonSchema,
-  type MemoryToolName,
-  type MemoryToolContext,
-  type MemoryToolResult,
-  type MemoryTool,
-  createMemoryTools,
-  memoryToolMap,
-} from "./memory-tools.js";
+  type FileToolName,
+  type FileToolContext,
+  type FileToolResult,
+  type FileTool,
+  createFileTools,
+  fileToolMap,
+  createMemoryFileToolContext,
+  serializeMemoryFile,
+} from "./file-tools.js";
 
 // Lock
 export {

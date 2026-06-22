@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { createFileTools as createCoreFileTools, type FileTool, type FileToolResult } from "@memscribe/core";
 
 export const LEARNED_SKILL_DIR_PREFIX = "memscribe-learned-";
 export const MAX_SUPPORTING_FILE_BYTES = 1024 * 1024;
@@ -124,18 +125,6 @@ export interface LearnedSkillsCatalog {
   skills: LearnedSkillCatalogEntry[];
 }
 
-export type LearnedSkillUsageOutcome = "selected" | "completed" | "failed" | "missed";
-
-export interface LearnedSkillUsageRecord {
-  sessionId?: string;
-  skillName: string;
-  outcome: LearnedSkillUsageOutcome;
-  trigger?: string;
-  note?: string;
-  errorMessage?: string;
-  occurredAt?: string;
-}
-
 export interface LearnedSkillRecallEntry {
   name: string;
   displayName: string;
@@ -146,19 +135,13 @@ export interface LearnedSkillRecallEntry {
 
 export interface LearnedSkillRecallPacket {
   entries: LearnedSkillRecallEntry[];
-  usageRecords: LearnedSkillUsageRecord[];
 }
 
 export type LearnedSkillRecallProvider = (input: {
   sessionId?: string;
-  usageRecords: readonly LearnedSkillUsageRecord[];
 }) => Promise<LearnedSkillRecallPacket>;
 
-export interface LearnedSkillToolResult {
-  ok: boolean;
-  text: string;
-  changed?: string[];
-}
+export type LearnedSkillToolResult = FileToolResult;
 
 export interface LearnedSkillTool {
   name: string;
@@ -198,7 +181,7 @@ export interface CreateLearnedSkillStoreOptions {
 export interface LearnedSkillStore {
   getLearnedSkillsCatalog(input?: { includeContent?: boolean }): Promise<LearnedSkillsCatalog>;
   createSkillCheckpoint(): Promise<LearnedSkillStoreCheckpoint>;
-  createSkillTools(checkpoint: LearnedSkillStoreCheckpoint): LearnedSkillTool[];
+  createFileTools(checkpoint: LearnedSkillStoreCheckpoint): LearnedSkillTool[];
   finalizeLearnedSkillChanges(input: {
     checkpoint: LearnedSkillStoreCheckpoint;
     sessionId: string;
@@ -453,15 +436,15 @@ export function createLearnedSkillStore(options: CreateLearnedSkillStoreOptions)
         skillsRoot,
         checkpointRoot,
       }),
-    createSkillTools: (checkpoint) =>
-      createLearnedSkillTools({
+    createFileTools: (checkpoint) =>
+      createLearnedSkillFileTools({
         checkpoint,
-        forbiddenPublicNames,
       }),
-    finalizeLearnedSkillChanges: async ({ checkpoint }) => {
+    finalizeLearnedSkillChanges: async ({ checkpoint, learningSummary }) => {
       const result = await finalizeLearnedSkillStoreCheckpoint({
         checkpoint,
         forbiddenPublicNames,
+        learningSummary,
       });
       return {
         changedSkills: result.changedSkills.map((skill) => skill.name),
@@ -478,14 +461,11 @@ export function createLearnedSkillRecallProvider(input: {
   skillsRoot: string;
   forbiddenPublicNames?: readonly string[];
 }): LearnedSkillRecallProvider {
-  return async ({ sessionId, usageRecords }) => {
+  return async () => {
     const catalog = await getLearnedSkillsCatalog({
       skillsRoot: input.skillsRoot,
       forbiddenPublicNames: input.forbiddenPublicNames,
     });
-    const scopedUsageRecords = usageRecords
-      .filter((record) => record.sessionId === undefined || sessionId === undefined || record.sessionId === sessionId)
-      .map((record) => ({ ...record }));
     return {
       entries: catalog.learnedSkills.map((entry) => ({
         name: entry.name,
@@ -494,13 +474,12 @@ export function createLearnedSkillRecallProvider(input: {
         relativePath: entry.relativePath,
         triggerHints: deriveTriggerHints(entry),
       })),
-      usageRecords: scopedUsageRecords,
     };
   };
 }
 
 export function buildLearnedSkillPrelude(packet: LearnedSkillRecallPacket): string {
-  if (packet.entries.length === 0 && packet.usageRecords.length === 0) return "";
+  if (packet.entries.length === 0) return "";
 
   const lines = ["<system-reminder>", "## 可用技能", ""];
   if (packet.entries.length === 0) {
@@ -512,18 +491,6 @@ export function buildLearnedSkillPrelude(packet: LearnedSkillRecallPacket): stri
       if (entry.triggerHints.length > 0) {
         lines.push(`  triggers: ${entry.triggerHints.join(", ")}`);
       }
-    }
-  }
-
-  if (packet.usageRecords.length > 0) {
-    lines.push("", "## 最近技能使用信号", "");
-    for (const record of packet.usageRecords) {
-      const detail = [
-        record.trigger ? `trigger=${record.trigger}` : "",
-        record.note ? `note=${record.note}` : "",
-        record.errorMessage ? `error=${record.errorMessage}` : "",
-      ].filter(Boolean);
-      lines.push(`- ${record.skillName}: ${record.outcome}${detail.length > 0 ? ` (${detail.join("; ")})` : ""}`);
     }
   }
 
@@ -573,90 +540,33 @@ async function createLearnedSkillStoreCheckpoint(input: {
     rootExisted,
     beforeFiles,
   };
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await writeStoreCheckpointManifest(manifestPath, manifest);
 
   return { checkpointId, checkpointDir, manifestPath };
 }
 
-function createLearnedSkillTools(input: {
+function createLearnedSkillFileTools(input: {
   checkpoint: LearnedSkillStoreCheckpoint;
-  forbiddenPublicNames: readonly string[];
 }): LearnedSkillTool[] {
-  return [
-    {
-      name: "skill_list",
-      description: "List staged MemScribe learned skills.",
-      inputSchema: {
-        type: "object",
-        properties: {},
-        additionalProperties: false,
-      },
-      handler: async () => {
-        const manifest = await readStoreCheckpointManifest(input.checkpoint.manifestPath);
-        const catalog = await getLearnedSkillsCatalog({
-          skillsRoot: manifest.stageRoot,
-          forbiddenPublicNames: input.forbiddenPublicNames,
-        });
-        return { ok: true, text: JSON.stringify(catalog.learnedSkills, null, 2) };
-      },
+  return createCoreFileTools().map((tool) => bindStageFileTool(tool, input.checkpoint));
+}
+
+function bindStageFileTool(tool: FileTool, checkpoint: LearnedSkillStoreCheckpoint): LearnedSkillTool {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    handler: async (args) => {
+      const manifest = await readStoreCheckpointManifest(checkpoint.manifestPath);
+      return tool.handler(args, { root: manifest.stageRoot, mode: "files" });
     },
-    {
-      name: "skill_read",
-      description: "Read one staged learned skill file.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          skillName: { type: "string" },
-          relativePath: { type: "string" },
-        },
-        required: ["skillName", "relativePath"],
-        additionalProperties: false,
-      },
-      handler: async (args) => {
-        const { skillName, relativePath } = parseSkillFileArgs(args);
-        const manifest = await readStoreCheckpointManifest(input.checkpoint.manifestPath);
-        const filePath = resolveStageSkillFile(manifest.stageRoot, skillName, relativePath);
-        return { ok: true, text: await readFile(filePath, "utf8") };
-      },
-    },
-    {
-      name: "skill_write",
-      description: "Write one staged learned skill file. Changes are committed only after finalize validation.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          skillName: { type: "string" },
-          relativePath: { type: "string" },
-          content: { type: "string" },
-        },
-        required: ["skillName", "relativePath", "content"],
-        additionalProperties: false,
-      },
-      handler: async (args) => {
-        const { skillName, relativePath } = parseSkillFileArgs(args);
-        const content = parseStringField(args, "content");
-        const manifest = await readStoreCheckpointManifest(input.checkpoint.manifestPath);
-        const filePath = resolveStageSkillFile(manifest.stageRoot, skillName, relativePath);
-        const bytes = new TextEncoder().encode(content);
-        if (SUPPORTING_DIRS.some((dir) => relativePath.startsWith(`${dir}/`))) {
-          if (bytes.byteLength === 0) {
-            throw new LearnedSkillValidationError(`supporting file must be non-empty: ${relativePath}`);
-          }
-          if (bytes.byteLength > MAX_SUPPORTING_FILE_BYTES) {
-            throw new LearnedSkillValidationError(`supporting file exceeds 1048576 bytes: ${relativePath}`);
-          }
-        }
-        await mkdir(path.dirname(filePath), { recursive: true });
-        await writeFile(filePath, content, "utf8");
-        return { ok: true, text: `wrote ${skillName}/${relativePath}`, changed: [`${skillName}/${relativePath}`] };
-      },
-    },
-  ];
+  };
 }
 
 async function finalizeLearnedSkillStoreCheckpoint(input: {
   checkpoint: LearnedSkillStoreCheckpoint;
   forbiddenPublicNames: readonly string[];
+  learningSummary?: unknown;
 }): Promise<LearnedSkillChangeSet> {
   const manifest = await readStoreCheckpointManifest(input.checkpoint.manifestPath);
   const currentBeforeFinalize = await listFileFingerprints(manifest.skillsRoot);
@@ -667,11 +577,24 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
 
   const stagedFiles = await listFileFingerprints(manifest.stageRoot);
   const stagedDiff = diffFingerprints(manifest.beforeFiles, stagedFiles);
-  if (stagedDiff.deletedPaths.length > 0) {
-    throw new FinalizeSafetyError(`finalize refuses deleted learned skill paths: ${stagedDiff.deletedPaths.join(", ")}`);
+  const allowedDeletedSkills = allowedMergedSkills(input.learningSummary);
+  const deletedSkillNames = [...new Set(stagedDiff.deletedPaths.map((relativePath) => relativePath.split("/")[0] ?? ""))]
+    .filter(Boolean)
+    .sort();
+  for (const skillName of deletedSkillNames) {
+    if (!allowedDeletedSkills.has(skillName)) {
+      throw new FinalizeSafetyError(`finalize refuses deleted learned skill paths outside mergedSkills: ${skillName}`);
+    }
+    const beforeSkillFiles = manifest.beforeFiles.filter((file) => isInSkillDir(file.relativePath, skillName));
+    const deletedSkillFiles = stagedDiff.deletedPaths.filter((relativePath) => isInSkillDir(relativePath, skillName));
+    const changedDeletedSkillFiles = stagedDiff.changedPaths.filter((relativePath) => isInSkillDir(relativePath, skillName));
+    if (beforeSkillFiles.length !== deletedSkillFiles.length || changedDeletedSkillFiles.length > 0) {
+      throw new FinalizeSafetyError(`finalize refuses partial learned skill deletion: ${skillName}`);
+    }
   }
 
-  const changedSkillNames = [...new Set(stagedDiff.changedPaths.map((relativePath) => relativePath.split("/")[0] ?? ""))]
+  const changedFiles = [...stagedDiff.changedPaths, ...stagedDiff.deletedPaths].sort();
+  const changedSkillNames = [...new Set(changedFiles.map((relativePath) => relativePath.split("/")[0] ?? ""))]
     .filter(Boolean)
     .sort();
   const illegalDir = changedSkillNames.find((name) => !isLearnedSkillDirName(name));
@@ -682,14 +605,23 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
   const changedSkills: LearnedSkillChange[] = [];
   try {
     for (const skillName of changedSkillNames) {
+      if (deletedSkillNames.includes(skillName)) {
+        changedSkills.push({
+          name: skillName,
+          changedFiles: stagedDiff.deletedPaths.filter((relativePath) => isInSkillDir(relativePath, skillName)),
+          supportingFiles: [],
+        });
+        await rm(path.join(manifest.skillsRoot, skillName), { recursive: true, force: true });
+        continue;
+      }
       const stagedSkillDir = path.join(manifest.stageRoot, skillName);
       const validated = await validateLearnedSkillDirectory(stagedSkillDir, input.forbiddenPublicNames);
-      const changedFiles = stagedDiff.changedPaths
+      const skillChangedFiles = stagedDiff.changedPaths
         .filter((relativePath) => isInSkillDir(relativePath, skillName))
         .sort();
       changedSkills.push({
         name: skillName,
-        changedFiles,
+        changedFiles: skillChangedFiles,
         supportingFiles: supportingFilesFromValidated(validated),
       });
       await rm(path.join(manifest.skillsRoot, skillName), { recursive: true, force: true });
@@ -702,7 +634,7 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
 
   return {
     changedSkills,
-    changedFiles: stagedDiff.changedPaths,
+    changedFiles,
   };
 }
 
@@ -807,6 +739,30 @@ async function readStoreCheckpointManifest(manifestPath: string): Promise<StoreC
   return parsed;
 }
 
+function allowedMergedSkills(learningSummary: unknown): Set<string> {
+  const coordination = learningSummary && typeof learningSummary === "object"
+    ? (learningSummary as { coordination?: unknown }).coordination
+    : null;
+  if (!coordination || typeof coordination !== "object" || Array.isArray(coordination)) {
+    return new Set();
+  }
+  const record = coordination as { decision?: unknown; mergedSkills?: unknown };
+  if (record.decision !== "merge" || !Array.isArray(record.mergedSkills)) {
+    return new Set();
+  }
+  const out = new Set<string>();
+  for (const skillName of record.mergedSkills) {
+    if (typeof skillName === "string" && isLearnedSkillDirName(skillName)) {
+      out.add(skillName);
+    }
+  }
+  return out;
+}
+
+async function writeStoreCheckpointManifest(manifestPath: string, manifest: StoreCheckpointManifest): Promise<void> {
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 function parseStringField(args: unknown, key: string): string {
   const record = args && typeof args === "object" && !Array.isArray(args)
     ? args as Record<string, unknown>
@@ -819,14 +775,19 @@ function parseStringField(args: unknown, key: string): string {
 }
 
 function parseSkillFileArgs(args: unknown): { skillName: string; relativePath: string } {
-  const skillName = parseStringField(args, "skillName");
-  if (!isLearnedSkillDirName(skillName)) {
-    throw new LearnedSkillValidationError(`skillName must be ${LEARNED_SKILL_DIR_PREFIX}<slug>`);
-  }
+  const skillName = parseSkillNameField(args, "skillName");
   const relativePath = normalizeSkillRelativePath(parseStringField(args, "relativePath"));
   assertAllowedSkillPath(relativePath);
   assertSafeFileName(relativePath);
   return { skillName, relativePath };
+}
+
+function parseSkillNameField(args: unknown, key: string): string {
+  const skillName = parseStringField(args, key);
+  if (!isLearnedSkillDirName(skillName)) {
+    throw new LearnedSkillValidationError(`${key} must be ${LEARNED_SKILL_DIR_PREFIX}<slug>`);
+  }
+  return skillName;
 }
 
 function resolveStageSkillFile(stageRoot: string, skillName: string, relativePath: string): string {

@@ -57,12 +57,12 @@ updated_at: 2026-06-15T...
 
 ### 提取(extract)
 - 默认在 **turn end** 触发(after-turn):锁 → 游标窗口 → 跑提取子代理(子代理用写工具直接落盘)→ 索引同步 → 推进游标。
-- **核心不调 LLM**:注入点是 `ExtractionAgentRunner`;核心把记忆工具(`memory_list` / `memory_search` / `memory_read` / `memory_save` / `memory_update` / `memory_archive`,均绑定在持有的写锁内)、对话窗口、现有记忆 manifest 交给它,子代理多轮自主调工具直接写文件,返回 `{ changed }`。可用自带默认子代理(`createExtractionAgentRunner({ toolCompletion })` + 内置 `createToolCompletion()` 工具补全),也可宿主自供;没配就跳过。
-- 冲突:子代理可先 `memory_list` 再决定 add 还是 update;仅在用户显式纠正时 `memory_archive` 旧记忆、写新记忆。
+- **核心不调 LLM**:注入点是 `ExtractionAgentRunner`;核心把记忆工具(`glob` / `grep` / `read` / `write` / `edit` / `bash`,均绑定在持有的写锁内)、对话窗口、现有记忆 manifest 交给它,子代理多轮自主调工具直接写文件,返回 `{ changed }`。可用自带默认子代理(`createExtractionAgentRunner({ model })` + `@memscribe/model` canonical model),也可宿主自供;没配就显式 recall-only 或构造失败。
+- 冲突:子代理可先 `glob` 再决定 add 还是 update;仅在用户显式纠正时 `bash` 旧记忆、写新记忆。
 
 ### 整理(dream)
 - idle/scheduled 的 consolidation,不是普通总结:health / type / path / duplicate / conflict / compress。
-- 确定性结构预处理先行(删除正文完全相同的重复、把放错目录的文件搬迁回声明类型,无 LLM);随后由 `dreamRunner`(`DreamAgentRunner`,tool-calling 子代理)读全文后用记忆工具(`memory_list` / `memory_search` / `memory_read` / `memory_save` / `memory_update` / `memory_archive`)直接整理落盘——工具调用本身即改动,无 JSON ops、无 parser;每步原子写 + 审计。不再有 frontmatter 稳定化那一套(工具自带校验,且 `memory_update` 默认保留 frontmatter)。
+- 确定性结构预处理先行(删除正文完全相同的重复、把放错目录的文件搬迁回声明类型,无 LLM);随后由 `dreamRunner`(`DreamAgentRunner`,tool-calling 子代理)读全文后用记忆工具(`glob` / `grep` / `read` / `write` / `edit` / `bash`)直接整理落盘——工具调用本身即改动,无 JSON ops、无 parser;每步原子写 + 审计。不再有 frontmatter 稳定化那一套(工具自带校验,且 `edit` 默认保留 frontmatter)。
 
 ## 安全与可靠性
 
@@ -74,7 +74,7 @@ updated_at: 2026-06-15T...
 
 | 入口 | 形态 | 说明 |
 | --- | --- | --- |
-| **MCP** | stdio server | 工具仅 `memory_context` / `memory_read` / `memory_save`(**无 search**);resources `memscribe://index|manifest`;prompt `memscribe.with_memory` |
+| **MCP** | stdio server | 工具仅 `memscribe.with_memory` / `write`(**无 read/search**);主 Agent 读完整记忆走宿主 Read/file 工具;resources `memscribe://index|manifest`;prompt `memscribe.with_memory` |
 | **SDK** | `createMemScribe(config)` | 生命周期 hooks:`onSessionStart` / `onPromptBuild` / `onTurnEnd` / `onSessionEnd` / `onAgentEnd` / `onIdle`;两个注入点 `agent`(ExtractionAgentRunner)、`dreamRunner`(DreamAgentRunner) |
 | **CLI** | `memscribe <cmd>` | `init` / `list` / `read` / `context` / `write` / `doctor` / `rebuild-index` / `dream plan|apply` / `mcp` |
 | **adapters** | 宿主生命周期映射 | `hermes` / `opencode` / `openclaw` / `pi` / `codex` / `claude-code`,install 走 plan/apply + 真 round-trip verify |
@@ -83,7 +83,7 @@ updated_at: 2026-06-15T...
 
 - **5 包 build 全过,测试全绿**(core / sdk / adapters / mcp-server / cli)。
 - **零运行时依赖**。
-- 自带默认提取子代理与默认 dream 整理子代理(两者共用同一 `toolCompletion` 通道,默认系统提示在 core,工厂 `createExtractionAgentRunner` / `createDreamAgentRunner` 在 sdk),给一个 API key 即可开箱跑提取与整理。
+- 自带默认提取子代理与默认 dream 整理子代理(两者共用同一 canonical model 通道,默认系统提示在 core,工厂 `createExtractionAgentRunner` / `createDreamAgentRunner` 在 sdk,OpenAI-compatible mapper 在 `@memscribe/model`),宿主可直接注入自身模型能力。
 - OpenClaw / Hermes / Pi 三家直接集成示例见 `examples/`。
 - 设计蓝图见 `docs/BLUEPRINT.md`。
 

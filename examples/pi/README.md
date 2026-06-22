@@ -1,15 +1,15 @@
 # Pi integration example
 
 Real integration: a Pi `.js`/`.mjs` extension wraps Pi's per-session auxiliary
-tool-calling completion into a `toolCompletion`, builds the scribe with
-`createHostMemScribe`, and attaches the `pi` adapter so the lifecycle fires on Pi's
-events. Extraction is a tool-calling subagent loop that writes memory files
-directly.
+tool-calling completion into `createPiHarnessPort(pi)`, builds the scribe with
+`createMemScribeHarnessRuntime({ port })`, and attaches the `pi` adapter so the
+lifecycle fires on Pi's events. Extraction is a tool-calling subagent loop that
+writes memory files directly.
 
 ## Files
 
 - `extension.mjs` — the Pi extension entry (`export default function(pi)`): wraps
-  `pi.auxiliaryComplete` as `toolCompletion`, builds the scribe, `piAdapter.attach`.
+  Pi as a `HostHarnessPort`, builds the scribe, `piAdapter.attach`.
 - `run.mjs` — a mock Pi host driving session:ensure → turn:build → agent_end →
   learning:idle, printing `MEMORY.md`, then `connect` (install + verify).
 
@@ -32,5 +32,6 @@ pnpm -r build
 USE_FAKE=1 node examples/pi/run.mjs
 ```
 
-Real model: drop `USE_FAKE` and set `MEMSCRIBE_LLM_API_KEY` (the example falls
-back to the default fetch tool-completion when Pi's own channel is not in scope).
+Real model: a real Pi process should expose `completeSimple` (or equivalent) to
+`createPiHarnessPort(pi)`. The standalone smoke can use `MEMSCRIBE_LLM_*` through
+the OpenAI-compatible mapper when Pi's own process is not in scope.

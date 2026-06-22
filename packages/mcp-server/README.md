@@ -1,10 +1,10 @@
 # @memscribe/mcp-server
 
 A stdio [Model Context Protocol](https://modelcontextprotocol.io) server over
-[`@memscribe/core`](https://www.npmjs.com/package/@memscribe/core). It exposes a deliberately minimal memory surface:
-the full memory index as a context prelude, single-document reads, and explicit
-saves. There is **no search tool** — MemScribe injects the whole index and lets
-the caller decide what to read (no retrieval, ranking, or embeddings).
+[`@memscribe/core`](https://www.npmjs.com/package/@memscribe/core). It exposes
+root-bound ordinary file tools plus prompt/resources for memory recall. The full
+index is available through `memscribe.with_memory` and `memscribe://index`; file
+changes go through `read` / `write` / `edit` / `bash` / `glob` / `grep`.
 
 Zero runtime dependencies (Node stdlib + `@memscribe/core` only). Transport is
 newline-delimited JSON-RPC 2.0 over stdin/stdout.
@@ -32,26 +32,26 @@ The memory root resolves via `MEMSCRIBE_HOME`, else the OS data directory
 
 ## Tools
 
-| Tool             | Purpose                                                                 |
-| ---------------- | ----------------------------------------------------------------------- |
-| `memory_context` | Return the full prelude: stable recall rules + the complete `MEMORY.md` index. No arguments. |
-| `memory_read`    | Read one memory document body by `relativePath` (e.g. `context/project.md`). Returns the body without frontmatter. |
-| `memory_save`    | Create/overwrite one memory document. `<private>` redaction and MCP's hard-secret refusal are enforced; the index is re-synced. |
+| Tool | Purpose |
+| --- | --- |
+| `read` | Read a file or directory under the memory root. |
+| `write` | Write a typed memory Markdown file; validation, privacy redaction, secret refusal, atomic write, audit, and index sync are enforced. |
+| `edit` | Exact string replacement in one file under the memory root. |
+| `bash` | Run a shell command under the memory root, mainly for archival moves. |
+| `glob` | Match files by glob pattern. |
+| `grep` | Search file contents by regular expression. |
 
-`memory_save` arguments:
+`write` arguments:
 
 ```jsonc
 {
-  "type": "preference",      // identity | preference | style | workflow | context | ambient
-  "name": "语气偏好",         // single-line frontmatter title
-  "description": "简洁",      // optional single-line summary
-  "body": "回答要简洁直接"     // markdown body
+  "filePath": "preference/语气偏好.md",
+  "content": "---\ntype: preference\nname: 语气偏好\ndescription: 简洁\n---\n\n回答要简洁直接\n"
 }
 ```
 
-The filename is derived from `name` by the core writer.
-
-There is intentionally no `memory_search` tool.
+Prompt recall uses `prompts/get` with `memscribe.with_memory`; raw index and
+manifest are also available as MCP resources.
 
 ## Resources
 

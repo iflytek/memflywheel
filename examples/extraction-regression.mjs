@@ -1,6 +1,6 @@
 /**
  * Real-model regression for the extraction subagent via tool-calling.
- * Wraps every memory tool to log the subagent's real tool calls (name + args +
+ * Wraps every ordinary file tool to log the subagent's real tool calls (name + args +
  * result), then drives multi-round scenarios that exercise the full
  * locate -> read -> save/update(append)/archive flow, plus noise & privacy.
  */
@@ -8,28 +8,27 @@ import { mkdtemp, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  createMemoryTools,
-  createToolCompletion,
+  createFileTools,
   runExtractionAgent,
   buildExtractionAgentUserMessage,
 } from "@memscribe/sdk";
+import { createAuditLogger, createMemoryFileToolContext, formatManifest, scanMemoryFiles } from "@memscribe/core";
+import { createOpenAIChatCompletionsModel } from "@memscribe/model";
 
 const root = await mkdtemp(path.join(tmpdir(), "memscribe-rr-"));
-const toolCtx = { ctx: { root, audit: { append: async () => {} } } };
+const toolCtx = createMemoryFileToolContext({ ctx: { root, audit: createAuditLogger(root) } });
 
 const trace = [];
-const tools = createMemoryTools().map((t) => ({
+const tools = createFileTools().map((t) => ({
   ...t,
-  handler: async (args, tc) => {
+  handler: async (args, tc = toolCtx) => {
     const res = await t.handler(args, tc);
     trace.push({ tool: t.name, args, ok: res.ok, text: res.text });
     return res;
   },
 }));
-const listTool = tools.find((t) => t.name === "memory_list");
 
-const toolCompletion = createToolCompletion({
-  provider: "openai",
+const model = createOpenAIChatCompletionsModel({
   endpoint: process.env.MEMSCRIBE_LLM_ENDPOINT,
   apiKey: process.env.MEMSCRIBE_LLM_API_KEY,
   model: process.env.MEMSCRIBE_LLM_MODEL,
@@ -37,7 +36,7 @@ const toolCompletion = createToolCompletion({
 const highRiskCardNumber = "62" + "22 0212 3456 7890";
 
 async function manifest() {
-  return (await listTool.handler({}, toolCtx)).text;
+  return formatManifest(await scanMemoryFiles(root));
 }
 
 async function listMemoryFiles() {
@@ -61,7 +60,7 @@ async function scenario(label, messages, opts = {}) {
     console.log(`\n----- 折叠后喂给模型的提取上下文 (${label}) -----`);
     console.log(convo.split("\n").map((l) => "  | " + l).join("\n"));
   }
-  const result = await runExtractionAgent({ toolCompletion, tools, toolCtx, messages, manifest: m, maxSteps: 10 });
+  const result = await runExtractionAgent({ model, tools, toolCtx, messages, manifest: m, maxSteps: 10 });
   console.log(`\n===== ${label} =====`);
   console.log(`steps=${result.steps}  stopped=${result.stoppedReason}  tool-calls=${result.toolCalls.length}`);
   for (const c of trace.slice(start)) {

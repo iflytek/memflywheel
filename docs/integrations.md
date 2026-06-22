@@ -28,20 +28,19 @@ atomic writes, index sync, relocation, privacy, audit. See [`recall.md`](recall.
 Both model-driven steps ship with a working default, so a host does not have to author the
 "what is worth remembering" prompt or wire the loop:
 
-- The core owns a curated default extraction **system prompt** plus the **memory tools**
-  (`createMemoryTools()`: `memory_list` / `memory_search` / `memory_read` /
-  `memory_save` / `memory_update` / `memory_archive`),
+- The core owns a curated default extraction **system prompt** plus the **ordinary file tools**
+  (`createFileTools()`: `glob` / `grep` / `read` /
+  `write` / `edit` / `bash`),
   and ships a default consolidation **system prompt** for dream too. The core makes no network call.
 - The SDK assembles them into running functions via
-  `createExtractionAgentRunner({ toolCompletion })` and `createDreamAgentRunner({ toolCompletion })`.
-  A single `toolCompletion` channel — the tool-aware LLM channel — drives both subagents. Each
+  `createExtractionAgentRunner({ model })` and `createDreamAgentRunner({ model })`.
+  A single canonical model channel drives both subagents. Each
   runner drives a tool-calling subagent that reads full memory bodies and writes the memory
   files itself through the tools.
-- The SDK also ships `createToolCompletion()`, a built-in tool completion built on Node's
+- `@memscribe/model` ships `createOpenAIChatCompletionsModel()`, a mapper built on Node's
   global `fetch` that targets an OpenAI-compatible `/chat/completions` endpoint with a `tools`
-  array, reading provider / endpoint / key / model from the environment (`MEMSCRIBE_LLM_*`).
-  With one API key, extraction runs out of the box. An adapter wraps its host's own LLM channel
-  into a `ToolCompletion` instead.
+  array, reading endpoint / key / model from the environment (`MEMSCRIBE_LLM_*`). A native
+  adapter should wrap its host's own LLM channel into `CanonicalModelCompletion` instead.
 
 ## SDK (`@memscribe/sdk`)
 
@@ -60,24 +59,24 @@ Each adapter's job is narrow: hook the host's turn-start to inject the two recal
 hook the host's turn-completion to trigger extraction with that host's message format mapped
 to `ExtractionMessage[]`, and hook an idle/scheduled signal to trigger dream. The
 host-specific concerns (where the system prompt and prelude are placed, how messages and
-session ids are read, how the host's LLM channel is wrapped into a `ToolCompletion` for the default
-extraction/dream subagents) live in the adapter; the memory semantics stay in the core. `connect`
-installs the host-side wiring and round-trip-verifies it from disk.
+session ids are read, how the host exposes a `HostHarnessPort` / `CanonicalModelCompletion`)
+live in the adapter; the memory semantics stay in the core. `connect` installs the host-side
+wiring and round-trip-verifies it from disk.
 
 Runnable minimal integrations live under [`../examples/`](../examples/), showing
-the full path: wrap the host LLM into a `ToolCompletion`,
-build the default extraction and dream subagents, mount the lifecycle, and install + verify the wiring.
+the full path: expose a canonical model or explicit recall-only mode, build the default
+extraction and dream subagents, mount the lifecycle, and install + verify the wiring.
 
 ## MCP server (`@memscribe/mcp-server`)
 
 For hosts that speak MCP, MemScribe exposes a deliberately minimal tool surface. There is **no
-search tool**, because there is no lexical retrieval.
+read or search tool**, because recall reads should go through the host filesystem surface and
+there is no lexical retrieval.
 
 | Tool | Maps to | Purpose |
 |---|---|---|
-| `memory_context` | `buildContext` | Return the full-index recall prelude for the current turn. |
-| `memory_read` | `readMemoryDocument` | Read one memory body by its relative path. |
-| `memory_save` | `writeMemoryDocument` (privacy + atomic + audit) | Explicitly save a memory. |
+| `memscribe.with_memory` | `buildContext` | Return the full-index recall prelude for the current turn. |
+| `write` | `writeMemoryDocument` (privacy + atomic + audit) | Explicitly save a memory. |
 
 Inspection and maintenance commands (`doctor`, `dream`, `rebuild-index`) are intentionally **not**
 MCP tools — they live in the CLI.
@@ -100,6 +99,6 @@ The CLI is for operators and scripts working directly against a memory root:
 
 - **Native host runtime** → use the SDK plus the matching adapter; you supply the `ExtractionAgentRunner`
   and `DreamAgentRunner`.
-- **Any MCP-capable host** → run the MCP server and expose `memory_context` / `memory_read` /
-  `memory_save`; run `doctor` / `dream` / `rebuild-index` out of band via the CLI.
+- **Any MCP-capable host** → run the MCP server and expose `memscribe.with_memory` /
+  `write`; let the host read selected Markdown files through its own filesystem tools, and run `doctor` / `dream` / `rebuild-index` out of band via the CLI.
 - **Scripts and operations** → use the CLI directly against a memory root.

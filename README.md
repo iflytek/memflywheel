@@ -23,18 +23,18 @@ hosts.
   (a "suggest verification" hint is appended in the index); the rest are permanent.
 - **Batteries-included extraction.** MemScribe ships a high-quality default extraction prompt
   (what is worth remembering, what is forbidden, the six types, privacy redaction) plus the
-  memory tools (`memory_list` / `memory_search` / `memory_read` / `memory_save` /
-  `memory_update` / `memory_archive`) the
+  ordinary file tools (`glob` / `grep` / `read` / `write` /
+  `edit` / `bash`) the
   extraction subagent drives. The core stays mechanical — it holds the prompt string and the
   write tools but *never* calls an LLM; the SDK's
-  `createExtractionAgentRunner({ toolCompletion })` factory and a built-in fetch-based tool
-  completion assemble the default prompt, the model loop, and the tools into a ready-to-run
-  subagent that writes memory files itself. Dream consolidation is the same kind of
-  tool-calling subagent, shipped via `createDreamAgentRunner({ toolCompletion })`.
+  `createExtractionAgentRunner({ model })` factory consumes a provider-neutral canonical
+  model channel and assembles the default prompt, the model loop, and the tools into a
+  ready-to-run subagent that writes memory files itself. Dream consolidation is the same
+  kind of tool-calling subagent, shipped via `createDreamAgentRunner({ model })`.
 - **LLM steps stay pluggable.** The core never calls an LLM; the model-driven steps enter
   only through injected `ExtractionAgentRunner` and `DreamAgentRunner` contracts — both
-  tool-calling subagents over a single `toolCompletion` channel. Supply your own, or use the
-  built-in defaults.
+  tool-calling subagents over a single canonical model channel. Supply a host-owned model
+  port, or use one of the provider mappers in `@memscribe/model`.
 - **Adapter- and MCP-first.** MemScribe is meant to be wired into an existing agent runtime
   via host lifecycle adapters or exposed over MCP, not to be a standalone product.
 - **Skills are host-executed.** MemScribe can store, validate, route, and evolve learned
@@ -50,8 +50,8 @@ hosts.
 - **No extra frontmatter fields.** Only `name` / `description` / `type` (plus minimal
   `created_at` / `updated_at`). No `origin` / `source_ref` / `confidence` / `status` /
   `agent` / `project` / `session`.
-- **No standalone `search` tool.** The MCP surface exposes context / read / save only;
-  inspection and maintenance live in the CLI.
+- **No MemScribe-specific read/search wrapper.** MCP exposes ordinary root-bound
+  file tools; recall context is delivered through prompt/resources.
 - **No default skill injection in CLI/MCP.** CLI and MCP are memory-facing surfaces unless
   a host explicitly wires learned-skill recall through the SDK hooks.
 
@@ -60,17 +60,18 @@ hosts.
 | Package | Role |
 |---|---|
 | `@memscribe/core` | Memory kernel: storage, derived index, recall, extraction, dream, privacy, locking, atomic writes, audit. No LLM, no host coupling. |
-| `@memscribe/sdk` | Lifecycle hooks and wiring for the `ExtractionAgentRunner` / `DreamAgentRunner` injection points, the `createExtractionAgentRunner` / `createDreamAgentRunner` factories, and a built-in fetch-based tool completion (OpenAI-compatible). |
+| `@memscribe/model` | Provider-neutral tool-calling model protocol plus provider mappers, including OpenAI-compatible Chat Completions. |
+| `@memscribe/sdk` | Lifecycle hooks and wiring for the `ExtractionAgentRunner` / `DreamAgentRunner` injection points and the `createExtractionAgentRunner` / `createDreamAgentRunner` factories. |
 | `@memscribe/skills` | File-native learned skill store with staging, strict validation, prompt recall, finalize, and rollback. |
 | `@memscribe/cli` | `context` / `list` / `read` / `write` / `doctor` / `dream` / `rebuild-index`. |
-| `@memscribe/mcp-server` | MCP tools: `memory_context` / `memory_read` / `memory_save`. |
+| `@memscribe/mcp-server` | MCP prompt/resources for recall plus ordinary root-bound file tools (`read` / `write` / `edit` / `bash` / `glob` / `grep`). |
 | `@memscribe/adapters` | Host lifecycle mappings for selected agent runtimes. |
 
 ## Default extraction subagent (give it one API key)
 
 MemScribe does not leave the "what is worth remembering" judgment as an empty injection point.
 It ships that judgment as the default extraction subagent: a curated extraction system prompt
-plus the memory write tools the subagent calls to write files itself. The core owns both as
+plus the ordinary file tools the subagent calls to write files itself. The core owns both as
 pure values (a prompt string and the tool handlers) and never makes a network call. The SDK
 turns them into a running tool-calling subagent:
 
@@ -79,29 +80,29 @@ import { createMemScribe } from "@memscribe/sdk";
 import {
   createExtractionAgentRunner,
   createDreamAgentRunner,
-  createToolCompletion,
 } from "@memscribe/sdk";
+import { createOpenAIChatCompletionsModel } from "@memscribe/model";
 
-// `createToolCompletion()` is the tool-aware LLM channel: it reads provider /
-// endpoint / key / model from the env (MEMSCRIBE_LLM_*) and calls an
-// OpenAI-compatible /chat/completions with a tools array. One channel drives
-// BOTH subagents — extraction and dream consolidation.
-const toolCompletion = createToolCompletion();
+// The canonical model reads endpoint / key / model from MEMSCRIBE_LLM_* and maps
+// OpenAI-compatible /chat/completions into MemScribe's provider-neutral protocol.
+// One channel drives BOTH subagents: extraction and dream consolidation.
+const model = createOpenAIChatCompletionsModel();
 const scribe = createMemScribe({
-  agent: createExtractionAgentRunner({ toolCompletion }),
-  dreamRunner: createDreamAgentRunner({ toolCompletion }),
+  agent: createExtractionAgentRunner({ model }),
+  dreamRunner: createDreamAgentRunner({ model }),
 });
 ```
 
-Supply your own `toolCompletion` to route through a host's existing LLM channel, or supply a
-fully custom `ExtractionAgentRunner` / `DreamAgentRunner` to replace the defaults entirely.
+Supply your own `CanonicalModelCompletion` to route through a host's existing model channel,
+or supply a fully custom `ExtractionAgentRunner` / `DreamAgentRunner` to replace the defaults
+entirely.
 
 ## Direct integrations
 
-The adapter package wires MemScribe into a host runtime: it wraps the host's own tool-calling
-LLM channel into a `toolCompletion`, feeds it to the default extraction subagent, mounts the
-full lifecycle (session start / prompt build / turn end / agent end / idle), and can install
-and round-trip-verify the host-side wiring. Runnable minimal integrations live under
+The adapter package wires MemScribe into a host runtime: it maps the host into a
+`HostHarnessPort` with capabilities, lifecycle hooks, telemetry, and a canonical model
+channel. `createMemScribeHarnessRuntime({ port })` feeds that model to the default extraction,
+dream, and optional skill-learning loops. Runnable minimal integrations live under
 [`examples/`](examples/).
 
 ## Supported hosts

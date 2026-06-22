@@ -9,50 +9,106 @@
  */
 
 import { clampSteps } from "./tool-agent.js";
-import {
-  type JsonSchemaObject,
-  type ToolCall,
-  type ToolCompletion,
-  type ToolMessage,
-  type ToolSpec,
-} from "./tool-completion.js";
+import type {
+  CanonicalModelCompletion,
+  CanonicalModelMessage,
+  CanonicalToolDefinition,
+  JsonSchemaObject,
+} from "@memscribe/model";
 
 const DEFAULT_MAX_STEPS = 12;
 const MAX_TOOL_RESULT_CHARS = 4000;
 
-export const SKILL_LEARN_DECISION_TOOL = "skill_learn_decide";
-
-export const DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT = `You are a learned-skill evolution agent. Your job is to improve durable executable methods by editing learned skills through the provided skill tools, then emit exactly one coordination packet through skill_learn_decide.
+export const DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT = `You are a learned-skill evolution agent. Your job is to improve durable executable methods by editing learned skills through ordinary file tools, then return exactly one final coordination packet as raw JSON.
 
 # Scope
 
-Review the supplied packet, learned skill index, observed skill usages, tool trajectory, artifact paths, and quality signals. Decide whether a reusable method should become a learned skill, update an existing learned skill, or stay as no change.
+Review the supplied packet, learned skill index, tool trajectory, artifact paths, and quality signals. Decide whether a reusable method should become a learned skill, update an existing learned skill, merge duplicate learned skills, or stay as no change.
 
 # Rules
 
-- Use skill tools for learned-skill file changes.
+- Use only the provided ordinary file tools: read, write, edit, bash, glob, grep.
+- All tool paths are relative to the staged learned-skills root.
 - decision=create or decision=update must change exactly one learned skill: the targetSkill named in the coordination packet.
+- decision=merge must write the merged content into targetSkill and delete every redundant skill directory listed in mergedSkills.
+- targetSkill and every learned skill directory must match memscribe-learned-<slug>. If the observed skill name is "release-runbook", convert it to "memscribe-learned-release-runbook" before writing files or deciding.
+- A created/updated/merged target learned skill package is invalid unless you write a non-empty SKILL.md at "<targetSkill>/SKILL.md". Supporting files under references/, scripts/, templates/, or assets/ are optional and never replace SKILL.md.
+- SKILL.md must start with strict YAML frontmatter containing exactly name, display_name, and description. The name value must equal targetSkill.
+- SKILL.md must include these sections: "## Use Cases", "## Procedure", and "## Guardrails". Procedure steps must be numbered with "1.", "2.", etc., not bullets.
 - decision=noop must not change any learned skill files.
 - Do not write memory files. If memory should be compressed after a skill update, set memoryAction=compress-memory and list the memoryTopics.
 - Keep public names generic; do not leak host project names into learned skills unless they are part of the user's actual requested skill.
-- If there is no durable reusable method, call skill_learn_decide with decision=noop and make no file changes.
+- If there is no durable reusable method, make no file changes and return a noop coordination packet.
+
+# Valid SKILL.md shape
+
+Use this structure for the required SKILL.md entrypoint, replacing names and content with the actual skill:
+
+---
+name: memscribe-learned-release-runbook
+display_name: Release Runbook
+description: Reusable procedure for safely running a release.
+---
+
+## Use Cases
+
+- Run this when the user asks to publish, release, or cut a version.
+
+## Procedure
+
+1. Build the workspace and stop on failure.
+2. Run the full test suite and stop on failure.
+3. Update release notes or changelog.
+4. Publish using the approved package command.
+5. Create and push the release tag.
+
+## Guardrails
+
+- Do not publish when build or tests fail.
+- Do not write secrets or private credentials into files.
 
 # Required final coordination packet
 
-Call skill_learn_decide exactly once with:
-- decision: create | update | noop
-- targetSkill: string for create/update, null for noop
+After all file changes are done, stop calling tools and make your final assistant content exactly this JSON object with no markdown fence and no surrounding prose:
+- decision: create | update | merge | noop
+- targetSkill: string for create/update/merge, null for noop
+- mergedSkills: string[]; non-empty only for merge
 - why: concise reason
 - memoryAction: compress-memory | noop
 - memoryTopics: string[]
 - supportingFiles: string[]`;
 
-export type SkillEvolutionDecision = "create" | "update" | "noop";
+export const LEARNED_SKILL_MD_TEMPLATE = `---
+name: memscribe-learned-release-runbook
+display_name: Release Runbook
+description: Reusable procedure for safely running a release.
+---
+
+## Use Cases
+
+- Run this when the user asks to publish, release, or cut a version.
+
+## Procedure
+
+1. Build the workspace and stop on failure.
+2. Run the full test suite and stop on failure.
+3. Update release notes or changelog.
+4. Publish using the approved package command.
+5. Create and push the release tag.
+
+## Guardrails
+
+- Do not publish when build or tests fail.
+- Do not write secrets or private credentials into files.
+`;
+
+export type SkillEvolutionDecision = "create" | "update" | "merge" | "noop";
 export type SkillEvolutionMemoryAction = "compress-memory" | "noop";
 
 export interface SkillEvolutionCoordinationPacket {
   decision: SkillEvolutionDecision;
   targetSkill: string | null;
+  mergedSkills: string[];
   why: string;
   memoryAction: SkillEvolutionMemoryAction;
   memoryTopics: string[];
@@ -91,7 +147,6 @@ export interface LearnedSkillChangeSet {
 export interface SkillEvolutionLearningSummary {
   coordination: SkillEvolutionCoordinationPacket;
   reviewPacket: unknown;
-  observedSkillUsages: unknown;
   toolTrajectory: unknown;
   artifactPaths: string[];
   qualitySignals: unknown;
@@ -106,15 +161,14 @@ export interface SkillEvolutionStore<TCheckpoint = unknown> {
     learningSummary: SkillEvolutionLearningSummary;
   }): Promise<LearnedSkillChangeSet>;
   rollbackSkillCheckpoint(checkpoint: TCheckpoint): Promise<void>;
-  createSkillTools(checkpoint: TCheckpoint): SkillEvolutionTool[];
+  createFileTools(checkpoint: TCheckpoint): SkillEvolutionTool[];
 }
 
 export interface RunSkillEvolutionAgentOptions<TCheckpoint = unknown> {
-  toolCompletion: ToolCompletion;
+  model: CanonicalModelCompletion;
   store: SkillEvolutionStore<TCheckpoint>;
   sessionId: string;
   reviewPacket: unknown;
-  observedSkillUsages: unknown;
   toolTrajectory: unknown;
   artifactPaths: string[];
   qualitySignals: unknown;
@@ -173,13 +227,13 @@ export function validateSkillEvolutionCoordinationPacket(
   const record = assertRecord(value, "coordination packet");
   assertExactKeys(
     record,
-    ["decision", "targetSkill", "why", "memoryAction", "memoryTopics", "supportingFiles"],
+    ["decision", "targetSkill", "mergedSkills", "why", "memoryAction", "memoryTopics", "supportingFiles"],
     "coordination packet",
   );
 
   const decision = record.decision;
-  if (decision !== "create" && decision !== "update" && decision !== "noop") {
-    throw new Error("coordination packet decision must be create, update, or noop");
+  if (decision !== "create" && decision !== "update" && decision !== "merge" && decision !== "noop") {
+    throw new Error("coordination packet decision must be create, update, merge, or noop");
   }
 
   const targetSkill = record.targetSkill;
@@ -193,6 +247,18 @@ export function validateSkillEvolutionCoordinationPacket(
 
   if (typeof record.why !== "string" || record.why.trim() === "") {
     throw new Error("coordination packet why must be a non-empty string");
+  }
+
+  const mergedSkills = assertStringArray(record.mergedSkills, "coordination packet mergedSkills");
+  if (decision === "merge") {
+    if (mergedSkills.length === 0) {
+      throw new Error("coordination packet merge decision must declare mergedSkills");
+    }
+    if (mergedSkills.includes(targetSkill as string)) {
+      throw new Error("coordination packet mergedSkills must not include targetSkill");
+    }
+  } else if (mergedSkills.length > 0) {
+    throw new Error("coordination packet mergedSkills is only allowed for merge");
   }
 
   const memoryAction = record.memoryAction;
@@ -214,16 +280,17 @@ export function validateSkillEvolutionCoordinationPacket(
     }
   } else {
     if (memoryAction !== "compress-memory") {
-      throw new Error("coordination packet create/update decision must use memoryAction=compress-memory");
+      throw new Error("coordination packet create/update/merge decision must use memoryAction=compress-memory");
     }
     if (memoryTopics.length === 0) {
-      throw new Error("coordination packet create/update decision must declare memoryTopics");
+      throw new Error("coordination packet create/update/merge decision must declare memoryTopics");
     }
   }
 
   return {
     decision,
     targetSkill: targetSkill as string | null,
+    mergedSkills,
     why: record.why,
     memoryAction,
     memoryTopics,
@@ -252,6 +319,24 @@ export function validateSkillEvolutionChangeSet(
     return changeSet;
   }
 
+  if (coordination.decision === "merge") {
+    const expected = new Set([coordination.targetSkill as string, ...coordination.mergedSkills]);
+    const actual = new Set(changeSet.changedSkills);
+    const sameSize = actual.size === expected.size;
+    const sameItems = [...expected].every((skillName) => actual.has(skillName));
+    if (!sameSize || !sameItems) {
+      throw new Error("merge decision must change targetSkill and every mergedSkills entry");
+    }
+    const outsideMergeSet = changeSet.changedFiles.find((relativePath) => {
+      const skillName = relativePath.split("/")[0] ?? "";
+      return !expected.has(skillName);
+    });
+    if (outsideMergeSet) {
+      throw new Error("merge decision changed files outside targetSkill or mergedSkills");
+    }
+    return changeSet;
+  }
+
   if (changeSet.changedSkills.length !== 1 || changeSet.changedFiles.length === 0) {
     throw new Error("create/update decision must change exactly one learned skill");
   }
@@ -268,36 +353,23 @@ export function validateSkillEvolutionChangeSet(
   return changeSet;
 }
 
-function toToolSpecs(tools: SkillEvolutionTool[]): ToolSpec[] {
+function toToolSpecs(tools: SkillEvolutionTool[]): CanonicalToolDefinition[] {
   return tools.map((tool) => ({
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      strict: true,
-      parameters: {
-        type: "object",
-        properties: tool.inputSchema.properties,
-        required: tool.inputSchema.required ?? [],
-        additionalProperties: false,
-      },
+    name: tool.name,
+    description: tool.description,
+    strict: true,
+    inputSchema: {
+      type: "object",
+      properties: tool.inputSchema.properties,
+      required: tool.inputSchema.required ?? [],
+      additionalProperties: false,
     },
   }));
-}
-
-function parseToolArguments(call: ToolCall): unknown {
-  if (!call.function.arguments) return {};
-  try {
-    return JSON.parse(call.function.arguments) as unknown;
-  } catch {
-    throw new Error(`invalid JSON arguments for skill tool ${call.function.name}`);
-  }
 }
 
 function buildSkillEvolutionUserMessage(input: {
   reviewPacket: unknown;
   learnedSkillIndex: LearnedSkillsCatalog;
-  observedSkillUsages: unknown;
   toolTrajectory: unknown;
   artifactPaths: string[];
   qualitySignals: unknown;
@@ -309,9 +381,6 @@ function buildSkillEvolutionUserMessage(input: {
     "# Learned skill index",
     JSON.stringify(input.learnedSkillIndex, null, 2),
     "",
-    "# Observed skill usages",
-    JSON.stringify(input.observedSkillUsages, null, 2),
-    "",
     "# Tool trajectory",
     JSON.stringify(input.toolTrajectory, null, 2),
     "",
@@ -321,46 +390,12 @@ function buildSkillEvolutionUserMessage(input: {
     "# Quality signals",
     JSON.stringify(input.qualitySignals, null, 2),
     "",
-    "Use skill tools if a learned skill must change, then call skill_learn_decide exactly once.",
+    "Use read/write/edit/bash/glob/grep if a learned skill must change. After tool work is complete, return the final coordination packet as strict raw JSON.",
   ].join("\n");
 }
 
-const DECISION_TOOL_SCHEMA: JsonSchemaObject = {
-  type: "object",
-  properties: {
-    decision: {
-      type: "string",
-      enum: ["create", "update", "noop"],
-      description: "create or update when exactly one learned skill changed; noop when no skill changed.",
-    },
-    targetSkill: {
-      anyOf: [{ type: "string" }, { type: "null" }],
-      description:
-        "For create/update, the exact learned skill directory name as a quoted JSON string. For noop, null.",
-    },
-    why: { type: "string", description: "Concise reason for the decision." },
-    memoryAction: {
-      type: "string",
-      enum: ["compress-memory", "noop"],
-      description: "compress-memory for create/update; noop for noop.",
-    },
-    memoryTopics: {
-      type: "array",
-      items: { type: "string" },
-      description: "Memory topics to compress after create/update; empty for noop.",
-    },
-    supportingFiles: {
-      type: "array",
-      items: { type: "string" },
-      description: "Relative learned-skill files that support the decision; empty for noop.",
-    },
-  },
-  required: ["decision", "targetSkill", "why", "memoryAction", "memoryTopics", "supportingFiles"],
-  additionalProperties: false,
-};
-
 async function runSkillToolLoop(input: {
-  toolCompletion: ToolCompletion;
+  model: CanonicalModelCompletion;
   tools: SkillEvolutionTool[];
   systemPrompt: string;
   seedUserMessage: string;
@@ -369,11 +404,12 @@ async function runSkillToolLoop(input: {
 }): Promise<{
   steps: number;
   toolCalls: string[];
+  finalContent: string | null;
   stoppedReason: "no-tool-calls" | "max-steps" | "aborted";
 }> {
   const maxSteps = clampSteps(typeof input.maxSteps === "number" ? input.maxSteps : DEFAULT_MAX_STEPS);
   const lookup = new Map(input.tools.map((tool) => [tool.name, tool]));
-  const messages: ToolMessage[] = [
+  const messages: CanonicalModelMessage[] = [
     { role: "system", content: input.systemPrompt },
     { role: "user", content: input.seedUserMessage },
   ];
@@ -382,9 +418,9 @@ async function runSkillToolLoop(input: {
   let steps = 0;
 
   for (let step = 0; step < maxSteps; step += 1) {
-    if (input.signal?.aborted) return { steps, toolCalls, stoppedReason: "aborted" };
+    if (input.signal?.aborted) return { steps, toolCalls, finalContent: null, stoppedReason: "aborted" };
 
-    const response = await input.toolCompletion({
+    const response = await input.model.complete({
       messages,
       tools: specs,
       signal: input.signal,
@@ -392,26 +428,52 @@ async function runSkillToolLoop(input: {
     steps += 1;
     messages.push(response.message);
 
-    const calls = response.message.tool_calls ?? [];
-    if (calls.length === 0) return { steps, toolCalls, stoppedReason: "no-tool-calls" };
+    const calls = response.message.toolCalls ?? [];
+    if (calls.length === 0) {
+      return {
+        steps,
+        toolCalls,
+        finalContent: typeof response.message.content === "string" ? response.message.content : null,
+        stoppedReason: "no-tool-calls",
+      };
+    }
 
     for (const call of calls) {
-      const tool = lookup.get(call.function.name);
-      if (!tool) throw new Error(`unknown skill evolution tool: ${call.function.name}`);
+      const tool = lookup.get(call.name);
+      if (!tool) throw new Error(`unknown skill evolution tool: ${call.name}`);
 
-      const result = await tool.handler(parseToolArguments(call));
-      toolCalls.push(call.function.name);
-      if (!result.ok) throw new Error(`skill evolution tool failed: ${call.function.name}: ${result.text}`);
-
+      let result: SkillEvolutionToolResult;
+      try {
+        result = await tool.handler(call.input ?? {});
+      } catch (error) {
+        result = {
+          ok: false,
+          text: error instanceof Error ? error.message : String(error),
+        };
+      }
+      toolCalls.push(call.name);
       messages.push({
         role: "tool",
-        tool_call_id: call.id,
-        content: clipToolResult(result.text),
+        toolCallId: call.id,
+        content: clipToolResult(result.ok ? result.text : `error: ${result.text}`),
       });
     }
   }
 
-  return { steps, toolCalls, stoppedReason: "max-steps" };
+  return { steps, toolCalls, finalContent: null, stoppedReason: "max-steps" };
+}
+
+function parseFinalCoordinationPacket(content: string | null): SkillEvolutionCoordinationPacket {
+  if (content === null || content.trim() === "") {
+    throw new Error("skill evolution final response must be a raw JSON coordination packet");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content.trim());
+  } catch (error) {
+    throw new Error("skill evolution final response must be valid JSON");
+  }
+  return validateSkillEvolutionCoordinationPacket(parsed);
 }
 
 export async function runSkillEvolutionAgent<TCheckpoint>(
@@ -422,28 +484,15 @@ export async function runSkillEvolutionAgent<TCheckpoint>(
   });
   const checkpoint = await options.store.createSkillCheckpoint();
 
-  let coordination: SkillEvolutionCoordinationPacket | null = null;
-  const decisionTool: SkillEvolutionTool = {
-    name: SKILL_LEARN_DECISION_TOOL,
-    description: "Emit the required learned-skill coordination packet exactly once.",
-    inputSchema: DECISION_TOOL_SCHEMA,
-    handler: async (args) => {
-      if (coordination) throw new Error("skill_learn_decide called more than once");
-      coordination = validateSkillEvolutionCoordinationPacket(args);
-      return { ok: true, text: "coordination packet accepted" };
-    },
-  };
-
   try {
-    const tools = [...options.store.createSkillTools(checkpoint), decisionTool];
+    const tools = options.store.createFileTools(checkpoint);
     const loop = await runSkillToolLoop({
-      toolCompletion: options.toolCompletion,
+      model: options.model,
       tools,
       systemPrompt: options.systemPrompt ?? DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT,
       seedUserMessage: buildSkillEvolutionUserMessage({
         reviewPacket: options.reviewPacket,
         learnedSkillIndex,
-        observedSkillUsages: options.observedSkillUsages,
         toolTrajectory: options.toolTrajectory,
         artifactPaths: options.artifactPaths,
         qualitySignals: options.qualitySignals,
@@ -451,10 +500,7 @@ export async function runSkillEvolutionAgent<TCheckpoint>(
       maxSteps: options.maxSteps,
       signal: options.signal,
     });
-
-    if (!coordination) {
-      throw new Error("skill_learn_decide was not called");
-    }
+    const coordination = parseFinalCoordinationPacket(loop.finalContent);
 
     const changeSet = validateSkillEvolutionChangeSet(
       coordination,
@@ -464,7 +510,6 @@ export async function runSkillEvolutionAgent<TCheckpoint>(
         learningSummary: {
           coordination,
           reviewPacket: options.reviewPacket,
-          observedSkillUsages: options.observedSkillUsages,
           toolTrajectory: options.toolTrajectory,
           artifactPaths: options.artifactPaths,
           qualitySignals: options.qualitySignals,

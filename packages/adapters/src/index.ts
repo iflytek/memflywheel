@@ -57,19 +57,51 @@ export {
   normalizeMessages,
 } from "./make-adapter.js";
 
-// Host-scribe bridge: wrap a host LLM channel into a batteries-included scribe.
+// Host harness port: stable host boundary + capability gates.
 export {
-  type ToolCompletion,
+  type HostCapability,
+  type HostIntegrationMode,
+  type Dispose,
+  type HostPromptBuildEvent,
+  type HostPromptBuildResult,
+  type HostTurnEndEvent,
+  type HostSessionEvent,
+  type HostIdleEvent,
+  type HostLifecyclePort,
+  type HostToolCallEvent,
+  type HostToolResultEvent,
+  type HostTelemetryPort,
+  type HostHarnessPort,
+  classifyHostCapabilities,
+  requireHostCapabilities,
+  createCapabilitySet,
+} from "./harness-port.js";
+
+// Pi native port: Pi model/lifecycle/telemetry -> HostHarnessPort.
+export {
+  type PiTextContent,
+  type PiToolCallContent,
+  type PiToolResultMessage,
+  type PiAssistantMessage,
+  type PiCompletionInput,
+  type PiHarnessLike,
+  createPiModelCompletion,
+  createPiHarnessPort,
+} from "./pi-port.js";
+
+// Host-scribe bridge: wrap a canonical host model into a batteries-included scribe.
+export {
   type HostLearnedSkillEvolutionInput,
   type HostLearnedSkillsOptions,
-  type HostMemScribeOptions,
-  type HostMemScribeAdapter,
-  type HostMemScribe,
+  type MemScribeHarnessMode,
+  type MemScribeHarnessRuntimeOptions,
+  type MemScribeHarnessRuntimeAdapter,
+  type MemScribeHarnessRuntime,
   type MemScribeLearningLoopConfig,
   type SkillPreludeBuilder,
   type SkillRecallProvider,
-  type SkillUsageRecord,
-  createHostMemScribe,
+  type CanonicalModelCompletion,
+  createMemScribeHarnessRuntime,
   adaptSdkMemScribe,
 } from "./host-memscribe.js";
 

@@ -9,7 +9,7 @@
  *     `dream plan`/`dream apply` run exactly this).
  *  2. Semantic consolidation (subagent): the injected DreamAgentRunner reads the
  *     health / type-review packets, READS FULL BODIES, and merges / compresses /
- *     retires memories by calling the same memory tools the extraction subagent
+ *     retires memories by calling the same ordinary file tools the extraction subagent
  *     uses. It never authors a merged body from a truncated excerpt — it reads
  *     first, exactly as read-before-update protects list-type appends.
  *
@@ -33,7 +33,7 @@ import { scanMemoryFiles, formatManifest } from "./scan.js";
 import { syncMemoryIndex, readMemoryIndex } from "./index-file.js";
 import { buildHealthFindings, buildTypeReviewPacket, type HealthFinding, type TypeReviewItem } from "./health.js";
 import { relocateRootFiles } from "./extract.js";
-import { type MemoryTool, type MemoryToolContext, createMemoryTools } from "./memory-tools.js";
+import { type FileTool, type FileToolContext, createFileTools, createMemoryFileToolContext } from "./file-tools.js";
 import { markDreamConsolidated } from "./dream-state.js";
 
 export const DREAM_DEFAULT_MIN_HOURS = 24;
@@ -43,7 +43,7 @@ export const DREAM_DEFAULT_MIN_SESSIONS = 5;
  * The deterministic, LLM-free structural ops. Only the two unambiguous fixes:
  * remove an identical-body duplicate, or relocate a file to its declared type's
  * directory. Everything that needs semantics (near-duplicate merges, compression,
- * type re-judgement) is the subagent's job, via the memory tools.
+ * type re-judgement) is the subagent's job, via ordinary file tools.
  */
 export type DreamOp =
   | { kind: "delete-duplicate"; path: string }
@@ -59,14 +59,14 @@ export interface DreamCoordination {
 
 /**
  * THE pluggable dream injection point — symmetric to ExtractionAgentRunner. The
- * subagent receives the structural packets plus the bound memory tools/context
+ * subagent receives the structural packets plus the bound ordinary file tools/context
  * (sharing the held write lock) and consolidates by calling those tools
  * directly. It returns the union of relative paths it changed.
  */
 export type DreamAgentRunner = (input: {
   root: string;
-  toolCtx: MemoryToolContext;
-  tools: MemoryTool[];
+  toolCtx: FileToolContext;
+  tools: FileTool[];
   health: HealthFinding[];
   typeReview: TypeReviewItem[];
   manifest: string;
@@ -188,7 +188,7 @@ export interface RunDreamSessionOptions {
   runner?: DreamAgentRunner;
   /** Optional host directive biasing the subagent (e.g. compress-memory for a topic). */
   coordination?: DreamCoordination;
-  /** Hard secret gate for the memory tools. Default OFF. */
+  /** Hard secret gate for ordinary file tools. Default OFF. */
   refuseSecrets?: boolean;
 }
 
@@ -238,8 +238,8 @@ export async function runDreamSession(opts: RunDreamSessionOptions): Promise<Dre
       const typeReview = await buildTypeReviewPacket(ctx.root);
       const manifest = formatManifest(cleaned);
       const index = await readMemoryIndex(ctx.root);
-      const toolCtx: MemoryToolContext = { ctx, refuseSecrets };
-      const tools = createMemoryTools();
+      const toolCtx = createMemoryFileToolContext({ ctx, refuseSecrets });
+      const tools = createFileTools();
       try {
         const result = await runner({
           root: ctx.root,

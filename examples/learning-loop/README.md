@@ -1,7 +1,7 @@
 # Learning Loop Example
 
 This example exercises the opt-in learned-skill assembly exposed by
-`createHostMemScribe({ toolCompletion, learnedSkills })`.
+`createMemScribeHarnessRuntime({ model, learnedSkills })`.
 
 `USE_FAKE=1` is deterministic and runs in the default smoke suite. Without
 `USE_FAKE`, the same code path calls a real OpenAI-compatible tool-calling model
@@ -9,7 +9,7 @@ through `MEMSCRIBE_LLM_*`.
 
 ```text
 turn-end
-  -> extraction agent writes a workflow memory through memory tools
+  -> extraction agent writes a workflow memory through ordinary file tools
   -> skill evolution agent writes a learned skill through skill tools
   -> dream agent compresses the workflow memory into a skill cue
   -> next prompt build contains the learned skill route

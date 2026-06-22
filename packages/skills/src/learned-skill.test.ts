@@ -8,6 +8,7 @@ import {
   FinalizeSafetyError,
   LEARNED_SKILL_DIR_PREFIX,
   LearnedSkillValidationError,
+  type LearnedSkillTool,
   MAX_SUPPORTING_FILE_BYTES,
   checkpointLearnedSkill,
   finalizeLearnedSkillCheckpoint,
@@ -38,6 +39,28 @@ description: Captures durable editor workflow habits.
 - Keep host-specific details out of public skill text.
 `;
 
+function skillContent(skillName: string, displayName: string, description: string): string {
+  return `---
+name: ${skillName}
+display_name: ${displayName}
+description: ${description}
+---
+
+## Use Cases
+
+- Preserve repeatable editor workflow choices.
+
+## Procedure
+
+1. Inspect the current workflow evidence.
+2. Record the durable rule and its trigger.
+
+## Guardrails
+
+- Keep host-specific details out of public skill text.
+`;
+}
+
 function validFiles(): Record<string, string> {
   return {
     "SKILL.md": validSkill,
@@ -61,6 +84,10 @@ async function writeRaw(root: string, relativePath: string, content: string): Pr
   const filePath = path.join(root, relativePath);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, content, "utf8");
+}
+
+function toolMap(tools: LearnedSkillTool[]): Map<string, LearnedSkillTool> {
+  return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
 test("validateLearnedSkillPackage accepts the MemScribe learned skill layout", () => {
@@ -272,18 +299,16 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
   try {
     const store = createLearnedSkillStore({ skillsRoot, checkpointRoot });
     const checkpoint = await store.createSkillCheckpoint();
-    const tools = new Map(store.createSkillTools(checkpoint).map((tool) => [tool.name, tool]));
-    const write = tools.get("skill_write");
-    assert.ok(write, "skill_write tool exists");
+    const tools = toolMap(store.createFileTools(checkpoint));
+    const write = tools.get("write");
+    assert.ok(write, "write tool exists");
 
     await write.handler({
-      skillName: "memscribe-learned-editor-workflow",
-      relativePath: "SKILL.md",
+      filePath: "memscribe-learned-editor-workflow/SKILL.md",
       content: validSkill,
     });
     await write.handler({
-      skillName: "memscribe-learned-editor-workflow",
-      relativePath: ".memscribe-skill.json",
+      filePath: "memscribe-learned-editor-workflow/.memscribe-skill.json",
       content: `${JSON.stringify({ name: "memscribe-learned-editor-workflow" }, null, 2)}\n`,
     });
 
@@ -311,38 +336,79 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
   }
 });
 
+test("createLearnedSkillStore can merge by updating one skill and archiving a duplicate", async () => {
+  const skillsRoot = await makeRoot("memscribe-skills-root-");
+  const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
+  const target = "memscribe-learned-editor-workflow";
+  const duplicate = "memscribe-learned-editor-shortcuts";
+  try {
+    await writeRaw(skillsRoot, `${target}/SKILL.md`, skillContent(target, "Editor Workflow", "Captures durable editor workflow habits."));
+    await writeRaw(skillsRoot, `${duplicate}/SKILL.md`, skillContent(duplicate, "Editor Shortcuts", "Captures duplicate editor workflow shortcuts."));
+
+    const store = createLearnedSkillStore({ skillsRoot, checkpointRoot });
+    const checkpoint = await store.createSkillCheckpoint();
+    const tools = toolMap(store.createFileTools(checkpoint));
+
+    await tools.get("write")!.handler({
+      filePath: `${target}/SKILL.md`,
+      content: skillContent(target, "Editor Workflow", "Merged editor workflow and shortcut procedure."),
+    });
+    await tools.get("bash")!.handler({
+      command: `rm -rf ${duplicate}`,
+    });
+
+    const result = await store.finalizeLearnedSkillChanges({
+      checkpoint,
+      sessionId: "session-1",
+      learningSummary: {
+        coordination: {
+          decision: "merge",
+          targetSkill: target,
+          mergedSkills: [duplicate],
+        },
+      },
+    });
+    assert.deepEqual(result.changedSkills.sort(), [duplicate, target]);
+    assert.deepEqual(result.changedFiles.sort(), [
+      `${duplicate}/SKILL.md`,
+      `${target}/SKILL.md`,
+    ]);
+
+    const catalog = await store.getLearnedSkillsCatalog({ includeContent: true });
+    assert.deepEqual(catalog.learnedSkills.map((skill) => skill.name), [target]);
+    assert.match(catalog.learnedSkills[0]?.skillContent ?? "", /Merged editor workflow/);
+
+    await store.rollbackSkillCheckpoint(checkpoint);
+    const restored = await store.getLearnedSkillsCatalog();
+    assert.deepEqual(restored.learnedSkills.map((skill) => skill.name).sort(), [duplicate, target]);
+  } finally {
+    await cleanup(skillsRoot);
+    await cleanup(checkpointRoot);
+  }
+});
+
 test("createLearnedSkillRecallProvider exposes learned skill routes for prompt build", async () => {
   const skillsRoot = await makeRoot("memscribe-skills-root-");
   const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
   try {
     const store = createLearnedSkillStore({ skillsRoot, checkpointRoot });
     const checkpoint = await store.createSkillCheckpoint();
-    const tools = new Map(store.createSkillTools(checkpoint).map((tool) => [tool.name, tool]));
-    await tools.get("skill_write")!.handler({
-      skillName: "memscribe-learned-editor-workflow",
-      relativePath: "SKILL.md",
+    const tools = toolMap(store.createFileTools(checkpoint));
+    await tools.get("write")!.handler({
+      filePath: "memscribe-learned-editor-workflow/SKILL.md",
       content: validSkill,
     });
     await store.finalizeLearnedSkillChanges({ checkpoint, sessionId: "session-1" });
 
     const provider = createLearnedSkillRecallProvider({ skillsRoot });
-    const packet = await provider({
-      sessionId: "session-1",
-      usageRecords: [
-        {
-          skillName: "memscribe-learned-editor-workflow",
-          outcome: "completed",
-          trigger: "editor task",
-        },
-      ],
-    });
+    const packet = await provider({ sessionId: "session-1" });
 
     assert.equal(packet.entries.length, 1);
     assert.equal(packet.entries[0]?.name, "memscribe-learned-editor-workflow");
     assert.deepEqual(packet.entries[0]?.triggerHints, ["editor workflow", "durable editor workflow"]);
     assert.match(
       buildLearnedSkillPrelude(packet),
-      /memscribe-learned-editor-workflow[\s\S]*completed/,
+      /memscribe-learned-editor-workflow[\s\S]*editor workflow/,
     );
   } finally {
     await cleanup(skillsRoot);

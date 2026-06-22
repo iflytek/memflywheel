@@ -5,18 +5,12 @@ import { DEFAULT_DREAM_SYSTEM_PROMPT, buildDreamAgentUserMessage } from "./dream
 
 test("default dream prompt is a tool-use contract: lists the tools, demands read-before-merge, and is name-free", () => {
   const p = DEFAULT_DREAM_SYSTEM_PROMPT;
-  for (const tool of [
-    "memory_list",
-    "memory_search",
-    "memory_read",
-    "memory_save",
-    "memory_update",
-    "memory_archive",
-  ]) {
+  for (const tool of ["glob", "grep", "read", "write", "edit", "bash"]) {
     assert.ok(p.includes(tool), `prompt mentions ${tool}`);
   }
+  assert.doesNotMatch(p, /memory_(list|search|read|save|update|archive)/);
   // The soul of the change: never author a merged/compressed body from an excerpt.
-  assert.match(p, /read full bodies|memory_read each file|full body/i);
+  assert.match(p, /read full bodies|read each file|full body/i);
   assert.match(p, /merge/i);
   assert.match(p, /compress-memory/);
   // No JSON op format anymore — the tool calls ARE the changes.
@@ -42,7 +36,7 @@ test("buildDreamAgentUserMessage renders all packets and optional coordination",
   assert.ok(out.includes("memoryAction: compress-memory"));
   assert.ok(out.includes("targetSkill: memscribe-learned-review"));
   // Reinforces read-before-edit in the seed message itself.
-  assert.match(out, /memory_read the full body/i);
+  assert.match(out, /read the full body/i);
 });
 
 test("buildDreamAgentUserMessage omits coordination block when absent", () => {

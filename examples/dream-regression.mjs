@@ -5,9 +5,9 @@
  *   1. the deterministic structural pre-pass (delete identical-body duplicates,
  *      relocate a misfiled memory) — LLM-free, guaranteed; then
  *   2. the consolidation subagent, which reads full bodies and merges near-
- *      duplicates / compresses over-long notes via the memory tools.
+ *      duplicates / compresses over-long notes via ordinary file tools.
  *
- * It wraps every memory tool to log the subagent's real tool calls, then verifies
+ * It wraps every ordinary file tool to log the subagent's real tool calls, then verifies
  * the deterministic outcomes strictly and the semantic work by "no data loss".
  *
  * Run (uses YOUR key; never hardcode it):
@@ -19,7 +19,8 @@
 import { mkdtemp, mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createMemScribe, createToolCompletion, runDreamAgent } from "@memscribe/sdk";
+import { createMemScribe, runDreamAgent } from "@memscribe/sdk";
+import { createOpenAIChatCompletionsModel } from "@memscribe/model";
 
 const root = await mkdtemp(path.join(tmpdir(), "memscribe-dream-rr-"));
 
@@ -71,7 +72,7 @@ await seed(
   ].join(" "),
 );
 
-const toolCompletion = createToolCompletion({
+const model = createOpenAIChatCompletionsModel({
   endpoint: process.env.MEMSCRIBE_LLM_ENDPOINT,
   apiKey: process.env.MEMSCRIBE_LLM_API_KEY,
   model: process.env.MEMSCRIBE_LLM_MODEL,
@@ -89,7 +90,7 @@ const dreamRunner = async (input) => {
     },
   }));
   return runDreamAgent({
-    toolCompletion,
+    model,
     tools: tracedTools,
     toolCtx: input.toolCtx,
     health: input.health,

@@ -38,7 +38,8 @@ export const claudeCodeAdapter: HostAdapter = makeAdapter({
   name: "Claude Code",
   lifecycle,
   defaultConfigRelPath: ".claude/settings.json",
-  integrationNote: "Usable: hook-driven wiring marker; the extraction subagent uses the default fetch tool-completion (no in-process model-call API).",
+  integrationNote:
+    "Hook-driven recall wiring marker until Claude Code exposes a host-owned canonical model port.",
   translators: {
     sessionId: (payload) => readString(payload, "session_id") || readString(payload, "sessionId"),
     turnEnd: (payload) => ({

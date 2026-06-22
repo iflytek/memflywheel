@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
-import { serializeDocument, type MemoryType } from "@memscribe/core";
+import { serializeDocument, serializeMemoryFile, type MemoryType } from "@memscribe/core";
 
 import {
   MemScribeMcpServer,
@@ -36,6 +36,20 @@ function firstText(result: { content: Array<{ type: string; text: string }> }): 
   return result.content[0].text;
 }
 
+function writeMemoryArgs(input: {
+  type: MemoryType;
+  name: string;
+  description?: string;
+  body: string;
+  filename?: string;
+}) {
+  const file = input.filename ?? `${input.name}.md`;
+  return {
+    filePath: `${input.type}/${file}`,
+    content: serializeMemoryFile(input),
+  };
+}
+
 test("initialize advertises tools/resources/prompts capabilities", () => {
   const server = new MemScribeMcpServer({ root: "/tmp/x-unused" });
   const info = server.handleInitialize() as Record<string, any>;
@@ -46,21 +60,21 @@ test("initialize advertises tools/resources/prompts capabilities", () => {
   assert.equal(server.isInitialized, true);
 });
 
-test("tools/list exposes exactly memory_context, memory_read, memory_save (no search)", () => {
+test("tools/list exposes only ordinary file tools", () => {
   const server = new MemScribeMcpServer({ root: "/tmp/x-unused" });
   const list = server.listTools() as { tools: Array<{ name: string }> };
   const names = list.tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["memory_context", "memory_read", "memory_save"]);
-  assert.ok(!names.some((n) => n.includes("search")));
+  assert.deepEqual(names, ["bash", "edit", "glob", "grep", "read", "write"]);
+  assert.ok(!names.some((name) => name.startsWith("memory_")));
 });
 
-test("memory_context returns rules + full index prelude", async () => {
+test("memscribe.with_memory prompt returns rules + full index prelude", async () => {
   const root = await makeRoot();
   try {
     await writeFixture(root, "identity", "u.md", { name: "用户称呼", description: "称呼", body: "叫小钟" });
     const server = new MemScribeMcpServer({ root });
-    const out = await server.callTool({ name: "memory_context", arguments: {} });
-    const text = firstText(out);
+    const out = (await server.getPrompt({ name: WITH_MEMORY_PROMPT })) as any;
+    const text = out.messages[0].content.text as string;
     assert.ok(text.includes("# 记忆"));
     assert.ok(text.includes("<system-reminder>"));
     assert.ok(text.includes("用户称呼"));
@@ -69,44 +83,42 @@ test("memory_context returns rules + full index prelude", async () => {
   }
 });
 
-test("memory_read returns body for an existing file and errors for a missing one", async () => {
+test("unknown MCP tool is rejected", async () => {
   const root = await makeRoot();
   try {
     await writeFixture(root, "context", "proj.md", { name: "项目", body: "项目正文内容" });
     const server = new MemScribeMcpServer({ root });
 
-    const ok = await server.callTool({
-      name: "memory_read",
-      arguments: { relativePath: "context/proj.md" },
+    const resp = await server.dispatch({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "tools/call",
+      params: {
+        name: "legacy_save",
+        arguments: { type: "context", name: "项目", body: "项目正文内容" },
+      },
     });
-    assert.equal(firstText(ok), "项目正文内容");
-    assert.notEqual(ok.isError, true);
-
-    const miss = await server.callTool({
-      name: "memory_read",
-      arguments: { relativePath: "context/nope.md" },
-    });
-    assert.equal(miss.isError, true);
-    assert.ok(firstText(miss).includes("No memory found"));
+    assert.ok(resp && "error" in resp);
+    assert.equal((resp as any).error.code, -32602);
+    assert.match((resp as any).error.message, /unknown tool/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("memory_save writes a doc (path derived from name) and re-syncs the index", async () => {
+test("write writes a doc and re-syncs the index", async () => {
   const root = await makeRoot();
   try {
     const server = new MemScribeMcpServer({ root });
     const out = await server.callTool({
-      name: "memory_save",
-      arguments: {
+      name: "write",
+      arguments: writeMemoryArgs({
         type: "preference",
         name: "语气偏好",
         description: "简洁",
         body: "回答要简洁直接",
-      },
+      }),
     });
-    // The file path is derived deterministically from the name (no filename arg).
     assert.ok(firstText(out).includes("preference/语气偏好.md"));
 
     const onDisk = await readFile(path.join(root, "preference", "语气偏好.md"), "utf8");
@@ -120,7 +132,7 @@ test("memory_save writes a doc (path derived from name) and re-syncs the index",
   }
 });
 
-test("memory_save rejects an invalid type via InvalidParams", async () => {
+test("write rejects an invalid memory path via InvalidParams", async () => {
   const root = await makeRoot();
   try {
     const server = new MemScribeMcpServer({ root });
@@ -128,7 +140,13 @@ test("memory_save rejects an invalid type via InvalidParams", async () => {
       jsonrpc: "2.0",
       id: 9,
       method: "tools/call",
-      params: { name: "memory_save", arguments: { type: "bogus", name: "n", body: "b" } },
+      params: {
+        name: "write",
+        arguments: {
+          filePath: "bogus/n.md",
+          content: serializeMemoryFile({ type: "context", name: "n", body: "b" }),
+        },
+      },
     });
     assert.ok(resp && "error" in resp);
     assert.equal((resp as any).error.code, -32602);
@@ -137,15 +155,15 @@ test("memory_save rejects an invalid type via InvalidParams", async () => {
   }
 });
 
-test("memory_save redacts <private> spans and refuses secrets", async () => {
+test("write redacts <private> spans and refuses secrets", async () => {
   const root = await makeRoot();
   try {
     const server = new MemScribeMcpServer({ root });
     const fakeGithubToken = "ghp" + "_0123456789abcdef0123456789abcdef0123";
 
     await server.callTool({
-      name: "memory_save",
-      arguments: { type: "context", name: "x", body: "公开 <private>隐私</private> 内容" },
+      name: "write",
+      arguments: writeMemoryArgs({ type: "context", name: "x", body: "公开 <private>隐私</private> 内容" }),
     });
     const onDisk = await readFile(path.join(root, "context", "x.md"), "utf8");
     assert.ok(onDisk.includes("[REDACTED]"));
@@ -156,8 +174,8 @@ test("memory_save redacts <private> spans and refuses secrets", async () => {
       id: 5,
       method: "tools/call",
       params: {
-        name: "memory_save",
-        arguments: { type: "context", name: "y", body: `token=${fakeGithubToken}` },
+        name: "write",
+        arguments: writeMemoryArgs({ type: "context", name: "y", body: `token=${fakeGithubToken}` }),
       },
     });
     assert.ok(resp && "error" in resp);

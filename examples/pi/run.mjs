@@ -4,7 +4,7 @@
  * Drives a mock Pi host through the four lifecycle events the `pi` adapter binds
  * (session:ensure → turn:build → agent_end → learning:idle) and prints the
  * resulting memory. Under USE_FAKE the extraction subagent is a scripted
- * tool-completion (list → save two memories → decline a high-risk secret); the
+ * canonical model (list → save two memories → decline a high-risk secret); the
  * script exits non-zero if the expected memories are missing or the secret leaked.
  *
  *   USE_FAKE=1 node examples/pi/run.mjs      # offline, deterministic
@@ -14,13 +14,18 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createHostMemScribe, piAdapter, connect } from "@memscribe/adapters";
-import { defaultExtractionAgentFromEnv } from "@memscribe/sdk";
-import { createFakeToolCompletion } from "../shared/fake-tool-completion.mjs";
+import {
+  createMemScribeHarnessRuntime,
+  createPiHarnessPort,
+  piAdapter,
+  connect,
+} from "@memscribe/adapters";
+import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+import { createFakeModel } from "../shared/fake-model.mjs";
 import { transcript } from "../shared/transcript.mjs";
 
 /** A minimal EventEmitter-ish Pi host. */
-function createMockPiHost() {
+function createMockPiHost(model) {
   const listeners = new Map();
   return {
     on(event, fn) {
@@ -32,20 +37,80 @@ function createMockPiHost() {
     emit(event, payload) {
       for (const fn of listeners.get(event) ?? []) fn(payload);
     },
+    async completeSimple(input) {
+      const response = await model.complete({
+        messages: input.messages.map(canonicalMessageFromPi),
+        tools: input.tools.map(canonicalToolFromPi),
+        signal: input.signal,
+      });
+      return piAssistantFromCanonical(response);
+    },
+  };
+}
+
+function textFromContent(content) {
+  return (content ?? [])
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("");
+}
+
+function canonicalMessageFromPi(message) {
+  if (message.role === "toolResult") {
+    return {
+      role: "tool",
+      toolCallId: message.toolCallId,
+      content: textFromContent(message.content),
+    };
+  }
+  const toolCalls = (message.content ?? [])
+    .filter((part) => part?.type === "toolCall")
+    .map((part) => ({
+      id: part.id,
+      name: part.name,
+      input: part.arguments ?? {},
+    }));
+  const out = {
+    role: message.role,
+    content: textFromContent(message.content) || null,
+  };
+  if (toolCalls.length > 0) out.toolCalls = toolCalls;
+  return out;
+}
+
+function canonicalToolFromPi(tool) {
+  return {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  };
+}
+
+function piAssistantFromCanonical(response) {
+  const content = [];
+  if (response.message.content) content.push({ type: "text", text: response.message.content });
+  for (const call of response.message.toolCalls ?? []) {
+    content.push({
+      type: "toolCall",
+      id: call.id,
+      name: call.name,
+      arguments: call.input ?? {},
+    });
+  }
+  return {
+    role: "assistant",
+    content,
+    stopReason: response.finishReason,
   };
 }
 
 const useFake = process.env.USE_FAKE === "1";
 const root = await mkdtemp(path.join(tmpdir(), "memscribe-pi-"));
 
-// Real path: Pi would wrap its auxiliary tool-calling completion; here we fall
-// back to the default fetch tool-completion (env-driven) when not using the
-// fake. The fake plays a multi-step subagent: list → save → decline.
-const { scribe } = useFake
-  ? createHostMemScribe({ toolCompletion: createFakeToolCompletion(), root })
-  : createHostMemScribe({ agent: defaultExtractionAgentFromEnv(), root });
-
-const host = createMockPiHost();
+const model = useFake ? createFakeModel() : createOpenAIChatCompletionsModel();
+const host = createMockPiHost(model);
+const port = createPiHarnessPort(host);
+const { scribe } = createMemScribeHarnessRuntime({ port, root });
 const dispose = piAdapter.attach(scribe, host);
 
 host.emit("session:ensure", { sessionId: "demo" });

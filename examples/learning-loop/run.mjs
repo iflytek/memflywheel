@@ -3,9 +3,9 @@
  * Learned-skill loop regression.
  *
  * USE_FAKE=1 is deterministic and runs in the default example smoke suite.
- * Without USE_FAKE, the script calls a real OpenAI-compatible tool-calling model
- * through MEMSCRIBE_LLM_* env vars and fails if the model does not perform the
- * required tool calls.
+ * Without USE_FAKE, the script calls a real OpenAI-compatible model through the
+ * @memscribe/model mapper and fails if the model does not perform the required
+ * tool calls.
  */
 
 import assert from "node:assert/strict";
@@ -13,9 +13,9 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { scanMemoryFiles } from "@memscribe/core";
-import { createToolCompletion } from "@memscribe/sdk";
-import { createHostMemScribe } from "@memscribe/adapters";
+import { scanMemoryFiles, serializeMemoryFile } from "@memscribe/core";
+import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+import { createMemScribeHarnessRuntime } from "@memscribe/adapters";
 
 const TARGET_SKILL = "memscribe-learned-release-review";
 const MEMORY_PATH = "workflow/release-prep-workflow.md";
@@ -52,16 +52,24 @@ function requireEnv(name) {
 }
 
 function toolCall(id, name, args) {
-  return { id, type: "function", function: { name, arguments: JSON.stringify(args) } };
+  return { id, name, input: args };
 }
 
-function createFakeLearningToolCompletion() {
+function writeMemoryArgs(input) {
+  return {
+    filePath: `${input.type}/${input.filename}`,
+    content: serializeMemoryFile(input),
+  };
+}
+
+function createFakeLearningModel() {
   let extractionStep = 0;
   let skillStep = 0;
   let dreamStep = 0;
-  return async (req) => {
-    const toolNames = new Set(req.tools.map((tool) => tool.function.name));
-    const system = req.messages.find((message) => message.role === "system")?.content ?? "";
+  return {
+    async complete(req) {
+      const toolNames = new Set(req.tools.map((tool) => tool.name));
+      const system = req.messages.find((message) => message.role === "system")?.content ?? "";
 
     if (system.includes("memory extraction engine")) {
       extractionStep += 1;
@@ -70,9 +78,10 @@ function createFakeLearningToolCompletion() {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [
-              toolCall("memory-save", "memory_save", {
+            toolCalls: [
+              toolCall("memory-save", "write", writeMemoryArgs({
                 type: "workflow",
+                filename: "release-prep-workflow.md",
                 name: "release prep workflow",
                 description: "Reusable release preparation procedure that should become a learned skill.",
                 body: [
@@ -82,50 +91,47 @@ function createFakeLearningToolCompletion() {
                   "Step 4: scan for old names, private paths, credentials, and AI-signature footers.",
                   "Step 5: summarize release blockers before opening a pull request.",
                 ].join("\n"),
-              }),
+              })),
             ],
           },
-          finishReason: "tool_calls",
+          finishReason: "tool-calls",
         };
       }
       return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
     }
 
-    if (toolNames.has("skill_write")) {
+    if (system.includes("learned-skill evolution agent") || system.includes("learned-skill regression")) {
       skillStep += 1;
       if (skillStep === 1) {
         return {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [
-              toolCall("skill-write", "skill_write", {
-                skillName: TARGET_SKILL,
-                relativePath: "SKILL.md",
+            toolCalls: [
+              toolCall("skill-write", "write", {
+                filePath: `${TARGET_SKILL}/SKILL.md`,
                 content: VALID_SKILL,
               }),
             ],
           },
-          finishReason: "tool_calls",
+          finishReason: "tool-calls",
         };
       }
       if (skillStep === 2) {
         return {
           message: {
             role: "assistant",
-            content: null,
-            tool_calls: [
-              toolCall("skill-decide", "skill_learn_decide", {
-                decision: "create",
-                targetSkill: TARGET_SKILL,
-                why: "Release preparation has become a reusable procedure.",
-                memoryAction: "compress-memory",
-                memoryTopics: ["release prep workflow"],
-                supportingFiles: [`${TARGET_SKILL}/SKILL.md`],
-              }),
-            ],
+            content: JSON.stringify({
+              decision: "create",
+              targetSkill: TARGET_SKILL,
+              mergedSkills: [],
+              why: "Release preparation has become a reusable procedure.",
+              memoryAction: "compress-memory",
+              memoryTopics: ["release prep workflow"],
+              supportingFiles: [`${TARGET_SKILL}/SKILL.md`],
+            }),
           },
-          finishReason: "tool_calls",
+          finishReason: "stop",
         };
       }
       return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
@@ -138,11 +144,11 @@ function createFakeLearningToolCompletion() {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [
-              toolCall("memory-read", "memory_read", { relativePath: MEMORY_PATH }),
+            toolCalls: [
+              toolCall("memory-read", "read", { filePath: MEMORY_PATH }),
             ],
           },
-          finishReason: "tool_calls",
+          finishReason: "tool-calls",
         };
       }
       if (dreamStep === 2) {
@@ -150,20 +156,28 @@ function createFakeLearningToolCompletion() {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [
-              toolCall("memory-update", "memory_update", {
-                relativePath: MEMORY_PATH,
-                body: `Release prep workflow is now handled by ${TARGET_SKILL}. Use that learned skill when release readiness comes up.`,
+            toolCalls: [
+              toolCall("memory-update", "edit", {
+                filePath: MEMORY_PATH,
+                oldString: [
+                  "Step 1: inspect package metadata, package files, and publish configuration.",
+                  "Step 2: inspect README, SECURITY, SUPPORT, CHANGELOG, and examples for release consistency.",
+                  "Step 3: run the repository CI command and package dry-run.",
+                  "Step 4: scan for old names, private paths, credentials, and AI-signature footers.",
+                  "Step 5: summarize release blockers before opening a pull request.",
+                ].join("\n"),
+                newString: `Release prep workflow is now handled by ${TARGET_SKILL}. Use that learned skill when release readiness comes up.`,
               }),
             ],
           },
-          finishReason: "tool_calls",
+          finishReason: "tool-calls",
         };
       }
       return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
     }
 
-    throw new Error(`unexpected tool set: ${[...toolNames].join(", ")}`);
+      throw new Error(`unexpected tool set: ${[...toolNames].join(", ")}`);
+    },
   };
 }
 
@@ -171,11 +185,11 @@ const skillEvolutionSystemPrompt = `You are running a MemScribe real learned-ski
 
 # Required behavior
 
-1. Use skill_write with skillName="${TARGET_SKILL}" and relativePath="SKILL.md".
+1. Use write with filePath="${TARGET_SKILL}/SKILL.md".
 2. The SKILL.md file must use strict frontmatter with exactly name, display_name, description.
 3. The SKILL.md body must include ## Use Cases, ## Procedure, and ## Guardrails.
 4. The Procedure section must use contiguous numbered steps starting at 1.
-5. After writing SKILL.md, call skill_learn_decide exactly once.
+5. After writing SKILL.md, return the final coordination packet as raw JSON with no markdown fence.
 
 # Tool-call format
 
@@ -183,20 +197,20 @@ Every tool call argument must be a strict JSON object accepted by the provided
 function schema. Do not put Markdown, code fences, comments, YAML, trailing
 commas, or explanatory text inside the function arguments.
 
-For skill_write, skillName is the learned skill directory name and relativePath
-is a path inside that directory. Therefore the only correct SKILL.md write is:
-{"skillName":"${TARGET_SKILL}","relativePath":"SKILL.md","content":"..."}.
-Never set relativePath to "${TARGET_SKILL}/SKILL.md".
+For write, filePath is relative to the staged learned-skills root. Therefore
+the only correct SKILL.md write is:
+{"filePath":"${TARGET_SKILL}/SKILL.md","content":"..."}.
 
 # Required decision packet
 
-The skill_learn_decide arguments must be exactly this strict JSON object shape:
+The final assistant content must be exactly this strict JSON object shape:
 
-{"decision":"create","targetSkill":"${TARGET_SKILL}","why":"Release preparation has become a reusable procedure.","memoryAction":"compress-memory","memoryTopics":["release prep workflow"],"supportingFiles":["${TARGET_SKILL}/SKILL.md"]}
+{"decision":"create","targetSkill":"${TARGET_SKILL}","mergedSkills":[],"why":"Release preparation has become a reusable procedure.","memoryAction":"compress-memory","memoryTopics":["release prep workflow"],"supportingFiles":["${TARGET_SKILL}/SKILL.md"]}
 
 targetSkill is mandatory for decision="create". It must be the exact non-empty
 string "${TARGET_SKILL}". Never set targetSkill to null, empty string, or any
 other name.
+mergedSkills must be [] for decision="create".
 
 Do not write any other learned skill. Do not call noop.`;
 
@@ -211,27 +225,29 @@ async function main() {
   const skillsRoot = path.join(root, "skills");
   const checkpointRoot = path.join(root, ".skill-checkpoints");
 
-  const rawToolCompletion = useFake
-    ? createFakeLearningToolCompletion()
-    : createToolCompletion({
+  const modelCompletion = useFake
+    ? createFakeLearningModel()
+    : createOpenAIChatCompletionsModel({
         endpoint,
         model,
         maxTokens: Number.parseInt(process.env.MEMSCRIBE_LLM_MAX_TOKENS ?? "4096", 10),
       });
-  const toolCompletion = async (req) => {
-    const response = await rawToolCompletion(req);
+  const instrumentedModel = {
+    async complete(req) {
+      const response = await modelCompletion.complete(req);
     if (process.env.MEMSCRIBE_DEBUG_TOOL_ARGS === "1") {
-      for (const call of response.message.tool_calls ?? []) {
-        if (call.function.name === "skill_learn_decide") {
-          console.error(`[debug] skill_learn_decide arguments: ${call.function.arguments}`);
+      for (const call of response.message.toolCalls ?? []) {
+        if (call.name === "write" && String(call.input?.filePath ?? "").includes(TARGET_SKILL)) {
+          console.error(`[debug] skill write input: ${JSON.stringify(call.input)}`);
         }
       }
     }
     return response;
+    },
   };
-  const { scribe, sdk } = createHostMemScribe({
+  const { scribe, sdk } = createMemScribeHarnessRuntime({
     root: memoryRoot,
-    toolCompletion,
+    model: instrumentedModel,
     learnedSkills: {
       skillsRoot,
       checkpointRoot,
@@ -268,13 +284,6 @@ async function main() {
   });
 
   await scribe.onSessionStart({ sessionId: "real-loop" });
-  scribe.recordSkillUsage({
-    sessionId: "real-loop",
-    skillName: TARGET_SKILL,
-    outcome: "missed",
-    trigger: "release prep workflow",
-    note: "No learned skill existed before this regression turn.",
-  });
   const result = await scribe.onTurnEnd({
     sessionId: "real-loop",
     messages: [
@@ -304,11 +313,10 @@ async function main() {
   const workflowEntries = (await scanMemoryFiles(memoryRoot)).filter((entry) => entry.type === "workflow");
   assert.equal(workflowEntries.length, 1, "one workflow memory exists");
   const memoryPath = workflowEntries[0].relativePath;
-  const memory = await sdk.read(memoryPath);
-  assert.ok(memory, `${memoryPath} exists`);
-  assert.match(memory.body, new RegExp(TARGET_SKILL));
-  assert.doesNotMatch(memory.body, /Step 1:/);
-  assert.doesNotMatch(memory.body, /Step 5:/);
+  const memory = await readFile(path.join(memoryRoot, memoryPath), "utf8");
+  assert.match(memory, new RegExp(TARGET_SKILL));
+  assert.doesNotMatch(memory, /Step 1:/);
+  assert.doesNotMatch(memory, /Step 5:/);
 
   const prompt = await scribe.onPromptBuild({ sessionId: "real-loop" });
   assert.match(prompt.preludePrompt, new RegExp(TARGET_SKILL));

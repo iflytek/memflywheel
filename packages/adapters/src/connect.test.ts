@@ -32,8 +32,10 @@ test("every real-integration adapter declares a default config path", () => {
   assert.ok(openclawAdapter.defaultConfigRelPath);
 });
 
-test("openclaw carries a best-effort integration note", () => {
-  assert.match(openclawAdapter.integrationNote ?? "", /best-effort/i);
+test("openclaw carries an explicit recall-only integration note", () => {
+  assert.match(openclawAdapter.integrationNote ?? "", /recall/i);
+  assert.match(openclawAdapter.integrationNote ?? "", /HostHarnessPort/i);
+  assert.doesNotMatch(openclawAdapter.integrationNote ?? "", /best-effort/i);
 });
 
 test("connect plan-only does not write and is not verified", async () => {

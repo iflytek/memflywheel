@@ -35,7 +35,7 @@ MemScribe memory layer
 
 | Layer | Stores | Must not store | Read by |
 | --- | --- | --- | --- |
-| Memory | Stable facts, preferences, project context, and short trigger signals. | Complete numbered procedures, templates, scripts, or execution policy. | Main model via full-index recall and explicit `memory_read`. |
+| Memory | Stable facts, preferences, project context, and short trigger signals. | Complete numbered procedures, templates, scripts, or execution policy. | Main model via full-index recall and the host's normal Read/file tool. |
 | Skill | Executable SOPs, checklists, templates, scripts, examples, validators. | User-private facts that belong in memory, session transcripts, host-only internals. | Host skill loader or future MemScribe skill APIs. |
 
 Rule:
@@ -52,14 +52,14 @@ Rule:
 | --- | --- |
 | File-native memory store | Implemented under the memory root with Markdown + YAML frontmatter. |
 | Full-index recall | Implemented; no embeddings, no top-k, no BM25. |
-| Extraction subagent | Implemented through `ExtractionAgentRunner`; writes through memory tools. |
+| Extraction subagent | Implemented through `ExtractionAgentRunner`; writes through ordinary file tools. |
 | Dream consolidation | Implemented through deterministic pre-pass + `DreamAgentRunner`. |
 | Dream coordination packet | Implemented for memory coordination: `reason`, `memoryAction`, `topics`. |
-| Prompt skill routing | Implemented in `@memscribe/sdk` via `skillRecall`; `onPromptBuild()` and `context()` can inject learned-skill routes plus recent usage signals. |
-| Skill usage feedback | Implemented in `@memscribe/sdk` via `recordSkillUsage()` / `getSkillUsageRecords()`. |
+| Prompt skill routing | Implemented in `@memscribe/sdk` via `skillRecall`; `onPromptBuild()` and `context()` can inject learned-skill routes. |
+| Tool trajectory learning | Implemented through captured `ExtractionMessage.toolCalls`; skill evolution learns from the same tool facts as extraction. |
 | Learning gate | Implemented in `@memscribe/sdk` as a deterministic skill-learning gate. |
 | Turn-end learning loop | Implemented as opt-in `createMemScribe({ learningLoop })`; skill evolution only runs after extraction returns `Completed`. |
-| Opt-in adapter assembly | Implemented in `@memscribe/adapters` via `createHostMemScribe({ toolCompletion, learnedSkills })`, which wires `@memscribe/skills`, `runSkillEvolutionAgent`, learned-skill recall, extraction, and dream over the same host `toolCompletion`. |
+| Opt-in adapter assembly | Implemented in `@memscribe/adapters` via `createMemScribeHarnessRuntime({ model, learnedSkills })` or `{ port, learnedSkills }`, which wires `@memscribe/skills`, `runSkillEvolutionAgent`, learned-skill recall, extraction, and dream over the same host canonical model. |
 | Skill store | Implemented in `@memscribe/skills` as a file-native learned skill store. |
 | Skill checkpoint/finalize/rollback | Implemented with staging, finalized skill tree diff checks, and snapshot rollback. |
 | CLI/MCP skill injection | Not implemented by default. CLI and MCP remain memory-facing unless a host explicitly wires learned-skill recall through SDK hooks. |
@@ -113,14 +113,14 @@ Validation must fail fast. Do not auto-repair malformed skill packages.
 
 Definition: a learning loop converts repeated workflow memories into validated
 skill packages, compresses the source memories into short routing cues, and
-feeds future prompt builds with learned-skill routes plus recent skill outcomes.
+feeds future prompt builds with learned-skill routes.
 
 ```
 prompt-build
   |
   +-- memory full-index recall
   |
-  +-- learned skill recall + recent usage signals
+  +-- learned skill recall
   |
   v
 main model prompt
@@ -159,12 +159,10 @@ a learned-skill catalog during prompt build.
 | --- | --- |
 | `onPromptBuild(sessionId)` | Returns normal memory recall plus `skillPreludePrompt` when skill recall is configured. |
 | `context()` | Uses the same prompt-build path as `onPromptBuild()`. |
-| `recordSkillUsage(record)` | Stores host-observed `selected`, `completed`, `failed`, or `missed` skill usage signals. |
-| `getSkillUsageRecords(sessionId?)` | Returns usage signals for prompt recall and skill evolution. |
 
 The skill prelude is routing metadata only. It names learned skills, trigger
-hints, paths, and recent outcomes. It does not execute skills and does not copy
-skill procedure steps into memory.
+hints, and paths. It does not execute skills and does not copy skill procedure
+steps into memory.
 
 MemScribe does not execute skills. The host owns skill loading, execution
 policy, runtime permissions, and any tool calls made by a selected skill.
@@ -202,20 +200,24 @@ Expected input:
 | `sessionId` | Host session id for audit/learning summary. |
 | `reviewPacket` | Recent conversation review packet supplied by the host. |
 | `learnedSkillIndex` | Derived list of existing learned skills. |
-| `observedSkillUsages` | Host-observed learned skill usage signals. |
 | `toolTrajectory` | Host-provided tool trajectory facts. |
 | `artifactPaths` | Candidate files produced during the reviewed work. |
 | `qualitySignals` | Durable quality signals, such as success/failure outcomes. |
-| `tools` | Skill staging tools only. |
+| `tools` | Ordinary file tools rooted at the staged skills tree. |
 
 Expected tools:
 
 | Tool | Rule |
 | --- | --- |
-| `skill_list` | Read-only staged skill manifest. |
-| `skill_read` | Read one staged skill package file. |
-| `skill_write` | Write one staged skill package file. |
-| `skill_learn_decide` | Emit the final coordination packet exactly once. |
+| `glob` | List staged skill files. |
+| `grep` | Search staged skill files. |
+| `read` | Read one staged skill package file. |
+| `write` | Write one staged skill package file. |
+| `edit` | Exact string replacement in staged files. |
+| `bash` | Delete a redundant staged learned-skill directory after merging it into the target skill. |
+
+After file work is complete, the final assistant message must be the strict JSON
+coordination packet. It is not a tool call.
 
 The runner must not write live files, archive memories, or mutate `MEMORY.md`.
 When it returns `memoryAction=compress-memory`, `createMemScribe` routes that
@@ -228,8 +230,9 @@ frontmatter field.
 
 ```ts
 interface SkillEvolutionCoordinationPacket {
-  decision: "create" | "update" | "noop";
+  decision: "create" | "update" | "merge" | "noop";
   targetSkill: string | null;
+  mergedSkills: string[];
   why: string;
   memoryAction: "compress-memory" | "noop";
   memoryTopics: string[];
@@ -241,11 +244,15 @@ Mismatch rules:
 
 | Case | Result |
 | --- | --- |
-| `decision=noop` with any `targetSkill`, `memoryTopics`, or `supportingFiles` | Fail. |
-| `decision=create/update` without `targetSkill` | Fail. |
-| `decision=create/update` without `memoryAction=compress-memory` | Fail. |
-| `decision=create/update` with empty `memoryTopics` | Fail. |
-| Finalized changed skill does not equal `targetSkill` | Fail and rollback. |
+| `decision=noop` with any `targetSkill`, `mergedSkills`, `memoryTopics`, or `supportingFiles` | Fail. |
+| `decision=create/update/merge` without `targetSkill` | Fail. |
+| `decision=create/update` with any `mergedSkills` | Fail. |
+| `decision=merge` with empty `mergedSkills` | Fail. |
+| `decision=merge` when `mergedSkills` includes `targetSkill` | Fail. |
+| `decision=create/update/merge` without `memoryAction=compress-memory` | Fail. |
+| `decision=create/update/merge` with empty `memoryTopics` | Fail. |
+| `decision=create/update` finalized changed skill does not equal `targetSkill` | Fail and rollback. |
+| `decision=merge` changed set is not exactly `targetSkill + mergedSkills` | Fail and rollback. |
 | `decision=noop` but files changed | Fail and rollback. |
 
 ## Finalize and Rollback
@@ -255,7 +262,7 @@ Finalization is the only path from staging to live.
 | Step | Rule |
 | --- | --- |
 | Checkpoint | Snapshot `skillsRoot` and copy it to a staging root before runner execution. |
-| Staging | Runner writes only staged files through `skill_write`. |
+| Staging | Runner writes only staged files through `write`. |
 | Validate | Validate directory name, strict frontmatter, required sections, numbered procedure, supporting files, and public naming. |
 | Finalize | Verify the finalized skill tree did not change after checkpoint, validate changed staged skill directories, then publish the changed learned skill. |
 | Rollback | On any validation, write, audit, or coordination failure, restore the snapshot and return `Failed`. |
@@ -268,13 +275,13 @@ leave the store exactly as it was at checkpoint time.
 | Area | Test file | Acceptance |
 | --- | --- | --- |
 | Skills store validation | `packages/skills/src/learned-skill.test.ts` | Rejects missing `SKILL.md`, invalid id, public naming leaks, path traversal, sensitive supporting files, and malformed sections. |
-| Skill prompt recall | `packages/skills/src/learned-skill.test.ts` and `packages/sdk/src/index.test.ts` | Learned-skill routes and recent usage signals appear in prompt build. |
+| Skill prompt recall | `packages/skills/src/learned-skill.test.ts` and `packages/sdk/src/index.test.ts` | Learned-skill routes appear in prompt build. |
 | Checkpoint rollback | `packages/skills/src/learned-skill.test.ts` | Snapshot rollback restores the previous live skill tree after finalize. |
 | Coordination mismatch | `packages/sdk/src/skill-evolution-agent.test.ts` | Invalid `memoryAction`, noop/file-change mismatch, multi-skill changes, or target mismatch fail and rollback. |
 | Learning-loop gate | `packages/sdk/src/learning-loop.test.ts` | Gate skips non-local source, disabled flags, below-threshold turns/tools, or cooldown. |
 | Integrated turn-end hook | `packages/sdk/src/index.test.ts` | `createMemScribe({ learningLoop })` can run extraction -> skill evolution -> forced dream coordination when the host opts in. |
-| Opt-in adapter assembly | `packages/adapters/src/host-memscribe.test.ts` | `createHostMemScribe({ toolCompletion, learnedSkills })` runs extraction -> skill evolution -> dream -> next prompt recall through the same adapter assembly path. |
-| Runnable learning-loop example | `examples/learning-loop/run.mjs` | Fake and real modes both exercise `createHostMemScribe({ toolCompletion, learnedSkills })` through the same adapter assembly path. |
+| Opt-in adapter assembly | `packages/adapters/src/host-memscribe.test.ts` | `createMemScribeHarnessRuntime({ model, learnedSkills })` runs extraction -> skill evolution -> dream -> next prompt recall through the same adapter assembly path. |
+| Runnable learning-loop example | `examples/learning-loop/run.mjs` | Fake and real modes both exercise `createMemScribeHarnessRuntime({ model, learnedSkills })` through the same adapter assembly path. |
 | Dream coordination | `packages/sdk/src/learning-loop.test.ts` | `compress-memory` keeps only a short routing cue in memory and never copies skill execution steps into memory. |
 | Runner isolation | `packages/sdk/src/skill-evolution-agent.test.ts` | Runner can write staging only; direct live skill or memory mutations are rejected. |
 | Branch/PR hygiene | repo-level docs or CI lint | Local branch work only; no direct `main`, no direct remote push, future GitHub delivery is branch + PR. |

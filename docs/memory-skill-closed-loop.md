@@ -1,6 +1,6 @@
 # MemScribe Opt-in Memory + Skill Learning Flow / 可选记忆与技能学习装配流
 
-下面是 MemScribe 提供的 **memory + skill learning primitives（记忆与技能学习原语）** 和可选装配方式。当前公开能力是：SDK primitives、opt-in hooks、host assembly。host/adapters can wire prompt 可见、turn-end 触发、skill usage 反馈、skill evolution、dream 压缩记忆；这不表示所有入口都会自动启用。
+下面是 MemScribe 提供的 **memory + skill learning primitives（记忆与技能学习原语）** 和可选装配方式。当前公开能力是：SDK primitives、opt-in hooks、host assembly。host/adapters can wire prompt 可见、turn-end 触发、tool trajectory 事实轨迹、skill evolution、dream 压缩记忆；这不表示所有入口都会自动启用。
 
 ```text
                     MemScribe Opt-in Assembly
@@ -29,7 +29,7 @@
 │ 技能路由召回                  │      │ 文件原生存储                  │
 │                              │      │                              │
 │ learned skill routes          │      │ memory/*.md                  │
-│ recent skill usage signals    │      │ skills/memscribe-learned-*   │
+│ path-based skill loading cues  │      │ skills/memscribe-learned-*   │
 └──────────────────────────────┘      └──────────────────────────────┘
 ```
 
@@ -90,13 +90,7 @@ Host calls:
               │
               v
 ┌─────────────────────────────────────────────┐
-│ getUsageRecords(sessionId)                  │
-│ 读取最近 skill 使用信号                      │
-└─────────────────────────────────────────────┘
-              │
-              v
-┌─────────────────────────────────────────────┐
-│ skillRecall({ sessionId, usageRecords })    │
+│ skillRecall({ sessionId })                  │
 │ 获取 learned skill routes                   │
 └─────────────────────────────────────────────┘
               │
@@ -119,8 +113,6 @@ preludePrompt =
   MEMORY.md full index
   +
   learned skill routes
-  +
-  recent skill usage signals
 
 skillPreludePrompt =
   only skill routing section
@@ -157,9 +149,6 @@ skillPreludePrompt =
 │ - memscribe-learned-release-review          │
 │   path: memscribe-learned-release-review/...│
 │   triggers: release prep                    │
-│                                             │
-│ ## 最近技能使用信号                         │
-│ - memscribe-learned-release-review: failed  │
 │ </system-reminder>                          │
 └─────────────────────────────────────────────┘
 ```
@@ -288,12 +277,12 @@ Extraction step:
 │ 抽取子代理                                  │
 │                                             │
 │ Tools:                                      │
-│ - memory_list                               │
-│ - memory_search                             │
-│ - memory_read                               │
-│ - memory_save                               │
-│ - memory_update                             │
-│ - memory_archive                            │
+│ - glob                                      │
+│ - grep                                      │
+│ - read                                      │
+│ - write                                     │
+│ - edit                                      │
+│ - bash                                      │
 └───────────────────┬─────────────────────────┘
                     │
                     v
@@ -324,57 +313,39 @@ advance cursor  do not advance cursor
 ---
 
 ```text
-4. Skill Usage Feedback
-   技能使用反馈
-
-Host observes skill lifecycle:
-宿主观察 skill 生命周期：
+4. Tool Trajectory Feedback
+   工具轨迹反馈
 
 ┌─────────────────────────────────────────────┐
-│ skill selected                              │
-│ 技能被选择                                  │
+│ Host captures turn messages                 │
+│ 宿主采集本轮对话                             │
 └───────────────────┬─────────────────────────┘
                     │
                     v
 ┌─────────────────────────────────────────────┐
-│ skill completed / failed / missed           │
-│ 技能完成 / 失败 / 未命中                     │
+│ messages[].toolCalls                        │
+│ 工具调用事实：name / input / output          │
 └───────────────────┬─────────────────────────┘
                     │
                     v
-scribe.recordSkillUsage({
-  sessionId,
-  skillName,
-  outcome: "selected" | "completed" | "failed" | "missed",
-  trigger,
-  note,
-  errorMessage
-})
-                    │
-                    v
 ┌─────────────────────────────────────────────┐
-│ usageRecords                                │
-│ 最近技能使用信号                             │
+│ toolTrajectory                              │
+│ 技能沉淀事实源                               │
 └───────────────┬─────────────────────────────┘
                 │
-                ├─ used by prompt-build
-                │  进入下一轮 prompt
-                │
-                └─ used by skill evolution
-                   进入技能沉淀判断
+                v
+        used by skill evolution
+        进入技能沉淀判断
 ```
 
 也就是：
 
 ```text
-skill outcome
-技能结果
+tool call facts
+工具调用事实
     │
-    ├──> next prompt sees it
-    │    下一轮 prompt 可见
-    │
-    └──> skill evolution learns from it
-         技能沉淀阶段使用它
+    └──> skill evolution learns from the actual trajectory
+         技能沉淀阶段只从真实轨迹学习
 ```
 
 ---
@@ -392,7 +363,6 @@ When gate passes:
 │                                             │
 │ receives:                                  │
 │ - sessionId                                 │
-│ - usageRecords                              │
 │ - lastExtraction                            │
 │ - session messages/state                    │
 └───────────────────┬─────────────────────────┘
@@ -404,7 +374,6 @@ Usually host wires:
 runSkillEvolutionAgent({
   store: createLearnedSkillStore(...),
   reviewPacket,
-  observedSkillUsages,
   toolTrajectory,
   artifactPaths,
   qualitySignals
@@ -437,10 +406,12 @@ Skill agent 的写入模型：
 │ 技能沉淀子代理                               │
 │                                             │
 │ Tools:                                      │
-│ - skill_list                                │
-│ - skill_read                                │
-│ - skill_write                               │
-│ - skill_learn_decide                        │
+│ - glob                                      │
+│ - grep                                      │
+│ - read                                      │
+│ - write                                     │
+│ - edit                                      │
+│ - bash                                      │
 └───────────────────┬─────────────────────────┘
                     │
                     v
@@ -451,8 +422,8 @@ Skill agent 的写入模型：
                     │
                     v
 ┌─────────────────────────────────────────────┐
-│ skill_learn_decide                          │
-│ 输出最终协调包                               │
+│ final assistant JSON coordination packet    │
+│ 最后一条 assistant 消息输出最终协调包         │
 └─────────────────────────────────────────────┘
 ```
 
@@ -460,8 +431,9 @@ Skill agent 的写入模型：
 
 ```ts
 interface SkillEvolutionCoordinationPacket {
-  decision: "create" | "update" | "noop";
+  decision: "create" | "update" | "merge" | "noop";
   targetSkill: string | null;
+  mergedSkills: string[];
   why: string;
   memoryAction: "compress-memory" | "noop";
   memoryTopics: string[];
@@ -474,10 +446,12 @@ interface SkillEvolutionCoordinationPacket {
 | 情况 | 结果 |
 |---|---|
 | `create/update` | 必须改 exactly one skill |
-| `create/update` | 必须 `memoryAction=compress-memory` |
-| `create/update` | 必须有 `memoryTopics` |
+| `merge` | 必须更新 targetSkill，并 archive 所有 mergedSkills |
+| `create/update/merge` | 必须 `memoryAction=compress-memory` |
+| `create/update/merge` | 必须有 `memoryTopics` |
 | `noop` | 不能改任何 skill 文件 |
-| changed skill != targetSkill | fail + rollback |
+| create/update changed skill != targetSkill | fail + rollback |
+| merge changed set != targetSkill + mergedSkills | fail + rollback |
 | validation failed | fail + rollback |
 
 ---
@@ -615,8 +589,8 @@ workflow/release-prep.md
                     │
                     v
 ┌─────────────────────────────────────────────┐
-│ Host records skill usage                     │
-│ 宿主记录 skill selected/completed/failed     │
+│ Host records tool calls in the transcript    │
+│ 宿主把工具调用写入本轮消息                    │
 └───────────────────┬─────────────────────────┘
                     │
                     v

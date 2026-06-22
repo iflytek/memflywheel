@@ -13,9 +13,9 @@
  *  - turn-done (`agent_end` / post-turn context)                       → onTurnEnd (fire-and-forget)
  *  - learning-loop idle tick                                            → onIdle
  *
- * The host wraps Pi's auxiliary tool-calling completion into a `toolCompletion`
- * (see createHostMemScribe / examples) so the extraction subagent runs on Pi's own
- * model and writes memory files directly via core's memory tools.
+ * `createPiHarnessPort` maps Pi's native model/lifecycle/telemetry surface into
+ * the canonical HostHarnessPort. The extraction subagent then runs on Pi's own
+ * model and writes memory files directly via ordinary file tools.
  */
 
 import { makeAdapter, normalizeMessages, readString } from "./make-adapter.js";
@@ -50,7 +50,7 @@ export const piAdapter: HostAdapter = makeAdapter({
   lifecycle,
   defaultConfigRelPath: ".pi/agent/settings.json",
   integrationNote:
-    "Real integration: a Pi `.js` extension wraps the auxiliary tool-calling completion as `toolCompletion`; settings.json carries the wiring marker.",
+    "Native integration: a Pi extension builds `createPiHarnessPort(pi)` and passes it to `createMemScribeHarnessRuntime`; settings.json carries the wiring marker.",
   translators: {
     sessionId: (payload) => readString(payload, "sessionId"),
     turnEnd: (payload) => ({

@@ -13,25 +13,25 @@ Zero runtime dependencies (Node stdlib + TypeScript only).
 | ------------- | ----------- | ---------------------- | ----------------------- | -------------------- | ----------------- | ------------ |
 | `pi`          | Pi kernel   | `session:ensure`       | `turn:build`            | `agent_end`          | `learning:idle`   | real         |
 | `hermes`      | Hermes      | `on_session_start`     | `pre_llm_call`          | `post_llm_call`      | `on_session_end`  | real         |
-| `openclaw`    | OpenClaw    | `before_agent_start`   | `context:inject`        | `agent_end`          | `idle:watch`      | best-effort¹ |
+| `openclaw`    | OpenClaw    | `before_agent_start`   | `context:inject`        | `agent_end`          | `idle:watch`      | recall-only¹ |
 | `opencode`    | OpenCode    | `session.init`         | `message.build`         | `response.complete`  | `timer.background`| usable       |
 | `codex`       | Codex       | `task:start`           | `instructions:assemble` | `task:complete`      | `job:scheduled`   | usable       |
 | `claude-code` | Claude Code | `SessionStart`         | `UserPromptSubmit`      | `Stop`               | `Idle`            | usable       |
 
-¹ **best-effort, but still runnable.** OpenClaw exposes no in-process model-call
-API, so a plugin cannot drive inference itself. Recall + injection are
-first-class via hooks (`registerMemoryCapability` + `context:inject`), while
-extraction runs on MemScribe's own default fetch-completion (set
-`MEMSCRIBE_LLM_API_KEY`). An MCP bridge (`@memscribe/mcp-server`) is also available.
+¹ **recall-only until a native model port exists.** OpenClaw exposes no in-process
+model-call API in this adapter layer, so a plugin cannot drive inference itself.
+Recall + injection are first-class via hooks (`registerMemoryCapability` +
+`context:inject`). Extraction/dream/skill loops require a future canonical model
+port or explicit sidecar. An MCP bridge (`@memscribe/mcp-server`) is also available.
 
-- **`pi`** — real: a Pi `.js` extension wraps the per-session auxiliary completion
-  as `complete`; `~/.pi/agent/settings.json` carries the wiring marker.
+- **`pi`** — real: a Pi `.js` extension exposes `createPiHarnessPort(pi)`;
+  `~/.pi/agent/settings.json` carries the wiring marker.
   `session:ensure` → `onSessionStart`; per-turn assembly → `onPromptBuild` (the
   scribe's `systemPrompt` merges into the per-session system prompt and
   `preludePrompt` is prepended to the prelude list); `agent_end` →
   `onTurnEnd` (fire-and-forget); learning-loop idle tick → `onIdle`.
-- **`hermes`** — real: a Hermes plugin's `register(ctx)` wraps `ctx.llm.acomplete`
-  as `complete`. `on_session_start` → `onSessionStart`; `pre_llm_call` →
+- **`hermes`** — real: a Hermes plugin's `register(ctx)` wraps
+  `ctx.llm.completeWithTools` as a canonical model. `on_session_start` → `onSessionStart`; `pre_llm_call` →
   `onPromptBuild` (inject prelude as `{"context": ...}`); `post_llm_call` →
   `onTurnEnd` (reads `user_message` + `assistant_response`, or an explicit
   `transcript`); `on_session_end` → `onIdle`.
@@ -140,34 +140,47 @@ export const myAdapter = makeAdapter({
 
 Install/verify/doctor come for free.
 
-## Direct integration: `createHostMemScribe`
+## Direct integration: `createMemScribeHarnessRuntime`
 
-An adapter contains no memory or LLM logic. To make a host work out of the box,
-wrap its own tool-calling LLM channel into a `toolCompletion` and pass it to
-`createHostMemScribe`. That builds the SDK default extraction AND dream consolidation
-subagents (default prompts + memory tools) on top of the single `toolCompletion`,
-assembles a real `createMemScribe`, and returns an adapter-ready `MemScribe`
-plus the underlying SDK scribe for explicit ops. One channel drives both subagents:
+An adapter contains no memory or provider-specific LLM logic. To make a host
+work out of the box, expose a host-owned `CanonicalModelCompletion` or a
+`HostHarnessPort` and pass it to `createMemScribeHarnessRuntime`. That builds
+the SDK default extraction AND dream consolidation subagents (default prompts +
+ordinary file tools) on top of the single canonical model channel, assembles a real
+`createMemScribe`, and returns an adapter-ready `MemScribe` plus the underlying
+SDK scribe for explicit ops. One channel drives both subagents:
 
 ```ts
-import { createHostMemScribe, hermesAdapter } from "@memscribe/adapters";
+import { createMemScribeHarnessRuntime, hermesAdapter } from "@memscribe/adapters";
 
-// Wrap the host's own tool-calling channel — no API key needed; the host owns
-// creds. The extraction subagent drives this to write memory files directly.
-const toolCompletion = async ({ messages, tools, signal }) =>
-  ctx.llm.chatWithTools({ messages, tools, signal }); // returns { message, finishReason }
+// Host-owned model channel. The host owns auth, transport, policy, and lifecycle.
+const model = {
+  complete: (req) => ctx.llm.completeWithTools(req),
+};
 
-const { scribe, sdk } = createHostMemScribe({ toolCompletion });
+const { scribe, sdk } = createMemScribeHarnessRuntime({ model });
 const dispose = hermesAdapter.attach(scribe, host);   // session/prompt/turn-end/idle
 ```
 
+Pi phase-1 native integration uses a host port:
+
+```ts
+import { createMemScribeHarnessRuntime, createPiHarnessPort, piAdapter } from "@memscribe/adapters";
+
+export default function memScribeExtension(pi) {
+  const port = createPiHarnessPort(pi);
+  const { scribe } = createMemScribeHarnessRuntime({ port });
+  return piAdapter.attach(scribe, pi);
+}
+```
+
 Skill recall and learning-loop wiring are opt-in. A host can either pass custom
-SDK hooks or ask `createHostMemScribe` to assemble the file-native learned-skill
+SDK hooks or ask `createMemScribeHarnessRuntime` to assemble the file-native learned-skill
 store from `@memscribe/skills`:
 
 ```ts
-const { scribe } = createHostMemScribe({
-  toolCompletion,
+const { scribe } = createMemScribeHarnessRuntime({
+  model,
   learnedSkills: {
     skillsRoot: "/path/to/skills",
     checkpointRoot: "/path/to/.skill-checkpoints",
@@ -176,35 +189,29 @@ const { scribe } = createHostMemScribe({
     gate: { minDoneTurns: 3, cooldownTurns: 2, minToolCalls: 6 },
   },
 });
-
-scribe.recordSkillUsage({
-  sessionId,
-  skillName: "memscribe-learned-release-review",
-  outcome: "completed",
-});
 ```
 
-- With `toolCompletion`: real semantic extraction AND dream consolidation run as
-  tool-calling subagents on the **host's own model**, writing memory files directly.
+- With `model` or `port`: real semantic extraction AND dream consolidation run
+  as tool-calling subagents on the **host's own model**, writing memory files directly.
 - With `learnedSkills`: the bridge creates a learned-skill store, recall
   provider, and `runSkillEvolutionAgent`; turn-end can run extraction -> skill
   evolution -> dream, and the next prompt sees the learned-skill route.
 - With `skillRecall` / `skillPreludeBuilder`: prompt build appends learned-skill
-  routes and recent usage signals through the same SDK prompt context.
+  routes through the same SDK prompt context.
 - With custom `learningLoop.skillEvolution`: hosts may replace the default
   learned-skill runner while keeping SDK gate/dream coordination.
-- Without `toolCompletion` (and no explicit `agent` / `dreamRunner`): the scribe is
-  **recall-only** — memory is injected on prompt build, turns never extract, and
-  dream runs only its deterministic structural pre-pass.
+- Without `model`/`port` and without an explicit `agent`: construction fails
+  unless `mode: "recall-only"` is set explicitly. Recall-only injects memory on
+  prompt build, turns never extract, and dream runs only its deterministic structural pre-pass.
 - The adapter-facing `onSessionEnd` runs a final agent-end sweep (extracting any
   not-yet-processed messages) before dropping the session.
 
-Hosts with no in-process model-call API (OpenClaw, Claude Code) pass MemScribe's
-own default fetch-based tool completion instead:
+Hosts with no in-process model-call API (for example a hook-only plugin surface)
+must either run recall-only or expose a real canonical model port through a
+sidecar/upstream host API. MemScribe does not parse text as fake tool calls.
 
 ```ts
-import { defaultExtractionAgentFromEnv } from "@memscribe/sdk";
-const { scribe } = createHostMemScribe({ agent: defaultExtractionAgentFromEnv() });
+const { scribe } = createMemScribeHarnessRuntime({ mode: "recall-only" });
 ```
 
 ## Connect: install + round-trip verify in one call
@@ -222,6 +229,6 @@ if (!res.verify!.ok) console.error(res.verify!.problems);
 ```
 
 Runnable minimal integrations live under [`examples/`](https://github.com/iflytek/memscribe/tree/main/examples),
-one per targeted host (Pi, Hermes, OpenClaw): wrap the host LLM into `complete`,
-build the scribe with `createHostMemScribe`, mount the lifecycle, and `connect`
-(install + verify) the wiring.
+one per targeted host (Pi, Hermes, OpenClaw): expose a canonical model or an
+explicit recall-only mode, build the scribe with `createMemScribeHarnessRuntime`,
+mount the lifecycle, and `connect` (install + verify) the wiring.

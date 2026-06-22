@@ -9,9 +9,8 @@ import {
   ExtractionResult,
   type ExtractionAgentRunner,
   type DreamAgentRunner,
-  type SkillUsageRecord,
 } from "./index.js";
-import { readDreamState, markDreamConsolidated } from "@memscribe/core";
+import { readDreamState, markDreamConsolidated, serializeMemoryFile, type MemoryType } from "@memscribe/core";
 
 async function tempRoot(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), "memscribe-sdk-"));
@@ -23,10 +22,27 @@ function userTurn(text: string) {
 
 /**
  * A fake ExtractionAgentRunner that, on its first call, writes one memory via the
- * supplied memory tools (exactly as the real tool-calling loop would), then does
+ * supplied ordinary file tools (exactly as the real tool-calling loop would), then does
  * nothing on subsequent calls. Returns the changed paths the tool reported.
  */
-function onceAgent(save: { type: string; name: string; description?: string; body: string }): {
+function memorySlug(name: string): string {
+  return `${name.toLowerCase().replace(/[^a-z0-9一-龥]+/g, "-").replace(/^-+|-+$/g, "") || "memory"}.md`;
+}
+
+function writeMemoryArgs(input: {
+  type: MemoryType;
+  name: string;
+  description?: string;
+  body: string;
+  filename?: string;
+}) {
+  return {
+    filePath: `${input.type}/${input.filename ?? memorySlug(input.name)}`,
+    content: serializeMemoryFile(input),
+  };
+}
+
+function onceAgent(save: { type: MemoryType; name: string; description?: string; body: string }): {
   fn: ExtractionAgentRunner;
   calls: () => number;
 } {
@@ -34,9 +50,9 @@ function onceAgent(save: { type: string; name: string; description?: string; bod
   const fn: ExtractionAgentRunner = async ({ tools, toolCtx }) => {
     calls += 1;
     if (calls !== 1) return { changed: [] };
-    const saveTool = tools.find((t) => t.name === "memory_save");
-    assert.ok(saveTool, "memory_save tool is supplied to the agent");
-    const result = await saveTool!.handler(save, toolCtx);
+    const writeTool = tools.find((t) => t.name === "write");
+    assert.ok(writeTool, "write tool is supplied to the agent");
+    const result = await writeTool.handler(writeMemoryArgs(save), toolCtx);
     return { changed: result.changed ?? [] };
   };
   return { fn, calls: () => calls };
@@ -59,14 +75,12 @@ test("onPromptBuild returns stable rules + system-reminder-wrapped index, empty 
   }
 });
 
-test("onPromptBuild injects learned skill routing and recent usage feedback", async () => {
+test("onPromptBuild injects learned skill routing", async () => {
   const root = await tempRoot();
   try {
-    const seenUsageRecords: SkillUsageRecord[][] = [];
     const scribe = createMemScribe({
       root,
-      skillRecall: async ({ usageRecords }) => {
-        seenUsageRecords.push([...usageRecords]);
+      skillRecall: async () => {
         return {
           entries: [
             {
@@ -81,23 +95,12 @@ test("onPromptBuild injects learned skill routing and recent usage feedback", as
       },
     });
 
-    scribe.recordSkillUsage({
-      sessionId: "s1",
-      skillName: "memscribe-learned-release-review",
-      outcome: "failed",
-      trigger: "release prep",
-      note: "Checklist missed package metadata.",
-    });
-
     const ctx = await scribe.onPromptBuild("s1");
     assert.match(ctx.systemPrompt, /# 技能/);
     assert.match(ctx.preludePrompt, /## 可用技能/);
     assert.match(ctx.preludePrompt, /memscribe-learned-release-review/);
     assert.match(ctx.preludePrompt, /pre-publish review/);
-    assert.match(ctx.preludePrompt, /## 最近技能使用信号/);
-    assert.match(ctx.preludePrompt, /failed/);
     assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
-    assert.equal(seenUsageRecords[0]?.[0]?.outcome, "failed");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -203,12 +206,13 @@ test("onTurnEnd runs the integrated learning loop and routes skill memory compre
         source: "local",
         skillLearningEnabled: true,
         gate: { minDoneTurns: 1, cooldownTurns: 0, minToolCalls: 1 },
-        skillEvolution: async ({ usageRecords, lastExtraction }) => {
-          events.push(`skill:${lastExtraction.result}:${usageRecords.length}`);
+        skillEvolution: async ({ lastExtraction }) => {
+          events.push(`skill:${lastExtraction.result}`);
           return {
             coordination: {
               decision: "update",
               targetSkill: "memscribe-learned-release-review",
+              mergedSkills: [],
               why: "Release prep has become a reusable procedure.",
               memoryAction: "compress-memory",
               memoryTopics: ["release prep"],
@@ -221,12 +225,6 @@ test("onTurnEnd runs the integrated learning loop and routes skill memory compre
       },
     });
 
-    scribe.recordSkillUsage({
-      sessionId: "s1",
-      skillName: "memscribe-learned-release-review",
-      outcome: "completed",
-      trigger: "release prep",
-    });
     const turn = await scribe.onTurnEnd("s1", [
       {
         role: "assistant",
@@ -240,7 +238,7 @@ test("onTurnEnd runs the integrated learning loop and routes skill memory compre
     assert.equal(turn.learningLoop?.skillEvolution.ran, true);
     assert.equal(turn.learningLoop?.dream.ran, true);
     assert.deepEqual(events, [
-      "skill:completed:1",
+      "skill:completed",
       "dream:compress-memory:release prep:memscribe-learned-release-review",
     ]);
   } finally {
@@ -305,6 +303,7 @@ test("onTurnEnd learning loop uses captured tool calls and internal cooldown cou
             coordination: {
               decision: "noop",
               targetSkill: null,
+              mergedSkills: [],
               why: "No change needed.",
               memoryAction: "noop",
               memoryTopics: [],
@@ -365,9 +364,9 @@ test("agent attempting a secret save is gated only when refuseSecrets is on", as
   const rootOff = await tempRoot();
   try {
     const fn: ExtractionAgentRunner = async ({ tools, toolCtx }) => {
-      const save = tools.find((t) => t.name === "memory_save")!;
-      const r = await save.handler(
-        { type: "context", name: "creds", body: `the api key is ${fakeOpenAiKey}` },
+      const write = tools.find((t) => t.name === "write")!;
+      const r = await write.handler(
+        writeMemoryArgs({ type: "context", name: "creds", body: `the api key is ${fakeOpenAiKey}` }),
         toolCtx,
       );
       return { changed: r.changed ?? [] };
@@ -384,9 +383,9 @@ test("agent attempting a secret save is gated only when refuseSecrets is on", as
   const rootOn = await tempRoot();
   try {
     const fn: ExtractionAgentRunner = async ({ tools, toolCtx }) => {
-      const save = tools.find((t) => t.name === "memory_save")!;
-      const r = await save.handler(
-        { type: "context", name: "creds", body: `the api key is ${fakeOpenAiKey}` },
+      const write = tools.find((t) => t.name === "write")!;
+      const r = await write.handler(
+        writeMemoryArgs({ type: "context", name: "creds", body: `the api key is ${fakeOpenAiKey}` }),
         toolCtx,
       );
       assert.equal(r.ok, false, "secret save refused under refuseSecrets");
@@ -403,7 +402,7 @@ test("agent attempting a secret save is gated only when refuseSecrets is on", as
   }
 });
 
-test("explicit save writes, syncs index, and read returns the document", async () => {
+test("explicit save writes and syncs index", async () => {
   const root = await tempRoot();
   try {
     const scribe = createMemScribe({ root });
@@ -415,16 +414,13 @@ test("explicit save writes, syncs index, and read returns the document", async (
     });
     assert.equal(result, ExtractionResult.Completed);
 
-    const doc = await scribe.read("identity/user-name.md");
-    assert.ok(doc);
-    assert.equal(doc?.frontmatter.type, "identity");
-    assert.equal(doc?.frontmatter.name, "user name");
-    assert.match(doc?.body ?? "", /Call the user Kaye\./);
+    const raw = await readFile(path.join(root, "identity", "user-name.md"), "utf8");
+    assert.match(raw, /type: identity/);
+    assert.match(raw, /name: user name/);
+    assert.match(raw, /Call the user Kaye\./);
 
     const index = await readFile(path.join(root, "MEMORY.md"), "utf8");
     assert.match(index, /user name/);
-
-    assert.equal(await scribe.read("identity/nope.md"), null);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -443,8 +439,8 @@ test("save with archives archives the corrected memory then writes the new one",
     });
     assert.equal(result, ExtractionResult.Completed);
 
-    assert.ok(await scribe.read("preference/new.md"));
-    assert.equal(await scribe.read("preference/old.md"), null);
+    await readFile(path.join(root, "preference", "new.md"), "utf8");
+    await assert.rejects(readFile(path.join(root, "preference", "old.md"), "utf8"), /ENOENT/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -484,29 +480,33 @@ test("deterministic dream relocates a root-level mistyped file (no runner)", asy
     const dream = await scribe.runDream();
     assert.equal(dream.ran, true);
 
-    assert.ok(await scribe.read("preference/stray.md"));
-    assert.equal(await scribe.read("stray.md"), null);
+    await readFile(path.join(root, "preference", "stray.md"), "utf8");
+    await assert.rejects(readFile(path.join(root, "stray.md"), "utf8"), /ENOENT/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-test("dreamRunner injection point is invoked and consolidates via the memory tools", async () => {
+test("dreamRunner injection point is invoked and consolidates via ordinary file tools", async () => {
   const root = await tempRoot();
   try {
     let runnerSeen = false;
-    // The subagent reads the full body first, then compresses via memory_update —
-    // memory_update preserves frontmatter (name/description) by construction.
+    // The subagent reads the full body first, then edits the same file through
+    // the ordinary file tool surface.
     const runner: DreamAgentRunner = async ({ root: r, tools, toolCtx }) => {
       runnerSeen = true;
       assert.ok(typeof r === "string");
       const map = new Map(tools.map((t) => [t.name, t]));
-      const read = map.get("memory_read")!;
-      const update = map.get("memory_update")!;
-      const before = await read.handler({ relativePath: "context/term.md" }, toolCtx);
+      const read = map.get("read")!;
+      const edit = map.get("edit")!;
+      const before = await read.handler({ filePath: "context/term.md" }, toolCtx);
       assert.ok(before.ok);
-      const res = await update.handler(
-        { relativePath: "context/term.md", body: "shorter body" },
+      const res = await edit.handler(
+        {
+          filePath: "context/term.md",
+          oldString: "the original long body of the term memory",
+          newString: "shorter body",
+        },
         toolCtx,
       );
       return { changed: res.ok && res.changed ? res.changed : [] };
@@ -528,10 +528,10 @@ test("dreamRunner injection point is invoked and consolidates via the memory too
     assert.equal(runnerSeen, true);
     assert.ok(dream.changed?.includes("context/term.md"));
 
-    const doc = await scribe.read("context/term.md");
-    assert.match(doc?.body ?? "", /shorter body/);
-    assert.equal(doc?.frontmatter.name, "term");
-    assert.equal(doc?.frontmatter.description, "a term");
+    const raw = await readFile(path.join(root, "context", "term.md"), "utf8");
+    assert.match(raw, /shorter body/);
+    assert.match(raw, /name: term/);
+    assert.match(raw, /description: a term/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

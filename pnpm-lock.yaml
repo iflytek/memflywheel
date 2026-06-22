@@ -23,6 +23,9 @@ importers:
       '@memscribe/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@memscribe/model':
+        specifier: workspace:*
+        version: link:../packages/model
       '@memscribe/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
@@ -32,6 +35,9 @@ importers:
 
   packages/adapters:
     dependencies:
+      '@memscribe/model':
+        specifier: workspace:*
+        version: link:../model
       '@memscribe/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -87,11 +93,23 @@ importers:
         specifier: ^5.5.4
         version: 5.9.3
 
+  packages/model:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.5.0
+        version: 22.19.21
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+
   packages/sdk:
     dependencies:
       '@memscribe/core':
         specifier: workspace:*
         version: link:../core
+      '@memscribe/model':
+        specifier: workspace:*
+        version: link:../model
     devDependencies:
       '@types/node':
         specifier: ^22.5.0
@@ -101,6 +119,10 @@ importers:
         version: 5.9.3
 
   packages/skills:
+    dependencies:
+      '@memscribe/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^22.5.0

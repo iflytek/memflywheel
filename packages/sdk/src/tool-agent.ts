@@ -2,7 +2,7 @@
  * The shared tool-calling agent loop.
  *
  * Both memory subagents — extraction and dream — are the same loop: seed it with
- * a system prompt + one user message, advertise the memory tools, then drive the
+ * a system prompt + one user message, advertise ordinary file tools, then drive the
  * model round by round. Each round executes any requested tool calls (which WRITE
  * FILES via core's handlers) and feeds the results back as role:"tool" messages,
  * until the model stops requesting tools or the step cap is reached. The loop
@@ -18,9 +18,15 @@
  * a failed pass.
  */
 
-import { type MemoryTool, type MemoryToolContext, memoryToolMap } from "@memscribe/core";
+import { type FileTool, type FileToolContext, fileToolMap } from "@memscribe/core";
 
-import { type ToolCompletion, type ToolMessage, type ToolSpec } from "./tool-completion.js";
+import type {
+  CanonicalModelCompletion,
+  CanonicalModelMessage,
+  CanonicalModelRequest,
+  CanonicalModelResponse,
+  CanonicalToolDefinition,
+} from "@memscribe/model";
 
 const DEFAULT_MAX_STEPS = 12;
 /** Hard cap on tool-agent loop rounds. A memory subagent must never run away. */
@@ -61,14 +67,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 /** Call the tool completion with exponential-backoff retries on transient errors. */
 async function completeWithRetries(
-  toolCompletion: ToolCompletion,
-  req: Parameters<ToolCompletion>[0],
+  model: CanonicalModelCompletion,
+  req: CanonicalModelRequest,
   signal?: AbortSignal,
-): Promise<Awaited<ReturnType<ToolCompletion>>> {
+): Promise<CanonicalModelResponse> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      return await toolCompletion(req);
+      return await model.complete(req);
     } catch (err) {
       lastErr = err;
       if (signal?.aborted || attempt === RETRY_ATTEMPTS || !isRetryableError(err)) break;
@@ -92,12 +98,12 @@ export interface AgentToolCall {
 
 /** Options for {@link runToolAgent}. */
 export interface RunToolAgentOptions {
-  /** The tool-calling LLM channel. */
-  toolCompletion: ToolCompletion;
-  /** The memory tools (from core.createMemoryTools()), advertised + executed. */
-  tools: MemoryTool[];
+  /** The host-owned canonical model channel. */
+  model: CanonicalModelCompletion;
+  /** The file tools (from core.createFileTools()), advertised + executed. */
+  tools: FileTool[];
   /** The context the handlers write through (shares the held lock). */
-  toolCtx: MemoryToolContext;
+  toolCtx: FileToolContext;
   /** The system prompt seeding the loop. */
   systemPrompt: string;
   /** The single seed user message rendering the task packet. */
@@ -120,21 +126,18 @@ export interface ToolAgentResult {
   stoppedReason: "no-tool-calls" | "max-steps" | "aborted";
 }
 
-/** Map core memory tools to OpenAI tool specs. */
-function toToolSpecs(tools: MemoryTool[]): ToolSpec[] {
+/** Map core file tools to canonical tool definitions. */
+function toToolSpecs(tools: FileTool[]): CanonicalToolDefinition[] {
   return tools.map((tool) => ({
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.inputSchema,
-    },
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
   }));
 }
 
 /**
  * Run the tool-calling loop. The subagent decides what to persist and calls the
- * memory tools, which write files directly. Pure orchestration: it does not own
+ * ordinary file tools, which write files directly. Pure orchestration: it does not own
  * the lock, cursor, or index — the core session closure does.
  */
 export async function runToolAgent(options: RunToolAgentOptions): Promise<ToolAgentResult> {
@@ -144,9 +147,9 @@ export async function runToolAgent(options: RunToolAgentOptions): Promise<ToolAg
   );
 
   const toolSpecs = toToolSpecs(options.tools);
-  const lookup = memoryToolMap(options.tools);
+  const lookup = fileToolMap(options.tools);
 
-  const messages: ToolMessage[] = [
+  const messages: CanonicalModelMessage[] = [
     { role: "system", content: options.systemPrompt },
     { role: "user", content: options.seedUserMessage },
   ];
@@ -160,39 +163,31 @@ export async function runToolAgent(options: RunToolAgentOptions): Promise<ToolAg
       return { steps, toolCalls, changed, stoppedReason: "aborted" };
     }
     const response = await completeWithRetries(
-      options.toolCompletion,
+      options.model,
       { messages, tools: toolSpecs, signal: options.signal },
       options.signal,
     );
     steps += 1;
     messages.push(response.message);
 
-    const calls = response.message.tool_calls ?? [];
+    const calls = response.message.toolCalls ?? [];
     if (calls.length === 0) {
       return { steps, toolCalls, changed, stoppedReason: "no-tool-calls" };
     }
 
     for (const call of calls) {
-      const tool = lookup.get(call.function.name);
+      const tool = lookup.get(call.name);
       let result;
       if (!tool) {
-        result = { ok: false, text: `unknown tool: ${call.function.name}` };
+        result = { ok: false, text: `unknown tool: ${call.name}` };
       } else {
-        let args: unknown = {};
-        try {
-          args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
-        } catch {
-          result = { ok: false, text: "invalid tool arguments: not valid JSON" };
-        }
-        if (!result) {
-          result = await tool.handler(args, options.toolCtx);
-        }
+        result = await tool.handler(call.input ?? {}, options.toolCtx);
       }
-      toolCalls.push({ name: call.function.name, ok: result.ok });
+      toolCalls.push({ name: call.name, ok: result.ok });
       if (result.changed && result.changed.length > 0) changed.push(...result.changed);
       messages.push({
         role: "tool",
-        tool_call_id: call.id,
+        toolCallId: call.id,
         content: clipToolResult(result.text),
       });
     }

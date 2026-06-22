@@ -31,7 +31,7 @@ MemScribe/
     ├── core/                    # @memscribe/core   — memory kernel (no LLM, no host)
     ├── sdk/                     # @memscribe/sdk    — lifecycle hooks + extraction-subagent injection
     ├── cli/                     # @memscribe/cli    — doctor/dream/rebuild/context/...
-    ├── mcp-server/              # @memscribe/mcp-server — context/read/save tools
+    ├── mcp-server/              # @memscribe/mcp-server — context/save tools
     └── adapters/                # @memscribe/adapters  — host lifecycle mappings
 ```
 
@@ -163,7 +163,7 @@ core/src/
 ├── atomic.ts           # temp-file + rename atomic write
 ├── audit.ts            # append-only audit log
 ├── extract.ts          # runExtractionSession lifecycle + ExtractionAgentRunner contract
-├── memory-tools.ts     # memory_list / memory_search / memory_read / memory_save / memory_update / memory_archive
+├── file-tools.ts     # glob / grep / read / write / edit / bash
 ├── dream.ts            # deterministic pre-pass + runDreamSession + DreamAgentRunner contract
 └── health.ts           # structural findings (used by dream + CLI doctor)
 ```
@@ -429,7 +429,7 @@ export function createAuditLogger(root: string): AuditLogger;
 
 ### 3.11 `extract.ts` — extraction kernel + **pluggable agent-runner contract**
 
-Core owns the full `runExtractionSession` lifecycle **except the LLM call**, which is injected. Extraction is a tool-calling subagent that **writes the memory files itself** through core's write tools — there are no candidates for core to validate. Core also ships the default extraction system prompt and the write tools (`memory-tools.ts`) as **pure values** (no network call); the SDK assembles them into a running subagent loop (§4.3).
+Core owns the full `runExtractionSession` lifecycle **except the LLM call**, which is injected. Extraction is a tool-calling subagent that **writes the memory files itself** through core's write tools — there are no candidates for core to validate. Core also ships the default extraction system prompt and the write tools (`file-tools.ts`) as **pure values** (no network call); the SDK assembles them into a running subagent loop (§4.3).
 
 #### The injection point (the contract host/SDK implements)
 
@@ -442,8 +442,8 @@ export interface ExtractionMessage { role: "user" | "assistant"; text: string; }
 // the supplied tools (bound to the same context, so they share the lock). Core
 // never calls an LLM — it calls this.
 export type ExtractionAgentRunner = (input: {
-  toolCtx: MemoryToolContext;      // bound to the held write lock
-  tools: MemoryTool[];             // from createMemoryTools()
+  toolCtx: FileToolContext;      // bound to the held write lock
+  tools: FileTool[];             // from createFileTools()
   messages: ExtractionMessage[];   // selected window (see selection below)
   manifest: string;                // formatManifest(existing entries)
   root: string;
@@ -459,7 +459,7 @@ export type ExtractionAgentRunner = (input: {
 // private content that must never be extracted (national IDs, bank-card numbers,
 // tokens/keys, medical details, income, third-party private data); the six types
 // with definitions; positive/negative examples; the instruction to WRITE with the
-// tools (memory_list → memory_save / memory_update / memory_archive), not return JSON.
+// tools (glob → write / edit / bash), not return JSON.
 export const DEFAULT_EXTRACTION_SYSTEM_PROMPT: string;
 
 // Render the seed user message for one turn (manifest + conversation window).
@@ -470,11 +470,11 @@ export function buildExtractionAgentUserMessage(input: {
 
 // The memory write tools the subagent drives. Each tool is JSON-schema-described
 // with a handler that does path-safety validation + atomic write + audit append +
-// index resync. memory_list is read-only.
-export function createMemoryTools(): MemoryTool[];   // memory-tools.ts
+// index resync. glob is read-only.
+export function createFileTools(): FileTool[];   // file-tools.ts
 ```
 
-> Core holds the prompt string, the seed-message builder, and the write tools only — it never makes an LLM call. The SDK's `createExtractionAgentRunner({ toolCompletion })` drives a tool-calling loop over them into a full `ExtractionAgentRunner` (§4.3).
+> Core holds the prompt string, the seed-message builder, and the write tools only — it never makes an LLM call. The SDK's `createExtractionAgentRunner({ model })` drives a tool-calling loop over them into a full `ExtractionAgentRunner` (§4.3).
 
 #### Selection / message-window helpers
 
@@ -496,15 +496,15 @@ export function stripSystemReminderBlocks(text: string): string;
 #### Write tools + run
 
 ```ts
-// Each write tool routes through the storage layer (memory-tools.ts), which
+// Each write tool routes through the storage layer (file-tools.ts), which
 // enforces: valid type, safe flat filename, single-line frontmatter values,
 // body non-empty, privacy (always redact <private>; optionally refuse hard
 // secrets via the refuseSecrets gate), atomic write, audit append, index resync.
-export interface MemoryTool {
-  name: "memory_save" | "memory_update" | "memory_archive" | "memory_list";
+export interface FileTool {
+  name: "write" | "edit" | "bash" | "glob";
   description: string;
   inputSchema: JsonSchema;
-  handler: (args: unknown, toolCtx: MemoryToolContext) => Promise<MemoryToolResult>;
+  handler: (args: unknown, toolCtx: FileToolContext) => Promise<FileToolResult>;
 }
 
 export enum ExtractionResult { Queued = "queued", Completed = "completed", Skipped = "skipped", Failed = "failed" }
@@ -515,7 +515,7 @@ export enum ExtractionResult { Queued = "queued", Completed = "completed", Skipp
 //  3 before = scanMemoryFiles → manifest
 //  4 select window via cursor
 //  5 build bound tools + toolCtx (sharing the lock); changed = await agent({...})
-//    — the subagent writes via the tools (memory_list → memory_save/update/archive)
+//    — the subagent writes via the tools (glob → write/update/archive)
 //  6 relocateRootFiles again
 //  7 after = scanMemoryFiles → syncMemoryIndex
 //  8 advance cursor ONLY on success; stamp .last-extraction
@@ -551,24 +551,24 @@ export function relocateRootFiles(ctx: StorageContext): Promise<string[]>;
 
 ### 3.12 `dream.ts` — consolidation: deterministic pre-pass + **tool-calling consolidation subagent**
 
-Dream is symmetric to extraction: a deterministic, LLM-free structural pre-pass runs first, then a pluggable consolidation **subagent** reads full bodies and merges / compresses / retires memories by calling the memory tools directly. The tool calls ARE the changes — there is no JSON op format to emit or parse, and "nothing to consolidate" is simply making no tool calls. `runDreamSession` holds the per-root write lock across both phases.
+Dream is symmetric to extraction: a deterministic, LLM-free structural pre-pass runs first, then a pluggable consolidation **subagent** reads full bodies and merges / compresses / retires memories by calling the ordinary file tools directly. The tool calls ARE the changes — there is no JSON op format to emit or parse, and "nothing to consolidate" is simply making no tool calls. `runDreamSession` holds the per-root write lock across both phases.
 
 ```ts
 // The deterministic, LLM-free structural ops — the only two unambiguous fixes.
 // Everything semantic (near-duplicate merges, compression, type re-judgement) is
-// the subagent's job, via the memory tools.
+// the subagent's job, via the ordinary file tools.
 export type DreamOp =
   | { kind: "delete-duplicate"; path: string }
   | { kind: "relocate"; path: string; toType: MemoryType };
 
 // THE pluggable dream injection point — symmetric to ExtractionAgentRunner. The
-// subagent gets the structural packets + the bound memory tools/context (sharing
+// subagent gets the structural packets + the bound ordinary file tools/context (sharing
 // the held lock) and consolidates by calling those tools. It returns the union of
 // relative paths it changed.
 export type DreamAgentRunner = (input: {
   root: string;
-  toolCtx: MemoryToolContext;
-  tools: MemoryTool[];
+  toolCtx: FileToolContext;
+  tools: FileTool[];
   health: HealthFinding[];                 // §3.13
   typeReview: { path: string; type: MemoryType; name: string; description: string; excerpt: string }[];
   manifest: string;
@@ -580,7 +580,7 @@ export type DreamAgentRunner = (input: {
 // no network, no parser). The prompt encodes the consolidation policy (merge
 // near-duplicates KEEPING every item, compress verbose notes to short trigger
 // signals, retire superseded entries) and the read-before-merge rule: never author
-// a merged/compressed body from an excerpt — memory_read the full body first.
+// a merged/compressed body from an excerpt — read the full body first.
 export const DEFAULT_DREAM_SYSTEM_PROMPT: string;
 export function buildDreamAgentUserMessage(input: {
   health: HealthFinding[];
@@ -590,9 +590,9 @@ export function buildDreamAgentUserMessage(input: {
   coordination?: { reason: string; memoryAction: string; topics: string[] };
 }): string;
 
-// The SDK's createDreamAgentRunner({ toolCompletion }) seeds the shared tool-agent
+// The SDK's createDreamAgentRunner({ model }) seeds the shared tool-agent
 // loop with DEFAULT_DREAM_SYSTEM_PROMPT + buildDreamAgentUserMessage into a full
-// DreamAgentRunner (§4.3). The SAME toolCompletion channel drives extraction.
+// DreamAgentRunner (§4.3). The SAME canonical model channel drives extraction.
 
 // Deterministic plan (no LLM): from health findings + duplicate/content analysis.
 // The CLI's `dream plan` prints exactly this.
@@ -623,7 +623,7 @@ export const DREAM_DEFAULT_MIN_HOURS = 24;
 export const DREAM_DEFAULT_MIN_SESSIONS = 5;
 ```
 
-> **No post-hoc frontmatter "stabilization."** The subagent's writes go through the same validated memory tools as extraction (single-line name/description, valid type), and `memory_update` preserves frontmatter unless explicitly overridden — so deliberate, validated edits are trusted rather than reverted from a snapshot. The read-before-merge rule (memory_read the full body before merging/compressing) is what prevents data loss, exactly as read-before-update protects list-type appends in extraction.
+> **No post-hoc frontmatter "stabilization."** The subagent's writes go through the same validated ordinary file tools as extraction (single-line name/description, valid type), and `edit` preserves frontmatter unless explicitly overridden — so deliberate, validated edits are trusted rather than reverted from a snapshot. The read-before-merge rule (read the full body before merging/compressing) is what prevents data loss, exactly as read-before-update protects list-type appends in extraction.
 
 > **Scope: whole-store consolidation, not conversation review.** Dream reviews the current memory store (health / type / duplicates / compression). As a host-agnostic library MemScribe has no in-process session registry or transcript store, so the dream subagent does **not** read recent host conversations — its only conversational cue is the optional `coordination` directive, through which a host may pass recently-derived hints (e.g. a topic to compress). The gate's session count is likewise a counter the scribe keeps (`.dream-state.json`, bumped on session end, reset on a successful pass), not a scan of past sessions.
 
@@ -715,66 +715,66 @@ export function createMemScribe(config: MemScribeConfig): MemScribe;
 | `onTurnEnd` | `extract.runExtractionSession({ ctx, agent, messages, sessionId, cursorStore })` (skipped if no `agent`) |
 | `onIdle` | gate check → `dream.runDreamSession({ ctx, runner: dreamRunner })` (deterministic pre-pass always; the subagent only if a `dreamRunner` is configured) |
 | `onSessionEnd` | flush pending extraction queue |
-| `saveMemory` | `memory-tools.memory_save` handler → `index-file.syncMemoryIndex` |
+| `saveMemory` | `memory-tools.write` handler → `index-file.syncMemoryIndex` |
 
 > **Injection-point exposure:** the host passes `agent` and `dreamRunner` into `createMemScribe`. These are the *only* places an LLM enters the system. If omitted, MemScribe still runs (recall, the deterministic dream pre-pass, health, explicit save) — it just won't auto-extract or run the semantic dream subagent.
 
-### 4.3 Default extraction / dream subagent factories + built-in completion
+### 4.3 Default extraction / dream subagent factories + canonical model protocol
 
-The SDK assembles core's default prompts + write tools into running tool-calling subagents, and ships a built-in tool completion so one API key is enough to run both extraction and consolidation. There is ONE LLM channel — `toolCompletion` — and it drives both subagents.
+The SDK assembles core's default prompts + write tools into running tool-calling subagents. There is ONE provider-neutral model channel — `model` — and it drives both subagents. Provider wire shapes live in `@memscribe/model`, not in the SDK loops.
 
 ```ts
-// A tool-aware LLM channel: takes messages + tool specs, returns the assistant
-// message (which may carry tool_calls). Drives BOTH subagent loops.
-export type ToolCompletion = (req: ToolCompletionRequest) => Promise<ToolCompletionResponse>;
+export interface CanonicalModelCompletion {
+  complete(req: CanonicalModelRequest): Promise<CanonicalModelResponse>;
+}
 
 // Drive a tool-calling loop over core's DEFAULT_EXTRACTION_SYSTEM_PROMPT + write
-// tools + toolCompletion into a full ExtractionAgentRunner. The subagent writes
+// tools + canonical model into a full ExtractionAgentRunner. The subagent writes
 // memory files itself via the tools. Pass a custom prompt/maxSteps to override.
 export function createExtractionAgentRunner(opts: {
-  toolCompletion: ToolCompletion; systemPrompt?: string; maxSteps?: number;
+  model: CanonicalModelCompletion; systemPrompt?: string; maxSteps?: number;
 }): ExtractionAgentRunner;
 
 // Dream consolidation subagent: DEFAULT_DREAM_SYSTEM_PROMPT + buildDreamAgentUserMessage
 // over the SAME tool-calling loop. Reads full bodies, then merges/compresses/retires
-// via the memory tools. Same toolCompletion channel as extraction.
+// via the ordinary file tools. Same canonical model channel as extraction.
 export function createDreamAgentRunner(opts: {
-  toolCompletion: ToolCompletion; systemPrompt?: string; maxSteps?: number;
+  model: CanonicalModelCompletion; systemPrompt?: string; maxSteps?: number;
 }): DreamAgentRunner;
 
-// Built-in fetch-based tool completion (Node global fetch, zero deps). Targets an
-// OpenAI-compatible /chat/completions endpoint WITH a tools array. Reads provider /
-// endpoint / API key / model from the environment (MEMSCRIBE_LLM_*) or explicit opts.
-export interface ToolCompletionConfig {
-  provider?: string;   // default inferred from env
-  endpoint?: string;   // default per provider
-  apiKey?: string;     // default from env
-  model?: string;      // default from env
+// Provider mapper in @memscribe/model. Targets an OpenAI-compatible
+// /chat/completions endpoint WITH a tools array. Reads endpoint / API key / model
+// from the environment (MEMSCRIBE_LLM_*) or explicit opts.
+export interface OpenAIChatCompletionsModelConfig {
+  endpoint?: string;
+  apiKey?: string;
+  model?: string;
   fetchImpl?: typeof fetch; // injectable for tests (fake tool_calls)
 }
-export function createToolCompletion(config?: ToolCompletionConfig): ToolCompletion;
+export function createOpenAIChatCompletionsModel(
+  config?: OpenAIChatCompletionsModelConfig
+): CanonicalModelCompletion;
 ```
 
-> **Batteries included:** `createMemScribe({ agent: createExtractionAgentRunner({ toolCompletion: createToolCompletion() }) })` is a complete, running extraction setup given one API key in the environment. Adapters wrap their host's own tool-calling LLM channel into `toolCompletion` instead of using `createToolCompletion`.
+> **Batteries included:** `createMemScribe({ agent: createExtractionAgentRunner({ model: createOpenAIChatCompletionsModel() }) })` is a complete, running extraction setup given one API key in the environment. Native adapters should wrap their host's own tool-calling LLM channel into `CanonicalModelCompletion`; OpenAI-compatible HTTP is only one mapper.
 
 ---
 
 ## 5. `@memscribe/mcp-server` — minimal tool face
 
-Exactly three tools. **No search tool** — there is no lexical retrieval.
+Exactly two tools. **No read/search tool** — full-body recall reads go through the host filesystem surface, and there is no lexical retrieval.
 
 ```
 mcp-server/src/
 ├── index.ts        # server bootstrap (stdio), wires a MemScribe
-├── tools.ts        # the three tool definitions
+├── tools.ts        # the two tool definitions
 └── tools.test.ts
 ```
 
 | Tool | Input | Output | Maps to |
 |---|---|---|---|
-| `memory_context` | `{}` | full-index prelude string (`<system-reminder>…`) | `scribe.getContext().preludePrompt` |
-| `memory_read` | `{ path: string }` | the memory body (markdown) | `scribe.readMemory(path)` → `doc.body` |
-| `memory_save` | `{ type, name, description?, body }` | `{ changed: string[] }` | `scribe.saveMemory(candidate)` |
+| `memscribe.with_memory` | `{}` | full-index prelude string (`<system-reminder>…`) | `scribe.getContext().preludePrompt` |
+| `write` | `{ type, name, description?, body }` | `{ changed: string[] }` | `scribe.saveMemory(candidate)` |
 
 - The MCP server is transport only; all logic is in `core`/`sdk`.
 - `doctor` / `dream` / `rebuild-index` are **not** MCP tools — they live in the CLI.
@@ -802,7 +802,7 @@ cli/src/
 |---|---|---|
 | `memscribe context` | print the two-segment recall (rules + prelude) | `scribe.getContext()` |
 | `memscribe list` | print scan entries (name, type, path, mtime) | `scan.scanMemoryFiles` |
-| `memscribe read <path>` | print a memory body | `scribe.readMemory` |
+| `memscribe read <path>` | print a memory body | `readMemoryDocument` |
 | `memscribe write --type --name [--description] --file/-` | write a memory (stdin or file body) | `scribe.saveMemory` |
 | `memscribe doctor` | print health findings (exit ≠0 if errors) | `scribe.doctor` |
 | `memscribe dream [--force]` | run consolidation (deterministic pre-pass; the subagent runs only when a host wires a `dreamRunner`) | `scribe.runDream` |
@@ -850,15 +850,15 @@ export interface HostAdapter {
 | **Codex** | task start | instruction assembly | task complete | scheduled job |
 | **Claude Code** | session start hook | UserPromptSubmit-style hook → prelude | Stop/turn-end hook | idle/cron |
 
-For each: `onSessionStart` ↔ start, `onPromptBuild` (returns both segments) ↔ prompt assembly, `onTurnEnd` ↔ turn-done (async, non-blocking), `onIdle` ↔ idle/scheduled. The adapter is responsible only for (a) extracting `ExtractionMessage[]` from the host's transcript shape, (b) placing `systemPrompt`/`preludePrompt` where that host expects them (the prelude must remain `<system-reminder>`-wrapped), and (c) wrapping the host's own tool-calling LLM channel into a single `toolCompletion` that drives both `createExtractionAgentRunner` and `createDreamAgentRunner`.
+For each: `onSessionStart` ↔ start, `onPromptBuild` (returns both segments) ↔ prompt assembly, `onTurnEnd` ↔ turn-done (async, non-blocking), `onIdle` ↔ idle/scheduled. The adapter is responsible only for (a) extracting `ExtractionMessage[]` from the host's transcript shape, (b) placing `systemPrompt`/`preludePrompt` where that host expects them (the prelude must remain `<system-reminder>`-wrapped), and (c) exposing the host's own tool-calling LLM channel as `CanonicalModelCompletion` or `HostHarnessPort` that drives both `createExtractionAgentRunner` and `createDreamAgentRunner`.
 
 ### 7.3 Default extraction-subagent wiring + install/verify
 
-An adapter carries no memory or LLM logic: it wraps the host's tool-calling LLM into `toolCompletion`, hands it to the SDK's `createExtractionAgentRunner({ toolCompletion })` and `createDreamAgentRunner({ toolCompletion })`, and attaches the resulting `MemScribe`. `install` plans then applies a versioned wiring marker into the host config (atomic write), and `verify` re-reads from disk to round-trip-confirm the wiring.
+An adapter carries no memory or provider-specific LLM logic: it exposes the host's tool-calling LLM as a canonical model or `HostHarnessPort`, hands it to the SDK's `createExtractionAgentRunner({ model })` and `createDreamAgentRunner({ model })`, and attaches the resulting `MemScribe`. `install` plans then applies a versioned wiring marker into the host config (atomic write), and `verify` re-reads from disk to round-trip-confirm the wiring.
 
 ### 7.4 Runnable examples
 
-The `examples/` directory holds a minimal, runnable integration per targeted host — at least OpenClaw, Hermes, and Pi. Each example wraps the host's tool-calling LLM into `toolCompletion`, builds the default extraction subagent, mounts the full lifecycle (session start / prompt build / turn end / agent end / idle), and installs + verifies the wiring.
+The `examples/` directory holds a minimal, runnable integration per targeted host — at least OpenClaw, Hermes, and Pi. Each example exposes a canonical model or explicit recall-only mode, builds the default extraction subagent when the host is model-capable, mounts the full lifecycle (session start / prompt build / turn end / agent end / idle), and installs + verifies the wiring.
 
 ---
 
@@ -925,7 +925,7 @@ Order on any inbound body (a subagent tool write or an explicit save):
   scribe.onTurnEnd → runExtractionSession
      lock → relocate → before-scan → select window(cursor)
      → agent({ tools, toolCtx, messages, manifest, root })   ← LLM injection point
-        subagent: memory_list/search/read → memory_save / memory_update / memory_archive (writes files)
+        subagent: glob/search/read → write / edit / bash (writes files)
      → relocate → after-scan → syncIndex
      → advance cursor (success only) → stamp .last-extraction → unlock → drain
 
@@ -933,7 +933,7 @@ Order on any inbound body (a subagent tool write or an explicit save):
   scribe.onIdle → gate(minHours|minSessions|force) → runDreamSession
      lock → planDeterministic (health + dupes) → apply (delete-duplicate / relocate)
      → dreamRunner({ tools, toolCtx, health, typeReview, manifest, index, coordination })  ← LLM injection point
-        subagent: memory_read full bodies → memory_save (merge) / memory_update (compress) / memory_archive
+        subagent: read full bodies → write (merge) / edit (compress) / bash
      → relocate → after-scan → syncIndex → audit → unlock
 ```
 
@@ -947,7 +947,7 @@ These are **out of scope by design** — reviewers and future contributors must 
 - **No retrieval of any kind.** No BM25, no lexical/keyword search, no TF-IDF.
 - **No entity index / knowledge graph.**
 - **No embeddings / vectors / similarity / top-k / re-ranking / scoring.** Recall is full-index injection + LLM self-selection, period.
-- **No `search` MCP tool.** The tool face is `memory_context`, `memory_read`, `memory_save` only.
+- **No `read` / `search` MCP tool.** The tool face is `memscribe.with_memory`, `write` only; recall reads use the host filesystem surface.
 - **No extra frontmatter fields.** No `scope`, `origin`, `source_ref`, `confidence`, `status`, `agent`, `project`, `session`. Only `name` / `description` / `type` (+ `created_at` / `updated_at`).
 - **No LLM calls inside core.** Extraction and dream semantics are pluggable injection points; core stays deterministic.
 - **No runtime npm dependencies.** No YAML lib, no arg-parser lib, no MCP SDK runtime dep — hand-roll on Node stdlib.

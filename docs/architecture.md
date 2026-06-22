@@ -101,10 +101,10 @@ whether to `Read` a body. There is no scoring, ranking, or embedding step anywhe
 ## Extraction
 
 After a turn, the host may trigger extraction. The core owns the whole mechanism — lock,
-cursor, message-window selection, relocation, index sync, and the validated memory tools —
+cursor, message-window selection, relocation, index sync, and the validated ordinary file tools —
 and calls the host's injected `ExtractionAgentRunner` for the one model-driven step. The
-subagent calls `memory_list` / `memory_search` / `memory_read` and then writes through
-`memory_save` / `memory_update` / `memory_archive`; those tool calls are the file changes.
+subagent calls `glob` / `grep` / `read` and then writes through
+`write` / `edit` / `bash`; those tool calls are the file changes.
 `runExtractionSession` acquires the write lock, cleans and windows the messages against a
 per-session cursor, lets the subagent drive the tools, relocates any stray root-level files
 into typed directories, re-syncs the index, and advances the cursor only on success. See
@@ -118,9 +118,9 @@ deterministic, LLM-free structural pre-pass cleans the state (delete identical-b
 duplicates, relocate path/type-mismatched files). Then the host's injected `DreamAgentRunner`
 — a tool-calling consolidation subagent that runs the same agent loop as extraction — works
 over the cleaned state: it reads full memory bodies and performs semantic consolidation
-(merges, compression, type re-judgement) by calling the memory tools directly
-(`memory_list` / `memory_search` / `memory_read` / `memory_save` / `memory_update` /
-`memory_archive`). There are no operations
+(merges, compression, type re-judgement) by calling the ordinary file tools directly
+(`glob` / `grep` / `read` / `write` / `edit` /
+`bash`). There are no operations
 returned anymore — the tool calls are the changes. `shouldRunDream` gates the pass on a
 minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 (`DREAM_DEFAULT_MIN_SESSIONS` = 5).
@@ -129,7 +129,7 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 
 - **Privacy.** `redactPrivateSpans` softens `<private>…</private>` to `[REDACTED]`.
   The hard-secret scan (`scanSecrets` / `enforceWritePrivacy`) is controlled by the
-  `refuseSecrets` gate: MCP enables it for `memory_save`; core/SDK/CLI leave it off by
+  `refuseSecrets` gate: MCP enables it for `write`; core/SDK/CLI leave it off by
   default. When enabled, obvious secrets (SSH/PEM keys, API-key and token prefixes,
   bearer/JWT tokens, `password:`/`cookie:` assignments) are refused with masked findings.
 - **Locking.** A per-root file lock (`.memory-task-lock`) serializes writers, with stale
@@ -150,7 +150,7 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
    ▲
    │
 @memscribe/adapters  per-host lifecycle mapping
-@memscribe/mcp-server context / read / save tools over MCP
+@memscribe/mcp-server context / save tools over MCP
 @memscribe/cli       context / list / read / write / doctor / dream / rebuild-index
 ```
 

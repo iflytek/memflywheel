@@ -4,7 +4,7 @@
  * Core owns the full extraction lifecycle (lock / window / relocate / index /
  * cursor) but NEVER calls an LLM. The actual memory writes are performed by the
  * injected ExtractionAgentRunner, which drives a tool-calling subagent that
- * writes files directly through the memory tools.
+ * writes files directly through ordinary file tools.
  */
 
 import { readdir, stat, mkdir, rename, copyFile, unlink, writeFile } from "node:fs/promises";
@@ -16,7 +16,7 @@ import { getTypedMemoryPath, normalizeRelativePath } from "./paths.js";
 import { readMemoryFrontmatterHeader } from "./internal-frontmatter.js";
 import { scanMemoryFiles, formatManifest } from "./scan.js";
 import { syncMemoryIndex } from "./index-file.js";
-import { type MemoryTool, type MemoryToolContext, createMemoryTools } from "./memory-tools.js";
+import { type FileTool, type FileToolContext, createFileTools, createMemoryFileToolContext } from "./file-tools.js";
 
 export const EXTRACTION_CONTEXT_WINDOW_SIZE = 6;
 export const EXTRACTION_MAX_MESSAGES = 40;
@@ -109,8 +109,8 @@ export function truncateHeadTail(text: string, max: number): string {
  * lock). Core never calls an LLM — it calls this.
  */
 export type ExtractionAgentRunner = (input: {
-  toolCtx: MemoryToolContext;
-  tools: MemoryTool[];
+  toolCtx: FileToolContext;
+  tools: FileTool[];
   messages: ExtractionMessage[];
   manifest: string;
   root: string;
@@ -296,7 +296,7 @@ export interface RunExtractionSessionOptions {
   messages: ExtractionMessage[];
   sessionId: string;
   cursorStore: CursorStore;
-  /** Hard secret gate for the memory tools. Default OFF (privacy via prompt). */
+  /** Hard secret gate for ordinary file tools. Default OFF (privacy via prompt). */
   refuseSecrets?: boolean;
 }
 
@@ -306,7 +306,7 @@ export interface RunExtractionSessionOptions {
  *  2 relocateRootFiles
  *  3 select window via cursor (over cleaned messages)
  *  4 before = scanMemoryFiles → manifest
- *  5 build memory tools (bound to ctx; they share the held lock) and invoke the
+ *  5 build ordinary file tools (bound to ctx; they share the held lock) and invoke the
  *    injected agent runner, which writes memories itself via those tools
  *  6 relocateRootFiles again (catch any root-level write the subagent made)
  *  7 after = scanMemoryFiles → syncMemoryIndex
@@ -342,8 +342,8 @@ export async function runExtractionSession(
     const before = await scanMemoryFiles(ctx.root);
     const manifest = formatManifest(before);
 
-    const toolCtx: MemoryToolContext = { ctx, refuseSecrets };
-    const tools = createMemoryTools();
+    const toolCtx = createMemoryFileToolContext({ ctx, refuseSecrets });
+    const tools = createFileTools();
 
     try {
       await agent({ toolCtx, tools, messages: selected, manifest, root: ctx.root });

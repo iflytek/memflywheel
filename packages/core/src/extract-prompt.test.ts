@@ -11,16 +11,10 @@ test("default prompt covers the spec surface, tool contract, and is name-free", 
   for (const type of ["identity", "preference", "style", "workflow", "context", "ambient"]) {
     assert.ok(p.includes(type), `prompt mentions ${type}`);
   }
-  for (const tool of [
-    "memory_list",
-    "memory_search",
-    "memory_read",
-    "memory_save",
-    "memory_update",
-    "memory_archive",
-  ]) {
+  for (const tool of ["glob", "grep", "read", "write", "edit", "bash"]) {
     assert.ok(p.includes(tool), `prompt mentions ${tool}`);
   }
+  assert.doesNotMatch(p, /memory_(list|search|read|save|update|archive)/);
   assert.ok(/read before you update/i.test(p), "prompt has the read-before-update rule");
   assert.ok(/high-risk/i.test(p));
   assert.ok(!/```json/.test(p), "prompt no longer asks for a JSON array");
@@ -38,7 +32,7 @@ test("buildExtractionAgentUserMessage renders manifest and labelled turns", () =
   assert.ok(out.includes("preference/x.md"));
   assert.ok(out.includes("User: I prefer tea."));
   assert.ok(out.includes("Assistant: Noted."));
-  assert.ok(out.includes("Use the memory tools"));
+  assert.ok(out.includes("Use the ordinary file tools"));
 });
 
 test("buildExtractionAgentUserMessage falls back to (none) for empty manifest", () => {

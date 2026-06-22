@@ -45,6 +45,9 @@
     "test": "tsc -b && node --test \"dist/**/*.test.js\"",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
+  "dependencies": {
+    "@memscribe/core": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^22.5.0",
     "typescript": "^5.5.4"

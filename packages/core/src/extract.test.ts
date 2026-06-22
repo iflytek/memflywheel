@@ -13,7 +13,7 @@ import {
   type ExtractionAgentRunner,
   EXTRACTION_MAX_MESSAGES,
 } from "./extract.js";
-import { memoryToolMap } from "./memory-tools.js";
+import { fileToolMap, serializeMemoryFile } from "./file-tools.js";
 import { type StorageContext, readMemoryDocument } from "./storage.js";
 import { scanMemoryFiles } from "./scan.js";
 import { createNullAuditLogger } from "./audit.js";
@@ -73,11 +73,21 @@ test("relocateRootFiles moves stray root .md into typed dir", async () => {
   }
 });
 
-/** A fake agent runner that writes one memory via the supplied memory tools. */
+/** A fake agent runner that writes one memory via the supplied file tools. */
 function fakeSaveAgent(save: { type: string; name: string; body: string }): ExtractionAgentRunner {
   return async ({ toolCtx, tools }) => {
-    const map = memoryToolMap(tools);
-    const res = await map.get("memory_save")!.handler(save, toolCtx);
+    const map = fileToolMap(tools);
+    const res = await map.get("write")!.handler(
+      {
+        filePath: `${save.type}/${save.name}.md`,
+        content: serializeMemoryFile({
+          type: save.type as never,
+          name: save.name,
+          body: save.body,
+        }),
+      },
+      toolCtx,
+    );
     return { changed: res.changed ?? [] };
   };
 }
@@ -90,9 +100,16 @@ test("runExtractionSession drives the agent runner, syncs index, advances cursor
     let seenManifest = "";
     const agent: ExtractionAgentRunner = async (input) => {
       seenManifest = input.manifest;
-      const map = memoryToolMap(input.tools);
-      const res = await map.get("memory_save")!.handler(
-        { type: "preference", name: "工具", body: "喜欢 Go" },
+      const map = fileToolMap(input.tools);
+      const res = await map.get("write")!.handler(
+        {
+          filePath: "preference/工具.md",
+          content: serializeMemoryFile({
+            type: "preference",
+            name: "工具",
+            body: "喜欢 Go",
+          }),
+        },
         input.toolCtx,
       );
       return { changed: res.changed ?? [] };

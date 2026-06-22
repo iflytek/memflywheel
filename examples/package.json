@@ -10,6 +10,7 @@
   "dependencies": {
     "@memscribe/core": "workspace:*",
     "@memscribe/adapters": "workspace:*",
+    "@memscribe/model": "workspace:*",
     "@memscribe/skills": "workspace:*",
     "@memscribe/sdk": "workspace:*"
   }

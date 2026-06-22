@@ -1,14 +1,12 @@
 /**
  * OpenClaw adapter (best-effort — still runnable).
  *
- * OpenClaw's plugin API lets a plugin read the prompt/messages via hooks and
- * inject context, but does NOT expose a direct model-call interface — a plugin
- * cannot itself drive inference. Consequences:
+ * Phase 1 does not yet bind OpenClaw's llm-runtime into HostHarnessPort.
+ * Consequences:
  *
  *  - Recall + injection are first-class (via hooks + registerMemoryCapability).
- *  - Extraction cannot use the host model; the subagent runs on MemScribe's own
- *    default fetch tool-completion (the user provides MEMSCRIBE_LLM_API_KEY).
- *    Pass `defaultExtractionAgentFromEnv()` to createHostMemScribe.
+ *  - Native extraction/dream/skill loops are disabled until Phase 2 maps
+ *    OpenClaw's llm-runtime into a canonical model port.
  *
  * Lifecycle:
  *  - `before_agent_start` → onSessionStart
@@ -37,7 +35,7 @@ const lifecycle: LifecycleMap = {
   onTurnEnd: {
     hook: "onTurnEnd",
     hostEvent: "agent_end",
-    note: "agent_end: fire-and-forget extraction subagent via the default fetch tool-completion.",
+    note: "agent_end: turn transcript hook; native extraction requires a canonical model port.",
   },
   onIdle: {
     hook: "onIdle",
@@ -52,7 +50,7 @@ export const openclawAdapter: HostAdapter = makeAdapter({
   lifecycle,
   defaultConfigRelPath: ".openclaw/openclaw.json",
   integrationNote:
-    "Best-effort (still runnable): OpenClaw exposes no model-call API, so the extraction subagent uses MemScribe's default fetch tool-completion (MEMSCRIBE_LLM_API_KEY). Recall + injection are first-class via hooks; an MCP bridge is also available.",
+    "Phase-1 recall path: OpenClaw hooks can inject memory, but native extraction/skill loops wait for an OpenClaw llm-runtime HostHarnessPort.",
   translators: {
     sessionId: (payload) => readString(payload, "agentId") || readString(payload, "sessionId"),
     turnEnd: (payload) => ({

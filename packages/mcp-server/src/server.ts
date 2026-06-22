@@ -2,11 +2,8 @@
  * MemScribe MCP server: dispatch + tool / resource / prompt handlers, plus the
  * stdio transport runner.
  *
- * Tool face (deliberately minimal — NO search tool):
- *   - memory_context : full MEMORY.md prelude (the two-segment recall payload)
- *   - memory_read    : read one memory document body by relativePath
- *   - memory_save    : direct write of one memory document (the same core write
- *                      tool the extraction subagent uses; path derived from name)
+ * Tool face:
+ *   - read / write / edit / bash / glob / grep : root-bound ordinary file tools
  *
  * Resources:
  *   - memscribe://index    : the derived MEMORY.md index
@@ -20,11 +17,9 @@
  */
 
 import {
-  buildContext,
   buildMemoryInstructionPrompt,
   buildMemoryIndexPrompt,
   readMemoryIndex,
-  readMemoryDocument,
   scanMemoryFiles,
   syncMemoryIndex,
   formatManifest,
@@ -32,13 +27,12 @@ import {
   getMemoryRoot,
   withLock,
   createAuditLogger,
-  createMemoryTools,
-  memoryToolMap,
-  InvalidMemoryError,
-  SecretRefusedError,
+  createFileTools,
+  fileToolMap,
+  createMemoryFileToolContext,
   type StorageContext,
-  type MemoryTool,
-  type MemoryToolContext,
+  type FileTool,
+  type FileToolContext,
 } from "@memscribe/core";
 
 import {
@@ -63,11 +57,7 @@ export const WITH_MEMORY_PROMPT = "memscribe.with_memory";
 export interface ServerOptions {
   /** Memory root. Falls back to getMemoryRoot() (MEMSCRIBE_HOME / OS data dir). */
   root?: string;
-  /**
-   * Hard secret gate for memory_save. Defaults to TRUE for the MCP face: an
-   * external MCP client is less trusted than the in-loop extraction subagent, so
-   * secrets are refused rather than written. <private> redaction is always on.
-   */
+  /** Hard secret gate for write/edit. Defaults to TRUE for the MCP face. */
   refuseSecrets?: boolean;
 }
 
@@ -98,66 +88,16 @@ function requireString(obj: Record<string, unknown>, key: string): string {
   return v;
 }
 
-function optionalString(obj: Record<string, unknown>, key: string): string | undefined {
-  const v = obj[key];
-  if (v === undefined || v === null) return undefined;
-  if (typeof v !== "string") {
-    throw new RpcError(ErrorCode.InvalidParams, `param ${key} must be a string`);
-  }
-  return v;
-}
-
 /** Tool descriptors advertised via tools/list. */
-const TOOL_DEFINITIONS = [
-  {
-    name: "memory_context",
-    description:
-      "Return the full memory context prelude (stable rules + the complete MEMORY.md index). " +
-      "There is no search: the entire index is returned and the caller decides which files to read.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  },
-  {
-    name: "memory_read",
-    description:
-      "Read one memory document body by its relativePath (e.g. \"context/project.md\"), as listed in the index. " +
-      "Returns the markdown body without frontmatter.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        relativePath: {
-          type: "string",
-          description: "Relative path of the memory file under the memory root.",
-        },
-      },
-      required: ["relativePath"],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "memory_save",
-    description:
-      "Save (create or overwrite) one memory document directly. The file path is derived from the name. " +
-      "Privacy redaction (and, for this MCP face, secret refusal) are enforced; the MEMORY.md index is re-synced after the write.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        type: {
-          type: "string",
-          enum: ["identity", "preference", "style", "workflow", "context", "ambient"],
-          description: "Memory category.",
-        },
-        name: { type: "string", description: "Short single-line title stored in frontmatter; the file path is derived from it." },
-        description: {
-          type: "string",
-          description: "Optional single-line summary stored in frontmatter.",
-        },
-        body: { type: "string", description: "Markdown body of the memory." },
-      },
-      required: ["type", "name", "body"],
-      additionalProperties: false,
-    },
-  },
-] as const;
+const TOOL_DEFINITIONS = createFileTools().map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  })) as ReadonlyArray<{
+    name: string;
+    description: string;
+    inputSchema: unknown;
+  }>;
 
 const RESOURCE_DEFINITIONS = [
   {
@@ -191,20 +131,18 @@ const PROMPT_DEFINITIONS = [
 export class MemScribeMcpServer {
   readonly root: string;
   private readonly storage: StorageContext;
-  private readonly toolCtx: MemoryToolContext;
-  private readonly saveTool: MemoryTool;
+  private readonly toolCtx: FileToolContext;
+  private readonly tools: Map<string, FileTool>;
   private initialized = false;
 
   constructor(options: ServerOptions = {}) {
     this.root = getMemoryRoot({ root: options.root });
     this.storage = { root: this.root, audit: createAuditLogger(this.root) };
-    // An external MCP client is less trusted than the in-loop subagent, so the
-    // hard secret gate defaults ON for this face.
-    this.toolCtx = { ctx: this.storage, refuseSecrets: options.refuseSecrets !== false };
-    const tools = memoryToolMap(createMemoryTools());
-    const save = tools.get("memory_save");
-    if (!save) throw new Error("core did not provide a memory_save tool");
-    this.saveTool = save;
+    this.toolCtx = createMemoryFileToolContext({
+      ctx: this.storage,
+      refuseSecrets: options.refuseSecrets !== false,
+    });
+    this.tools = fileToolMap(createFileTools());
   }
 
   /** MCP initialize handshake. */
@@ -240,59 +178,28 @@ export class MemScribeMcpServer {
     const args = asObject(obj.arguments);
 
     switch (name) {
-      case "memory_context":
-        return this.toolMemoryContext();
-      case "memory_read":
-        return this.toolMemoryRead(args);
-      case "memory_save":
-        return this.toolMemorySave(args);
       default:
+        if (this.tools.has(name)) return this.callFileTool(name, args);
         throw new RpcError(ErrorCode.InvalidParams, `unknown tool: ${name}`);
     }
   }
 
-  private async toolMemoryContext(): Promise<ToolText> {
-    await ensureMemoryDir(this.root);
-    const ctx = await buildContext({ root: this.root });
-    const text = `${ctx.systemPrompt}\n\n${ctx.preludePrompt}`;
-    return textResult(text);
-  }
-
-  private async toolMemoryRead(args: Record<string, unknown>): Promise<ToolText> {
-    const relativePath = requireString(args, "relativePath");
-    const doc = await readMemoryDocument(this.storage, relativePath);
-    if (!doc) {
-      return textResult(`No memory found at: ${relativePath}`, true);
-    }
-    return textResult(doc.body);
-  }
-
-  private async toolMemorySave(args: Record<string, unknown>): Promise<ToolText> {
-    // Validate the required string params up front for clean InvalidParams errors;
-    // the core save handler then derives the path from name, redacts <private>,
-    // applies the (default-on) secret gate, writes atomically, and resyncs the index.
-    const type = requireString(args, "type");
-    const name = requireString(args, "name");
-    const description = optionalString(args, "description") ?? "";
-    const body = requireString(args, "body");
-
+  private async callFileTool(name: string, args: Record<string, unknown>): Promise<ToolText> {
+    const tool = this.tools.get(name);
+    if (!tool) throw new RpcError(ErrorCode.InvalidParams, `unknown tool: ${name}`);
     await ensureMemoryDir(this.root);
 
-    // The whole save runs under the per-root write lock (the core handler assumes
-    // the caller holds it). A busy lock returns null.
-    const result = await withLock(this.root, "mcp-save", () =>
-      this.saveTool.handler({ type, name, description, body }, this.toolCtx),
-    );
+    // The tool runs under the per-root lock because write/edit/bash may mutate
+    // the memory root and must keep MEMORY.md in sync.
+    const result = await withLock(this.root, `mcp-${name}`, () => tool.handler(args, this.toolCtx));
 
     if (result === null) {
       return textResult("Memory store is busy (write lock held); please retry.", true);
     }
     if (!result.ok) {
-      // Surface refusals / validation failures as a JSON-RPC InvalidParams error
-      // so external clients get a structured failure rather than a silent skip.
       throw new RpcError(ErrorCode.InvalidParams, result.text);
     }
-    return textResult(`Saved memory: ${result.changed?.[0] ?? result.text}`);
+    return textResult(result.changed?.length ? `${result.text}\n${result.changed.join("\n")}` : result.text);
   }
 
   /** resources/read dispatch. */
@@ -411,12 +318,6 @@ export class MemScribeMcpServer {
 function errorPayload(err: unknown): [number, string, unknown?] {
   if (err instanceof RpcError) {
     return [err.code, err.message, err.data];
-  }
-  if (err instanceof InvalidMemoryError) {
-    return [ErrorCode.InvalidParams, err.message];
-  }
-  if (err instanceof SecretRefusedError) {
-    return [ErrorCode.InvalidParams, err.message];
   }
   if (err instanceof Error) {
     return [ErrorCode.InternalError, err.message];

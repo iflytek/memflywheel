@@ -1,35 +1,29 @@
 /**
  * Hermes plugin glue (real integration).
  *
- * A Hermes plugin's `register(ctx)` wraps the host LLM facade
- * (`ctx.llm.acomplete`, with tool calling) into a `toolCompletion`, builds a
- * batteries-included scribe with `createHostMemScribe`, and binds `hermesAdapter` so the
- * scribe's hooks fire on Hermes' real events (on_session_start / pre_llm_call /
- * post_llm_call / on_session_end).
+ * A Hermes plugin's `register(ctx)` maps the host LLM facade into the canonical
+ * model protocol, builds a MemScribe harness runtime, and binds `hermesAdapter`
+ * so the scribe's hooks fire on Hermes' real events.
  *
  * Because Hermes owns the credentials, no API key is needed — both subagents
  * (extraction and dream consolidation) run on Hermes' own model through
- * `ctx.llm.acomplete`, over the single `toolCompletion` channel.
+ * `ctx.llm.completeWithTools`, over the single canonical model channel.
  */
 
-import { createHostMemScribe, hermesAdapter } from "@memscribe/adapters";
+import { createMemScribeHarnessRuntime, hermesAdapter } from "@memscribe/adapters";
 
 /** @param {any} ctx - the Hermes PluginContext */
 export function register(ctx) {
-  // The extraction subagent is a tool-calling loop: wrap Hermes' model as a
-  // ToolCompletion that passes the advertised tools through and returns the
-  // assistant message (content and/or tool_calls) plus a finish reason.
-  const toolCompletion = async ({ messages, tools, signal }) => {
-    const result = await ctx.llm.acomplete(messages, { tools, signal });
-    const message = result?.message ?? {
-      role: "assistant",
-      content: result?.text ?? "",
-    };
-    return { message, finishReason: result?.finish_reason ?? message.finishReason };
+  const model = {
+    async complete(req) {
+      if (typeof ctx.llm?.completeWithTools !== "function") {
+        throw new Error("Hermes MemScribe integration requires ctx.llm.completeWithTools");
+      }
+      return ctx.llm.completeWithTools(req);
+    },
   };
 
-  // One channel drives BOTH subagents: extraction and dream consolidation.
-  const { scribe } = createHostMemScribe({ toolCompletion });
+  const { scribe } = createMemScribeHarnessRuntime({ model });
 
   // Hermes exposes register_hook(name, cb); the adapter's `attach` expects an
   // `on(event, listener)` surface, so bridge Hermes hooks into it.

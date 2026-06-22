@@ -9,26 +9,27 @@ The SDK owns:
 - a single per-root `StorageContext` + audit logger,
 - the per-session extraction cursor store,
 - the **two pluggable LLM injection points** (`agent`, `dreamRunner`),
-- optional learned-skill prompt routing and skill usage feedback,
+- the default subagent loops that consume `@memscribe/model`'s canonical model protocol,
+- optional learned-skill prompt routing,
 - the host lifecycle hooks that decide *when* core runs.
 
 The SDK does not execute learned skills. It can expose routing metadata and
-record host-observed skill usage, while the host owns skill loading, execution
-policy, permissions, and tool calls.
+capture tool-call facts in the session transcript, while the host owns skill
+loading, execution policy, permissions, and tool calls.
 
 The SDK orchestrates after-turn extraction; the actual LLM work is externalized
 to an `ExtractionAgentRunner` — a tool-calling subagent that writes the memory
-files itself through core's write tools. That agent can be the built-in default
+files itself through ordinary file tools. That agent can be the built-in default
 (see below) or host-supplied. Zero runtime dependencies.
 
 ## Default extraction + dream subagents (batteries included)
 
 You do not have to write the prompts or wire the tool loop. The core ships a
 curated default extraction system prompt and a default dream consolidation system
-prompt, plus the memory tools (`memory_list` / `memory_search` / `memory_read` /
-`memory_save` / `memory_update` / `memory_archive`) as **pure values** — it never
+prompt, plus ordinary file tools (`read` / `write` / `edit` / `bash` /
+`glob` / `grep`) as **pure values** — it never
 makes a network call. The SDK assembles them into running tool-calling subagents
-and adds a built-in tool completion. There is ONE LLM channel — `toolCompletion` —
+over one provider-neutral model channel. There is ONE model channel — `model` —
 and it drives both subagents:
 
 ```ts
@@ -36,23 +37,21 @@ import {
   createMemScribe,
   createExtractionAgentRunner,
   createDreamAgentRunner,
-  createToolCompletion,
 } from "@memscribe/sdk";
+import { createOpenAIChatCompletionsModel } from "@memscribe/model";
 
-// `createToolCompletion()` uses Node's global fetch against an OpenAI-compatible
-// /chat/completions endpoint WITH a tools array, reading provider / endpoint /
-// key / model from the environment (MEMSCRIBE_LLM_*) — give it one API key and
-// both subagents write memories on their own.
-const toolCompletion = createToolCompletion();
+// The OpenAI-compatible mapper lives in @memscribe/model. Hosts can provide
+// their own CanonicalModelCompletion instead.
+const model = createOpenAIChatCompletionsModel();
 const scribe = createMemScribe({
-  agent: createExtractionAgentRunner({ toolCompletion }),
-  dreamRunner: createDreamAgentRunner({ toolCompletion }),
+  agent: createExtractionAgentRunner({ model }),
+  dreamRunner: createDreamAgentRunner({ model }),
 });
 ```
 
-Pass your own `toolCompletion` to route through a host's existing LLM channel, or
-pass a fully custom `ExtractionAgentRunner` / `DreamAgentRunner` to replace the
-defaults.
+Pass your own `CanonicalModelCompletion` to route through a host's existing LLM
+channel, or pass a fully custom `ExtractionAgentRunner` / `DreamAgentRunner` to
+replace the defaults.
 
 ## Quick start
 
@@ -62,8 +61,8 @@ import { createMemScribe, type ExtractionAgentRunner } from "@memscribe/sdk";
 // Host wraps its own tool-calling LLM here. Core never calls a model; the
 // subagent writes memories itself via the supplied tools.
 const agent: ExtractionAgentRunner = async ({ tools, toolCtx, messages, manifest, root }) => {
-  // …drive your tool-calling model with `tools` (memory_list / memory_search /
-  //   memory_read / memory_save / memory_update / memory_archive), given `messages` + `manifest`; each call
+  // …drive your tool-calling model with `tools` (read / write / edit / bash /
+  //   glob / grep), given `messages` + `manifest`; each call
   //   writes a file via tools[i].handler(args, toolCtx)…
   return { changed: ["preference/favorite-fruit.md"] };
 };
@@ -94,10 +93,11 @@ await scribe.onSessionEnd("session-1");
 | --- | --- | --- |
 | `systemPrompt` | Stable memory **rules** — constant text, identical every turn | inject once / cache as a stable prefix |
 | `preludePrompt` | **Full MEMORY.md index** plus optional learned-skill routes wrapped in `<system-reminder>` | inject every turn |
-| `skillPreludePrompt` | Optional learned-skill route index plus recent usage signals | inject when `skillRecall` is configured |
+| `skillPreludePrompt` | Optional learned-skill route index | inject when `skillRecall` is configured |
 
 There is no retrieval, top-k, scoring, or embedding. The full index is injected
-and the main model self-selects whether to `Read` any memory body.
+and the main model self-selects whether to use the host's normal Read/file tool
+for any memory body.
 
 When `skillRecall` is configured, the SDK also injects learned-skill routing
 metadata. The host still owns actual skill loading and execution.
@@ -110,8 +110,8 @@ the cursor; the host owns only the LLM call.
 ```ts
 // 1) Extraction — a tool-calling subagent that WRITES the memory files itself.
 type ExtractionAgentRunner = (input: {
-  toolCtx: MemoryToolContext;   // bound inside the held write lock
-  tools: MemoryTool[];          // memory_list / memory_search / memory_read / memory_save / memory_update / memory_archive
+  toolCtx: FileToolContext;     // bound inside the held write lock
+  tools: FileTool[];            // read / write / edit / bash / glob / grep
   messages: { role: "user" | "assistant"; text: string }[];
   manifest: string;   // formatManifest(existing entries)
   root: string;
@@ -121,8 +121,8 @@ type ExtractionAgentRunner = (input: {
 //    reads full bodies and merges / compresses / retires memories via the tools.
 type DreamAgentRunner = (input: {
   root: string;
-  toolCtx: MemoryToolContext;   // bound inside the held write lock
-  tools: MemoryTool[];          // same memory tools as extraction
+  toolCtx: FileToolContext;     // bound inside the held write lock
+  tools: FileTool[];            // same ordinary file tools as extraction
   health: HealthFinding[];
   typeReview: TypeReviewItem[];
   manifest: string;
@@ -131,11 +131,10 @@ type DreamAgentRunner = (input: {
 }) => Promise<{ changed: string[] }>;   // the relative paths it touched
 ```
 
-Each subagent decides add vs. update on its own — it can call `memory_list` /
-`memory_search` to locate, `memory_read` to load a full body, then `memory_save`
-for a new fact, `memory_update` to refine a same-topic file, or `memory_archive`
-(extraction: only on an explicit user correction; dream: when folding a source
-into a merge) before writing the replacement.
+Each subagent decides add vs. update on its own — it can call `glob` / `grep`
+to locate, `read` to load a full body, then `write` for a new typed Markdown
+file, `edit` to refine a same-topic file, or `bash` to move retired files under
+`.archive/` before writing the replacement.
 
 ## Lifecycle hooks
 
@@ -151,16 +150,13 @@ into a merge) before writing the replacement.
 
 ### Explicit operations (for MCP tools / CLI)
 
-- `context()` — `memory_context`: the full-index prelude + stable rules.
-- `read(relativePath)` — `memory_read`: one memory document (or `null`).
-- `save(options)` — `memory_save`: explicit validated write under the lock, then
+- `context()` — the full-index prelude + stable rules.
+- `save(options)` — explicit validated typed Markdown write under the lock, then
   index sync.
 - `runDream(coordination?)` — force a dream pass regardless of the gate.
-- `recordSkillUsage(record)` — record host-observed learned-skill selected,
-  completed, failed, or missed outcomes.
-- `getSkillUsageRecords(sessionId?)` — inspect recorded usage signals.
 
-There is deliberately **no search tool** — MemScribe has no lexical retrieval.
+There is deliberately **no public read/search tool** — MemScribe has no lexical retrieval,
+and recall reads go through the host filesystem surface.
 CLI and MCP remain memory-facing surfaces by default. They do not inject learned
 skills or execute skills unless a future host explicitly adds that surface.
 
@@ -172,11 +168,11 @@ framework. Host/adapters can assemble the loop:
 ```text
 prompt-build
   -> memory recall
-  -> learned skill routes + recent usage signals
+  -> learned skill routes
 
 turn-end
   -> extraction
-  -> skillEvolution({ usageRecords, lastExtraction })
+  -> skillEvolution({ lastExtraction, session })
   -> dream({ memoryAction: "compress-memory", topics }) when the skill packet asks for it
 ```
 
@@ -184,7 +180,7 @@ turn-end
 createMemScribe({
   agent,
   dreamRunner,
-  skillRecall: async ({ sessionId, usageRecords }) => ({
+  skillRecall: async ({ sessionId }) => ({
     entries: [
       {
         name: "memscribe-learned-release-review",
@@ -194,17 +190,17 @@ createMemScribe({
         triggerHints: ["release prep"],
       },
     ],
-    usageRecords,
   }),
   learningLoop: {
     source: "local",
     skillLearningEnabled: true,
-    skillEvolution: async ({ usageRecords, lastExtraction }) => {
+    skillEvolution: async ({ lastExtraction, session }) => {
       // Custom SDK hook; adapters can also assemble this with learnedSkills.
       return {
         coordination: {
           decision: "update",
           targetSkill: "memscribe-learned-release-review",
+          mergedSkills: [],
           why: "Release prep became a reusable procedure.",
           memoryAction: "compress-memory",
           memoryTopics: ["release prep"],
@@ -217,10 +213,6 @@ createMemScribe({
   },
 });
 ```
-
-Hosts call `recordSkillUsage()` when a learned skill is selected, completes,
-fails, or is missed. Those signals are visible in the next prompt build and are
-passed into the skill-evolution callback.
 
 If `toolCalls` and `turnsSinceLastSkillEvolution` are omitted, the SDK counts
 captured `ExtractionMessage.toolCalls` and tracks the last skill-evolution turn

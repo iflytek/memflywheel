@@ -13,15 +13,15 @@
  */
 
 import {
-  type MemoryTool,
-  type MemoryToolContext,
+  type FileTool,
+  type FileToolContext,
   type ExtractionAgentRunner,
   type ExtractionMessage,
   DEFAULT_EXTRACTION_SYSTEM_PROMPT,
   buildExtractionAgentUserMessage,
 } from "@memscribe/core";
 
-import { type ToolCompletion } from "./tool-completion.js";
+import type { CanonicalModelCompletion } from "@memscribe/model";
 import {
   type AgentToolCall,
   type ToolAgentResult,
@@ -35,12 +35,12 @@ export const MAX_EXTRACTION_STEPS = MAX_TOOL_AGENT_STEPS;
 
 /** Options for {@link runExtractionAgent}. */
 export interface RunExtractionAgentOptions {
-  /** The tool-calling LLM channel. */
-  toolCompletion: ToolCompletion;
-  /** The memory tools (from core.createMemoryTools()), advertised + executed. */
-  tools: MemoryTool[];
+  /** The host-owned canonical model channel. */
+  model: CanonicalModelCompletion;
+  /** The file tools (from core.createFileTools()), advertised + executed. */
+  tools: FileTool[];
   /** The context the handlers write through (shares the held lock). */
-  toolCtx: MemoryToolContext;
+  toolCtx: FileToolContext;
   /** The tool-use system prompt. Defaults to DEFAULT_EXTRACTION_SYSTEM_PROMPT. */
   systemPrompt?: string;
   /** The selected conversation window. */
@@ -61,7 +61,7 @@ export async function runExtractionAgent(
   options: RunExtractionAgentOptions,
 ): Promise<ExtractionAgentResult> {
   return runToolAgent({
-    toolCompletion: options.toolCompletion,
+    model: options.model,
     tools: options.tools,
     toolCtx: options.toolCtx,
     systemPrompt: options.systemPrompt ?? DEFAULT_EXTRACTION_SYSTEM_PROMPT,
@@ -76,8 +76,8 @@ export async function runExtractionAgent(
 
 /** Options for {@link createExtractionAgentRunner}. */
 export interface CreateExtractionAgentRunnerOptions {
-  /** The tool-calling LLM channel. */
-  toolCompletion: ToolCompletion;
+  /** The host-owned canonical model channel. */
+  model: CanonicalModelCompletion;
   /** Override the tool-use system prompt. */
   systemPrompt?: string;
   /** Max model round-trips per extraction. Defaults to 12, hard-capped at 20. */
@@ -94,7 +94,7 @@ export function createExtractionAgentRunner(
 ): ExtractionAgentRunner {
   return async function agentRunner(input) {
     const result = await runExtractionAgent({
-      toolCompletion: options.toolCompletion,
+      model: options.model,
       tools: input.tools,
       toolCtx: input.toolCtx,
       systemPrompt: options.systemPrompt,

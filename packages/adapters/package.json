@@ -48,6 +48,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
+    "@memscribe/model": "workspace:*",
     "@memscribe/sdk": "workspace:*",
     "@memscribe/skills": "workspace:*"
   },

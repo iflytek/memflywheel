@@ -3,21 +3,21 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createHostMemScribe, type ToolCompletion } from "./host-memscribe.js";
+import { createMemScribeHarnessRuntime } from "./host-memscribe.js";
 import {
   type DreamAgentRunner,
   ExtractionResult,
   type ExtractionAgentRunner,
-  type SkillUsageRecord,
-  type ToolCompletionResponse,
+  type MemoryType,
 } from "@memscribe/sdk";
+import type { CanonicalModelCompletion, CanonicalModelResponse } from "@memscribe/model";
 import { piAdapter } from "./pi.js";
 import { createFakeHost, tempDir } from "./test-helpers.js";
 
 const flush = () => new Promise((r) => setImmediate(r));
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const STOP: ToolCompletionResponse = {
+const STOP: CanonicalModelResponse = {
   message: { role: "assistant", content: "done" },
   finishReason: "stop",
 };
@@ -47,20 +47,46 @@ description: Captures a repeatable release preparation review.
 - Keep release notes concise and evidence-based.
 `;
 
+function slug(name: string): string {
+  return `${name.toLowerCase().replace(/[^a-z0-9一-龥]+/g, "-").replace(/^-+|-+$/g, "") || "memory"}.md`;
+}
+
+function writeMemoryArgs(input: {
+  type: MemoryType;
+  name: string;
+  description?: string;
+  body: string;
+  filename?: string;
+}) {
+  return {
+    filePath: `${input.type}/${input.filename ?? slug(input.name)}`,
+    content: [
+      "---",
+      `type: ${input.type}`,
+      `name: ${input.name}`,
+      input.description ? `description: ${input.description}` : "description: ",
+      "---",
+      "",
+      input.body,
+      "",
+    ].join("\n"),
+  };
+}
+
 function workflowAgent(): ExtractionAgentRunner {
   let wrote = false;
   return async ({ tools, toolCtx }) => {
     if (wrote) return { changed: [] };
     wrote = true;
-    const save = tools.find((tool) => tool.name === "memory_save");
-    assert.ok(save, "memory_save tool is supplied to the agent");
-    const result = await save.handler(
-      {
+    const write = tools.find((tool) => tool.name === "write");
+    assert.ok(write, "write tool is supplied to the agent");
+    const result = await write.handler(
+      writeMemoryArgs({
         type: "workflow",
         name: "release prep",
         description: "reusable release workflow",
         body: "Run package metadata checks, README checks, and dry-run pack checks.",
-      },
+      }),
       toolCtx,
     );
     return { changed: result.changed ?? [] };
@@ -69,88 +95,85 @@ function workflowAgent(): ExtractionAgentRunner {
 
 /**
  * A scripted tool-calling subagent: on its first round it saves one preference
- * memory via the memory_save tool; on every subsequent round it stops. This is
+ * memory via the ordinary write tool; on every subsequent round it stops. This is
  * deterministic and offline — no network, no key.
  */
-function savingToolCompletion(): ToolCompletion {
+function savingModel(): CanonicalModelCompletion {
   let calls = 0;
-  return async () => {
-    calls += 1;
-    if (calls === 1) {
-      return {
-        message: {
-          role: "assistant",
-          content: null,
-          tool_calls: [
-            {
-              id: "c1",
-              type: "function",
-              function: {
-                name: "memory_save",
-                arguments: JSON.stringify({
+  return {
+    complete: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          message: {
+            role: "assistant",
+            content: null,
+            toolCalls: [
+              {
+                id: "c1",
+                name: "write",
+                input: writeMemoryArgs({
                   type: "preference",
                   name: "Preferred drink",
                   description: "User's go-to beverage",
                   body: "The user prefers green tea over coffee.",
                 }),
               },
-            },
-          ],
-        },
-        finishReason: "tool_calls",
-      };
-    }
-    return STOP;
+            ],
+          },
+          finishReason: "tool-calls",
+        };
+      }
+      return STOP;
+    },
   };
 }
 
 function toolCall(id: string, name: string, args: unknown) {
-  return { id, type: "function" as const, function: { name, arguments: JSON.stringify(args) } };
+  return { id, name, input: args };
 }
 
-function learnedSkillLoopToolCompletion(): ToolCompletion {
+function learnedSkillLoopModel(): CanonicalModelCompletion {
   let extractionStep = 0;
   let skillStep = 0;
   let dreamStep = 0;
-  return async (req) => {
-    const toolNames = new Set(req.tools.map((tool) => tool.function.name));
+  return {
+    complete: async (req) => {
+    const toolNames = new Set(req.tools.map((tool) => tool.name));
     const system = req.messages.find((message) => message.role === "system")?.content ?? "";
 
-    if (toolNames.has("skill_write")) {
+    if (system.includes("learned-skill evolution agent")) {
       skillStep += 1;
       if (skillStep === 1) {
         return {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [
-              toolCall("skill-write", "skill_write", {
-                skillName: TARGET_SKILL,
-                relativePath: "SKILL.md",
+            toolCalls: [
+              toolCall("skill-write", "write", {
+                filePath: `${TARGET_SKILL}/SKILL.md`,
                 content: VALID_SKILL,
               }),
             ],
           },
-          finishReason: "tool_calls",
+          finishReason: "tool-calls",
         };
       }
       if (skillStep === 2) {
         return {
           message: {
             role: "assistant",
-            content: null,
-            tool_calls: [
-              toolCall("skill-decide", "skill_learn_decide", {
-                decision: "create",
-                targetSkill: TARGET_SKILL,
-                why: "Release preparation has become a reusable procedure.",
-                memoryAction: "compress-memory",
-                memoryTopics: ["release prep"],
-                supportingFiles: [`${TARGET_SKILL}/SKILL.md`],
-              }),
-            ],
+            content: JSON.stringify({
+              decision: "create",
+              targetSkill: TARGET_SKILL,
+              mergedSkills: [],
+              why: "Release preparation has become a reusable procedure.",
+              memoryAction: "compress-memory",
+              memoryTopics: ["release prep"],
+              supportingFiles: [`${TARGET_SKILL}/SKILL.md`],
+            }),
           },
-          finishReason: "tool_calls",
+          finishReason: "stop",
         };
       }
       return STOP;
@@ -163,11 +186,11 @@ function learnedSkillLoopToolCompletion(): ToolCompletion {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [
-              toolCall("memory-read", "memory_read", { relativePath: "workflow/release-prep.md" }),
+            toolCalls: [
+              toolCall("memory-read", "read", { filePath: "workflow/release-prep.md" }),
             ],
           },
-          finishReason: "tool_calls",
+          finishReason: "tool-calls",
         };
       }
       if (dreamStep === 2) {
@@ -175,14 +198,15 @@ function learnedSkillLoopToolCompletion(): ToolCompletion {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [
-              toolCall("memory-update", "memory_update", {
-                relativePath: "workflow/release-prep.md",
-                body: `Release prep is handled by ${TARGET_SKILL}. Use that learned skill when release readiness comes up.`,
+            toolCalls: [
+              toolCall("memory-update", "edit", {
+                filePath: "workflow/release-prep.md",
+                oldString: "Step 1: inspect metadata.\nStep 2: run CI.\nStep 3: scan public hygiene.",
+                newString: `Release prep is handled by ${TARGET_SKILL}. Use that learned skill when release readiness comes up.`,
               }),
             ],
           },
-          finishReason: "tool_calls",
+          finishReason: "tool-calls",
         };
       }
       return STOP;
@@ -195,31 +219,32 @@ function learnedSkillLoopToolCompletion(): ToolCompletion {
           message: {
             role: "assistant",
             content: null,
-            tool_calls: [
-              toolCall("memory-save", "memory_save", {
+            toolCalls: [
+              toolCall("memory-save", "write", writeMemoryArgs({
                 type: "workflow",
                 name: "release prep",
                 description: "reusable release workflow",
                 body: "Step 1: inspect metadata.\nStep 2: run CI.\nStep 3: scan public hygiene.",
-              }),
+              })),
             ],
           },
-          finishReason: "tool_calls",
+          finishReason: "tool-calls",
         };
       }
       return STOP;
     }
 
     throw new Error(`unexpected tool request: ${[...toolNames].join(", ")}`);
+    },
   };
 }
 
 /** A subagent that declines: it calls no tools and replies with one sentence. */
-const decliningToolCompletion: ToolCompletion = async () => STOP;
+const decliningModel: CanonicalModelCompletion = { complete: async () => STOP };
 
-test("createHostMemScribe with a toolCompletion extracts and writes a memory end-to-end", async () => {
+test("createMemScribeHarnessRuntime with a canonical model extracts and writes a memory end-to-end", async () => {
   const root = await tempDir();
-  const { scribe } = createHostMemScribe({ toolCompletion: savingToolCompletion(), root });
+  const { scribe } = createMemScribeHarnessRuntime({ model: savingModel(), root });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   // Await the turn-end so the full lock→agent-loop→write chain completes.
@@ -239,7 +264,7 @@ test("createHostMemScribe with a toolCompletion extracts and writes a memory end
 
 test("attach drives a real end-to-end extraction through host events", async () => {
   const root = await tempDir();
-  const { scribe } = createHostMemScribe({ toolCompletion: savingToolCompletion(), root });
+  const { scribe } = createMemScribeHarnessRuntime({ model: savingModel(), root });
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
 
@@ -267,9 +292,9 @@ test("attach drives a real end-to-end extraction through host events", async () 
   dispose();
 });
 
-test("createHostMemScribe prompt build returns the two recall segments", async () => {
+test("createMemScribeHarnessRuntime prompt build returns the two recall segments", async () => {
   const root = await tempDir();
-  const { scribe } = createHostMemScribe({ toolCompletion: savingToolCompletion(), root });
+  const { scribe } = createMemScribeHarnessRuntime({ model: savingModel(), root });
 
   const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
   assert.equal(ctx.enabled, true);
@@ -277,20 +302,18 @@ test("createHostMemScribe prompt build returns the two recall segments", async (
   assert.ok(typeof ctx.preludePrompt === "string");
 });
 
-test("createHostMemScribe wires skill recall and turn-end learning loop into the SDK", async () => {
+test("createMemScribeHarnessRuntime wires skill recall and turn-end learning loop into the SDK", async () => {
   const root = await tempDir();
-  const seenUsageRecords: SkillUsageRecord[][] = [];
   const events: string[] = [];
   const dreamRunner: DreamAgentRunner = async ({ coordination }) => {
     events.push(`dream:${coordination?.memoryAction}:${coordination?.targetSkill}`);
     return { changed: [] };
   };
-  const { scribe } = createHostMemScribe({
+  const { scribe } = createMemScribeHarnessRuntime({
     root,
     agent: workflowAgent(),
     dreamRunner,
-    skillRecall: async ({ usageRecords }) => {
-      seenUsageRecords.push([...usageRecords]);
+    skillRecall: async () => {
       return {
         entries: [
           {
@@ -308,12 +331,13 @@ test("createHostMemScribe wires skill recall and turn-end learning loop into the
       source: "local",
       skillLearningEnabled: true,
       gate: { minDoneTurns: 1, cooldownTurns: 0, minToolCalls: 1 },
-      skillEvolution: async ({ usageRecords, lastExtraction }) => {
-        events.push(`skill:${lastExtraction.result}:${usageRecords.length}`);
+      skillEvolution: async ({ lastExtraction }) => {
+        events.push(`skill:${lastExtraction.result}`);
         return {
           coordination: {
             decision: "update",
             targetSkill: "memscribe-learned-release-review",
+            mergedSkills: [],
             why: "Release prep has become reusable.",
             memoryAction: "compress-memory",
             memoryTopics: ["release prep"],
@@ -326,19 +350,11 @@ test("createHostMemScribe wires skill recall and turn-end learning loop into the
     },
   });
 
-  scribe.recordSkillUsage({
-    sessionId: "s1",
-    skillName: "memscribe-learned-release-review",
-    outcome: "completed",
-    trigger: "release prep",
-  });
-
   const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
   assert.match(ctx.systemPrompt, /# 技能/);
   assert.match(ctx.preludePrompt, /## 可用技能/);
   assert.match(ctx.preludePrompt, /memscribe-learned-release-review/);
   assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
-  assert.equal(seenUsageRecords[0]?.[0]?.outcome, "completed");
 
   const result = await scribe.onTurnEnd({
     sessionId: "s1",
@@ -355,17 +371,17 @@ test("createHostMemScribe wires skill recall and turn-end learning loop into the
   assert.equal(result.learningLoop?.skillEvolution.ran, true);
   assert.equal(result.learningLoop?.dream.ran, true);
   assert.deepEqual(events, [
-    "skill:completed:1",
+    "skill:completed",
     "dream:compress-memory:memscribe-learned-release-review",
   ]);
 });
 
-test("createHostMemScribe learnedSkills assembly runs extraction, skill evolution, dream, and recall", async () => {
+test("createMemScribeHarnessRuntime learnedSkills assembly runs extraction, skill evolution, dream, and recall", async () => {
   const root = await tempDir();
   const skillsRoot = path.join(root, "skills");
-  const { scribe } = createHostMemScribe({
+  const { scribe } = createMemScribeHarnessRuntime({
     root: path.join(root, "memory"),
-    toolCompletion: learnedSkillLoopToolCompletion(),
+    model: learnedSkillLoopModel(),
     learnedSkills: {
       skillsRoot,
       checkpointRoot: path.join(root, ".skill-checkpoints"),
@@ -416,9 +432,11 @@ test("createHostMemScribe learnedSkills assembly runs extraction, skill evolutio
   assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
 });
 
-test("createHostMemScribe without a toolCompletion is recall-only (no extraction)", async () => {
+test("createMemScribeHarnessRuntime requires explicit recall-only mode when no model is present", async () => {
   const root = await tempDir();
-  const { scribe } = createHostMemScribe({ root });
+  assert.throws(() => createMemScribeHarnessRuntime({ root }), /requires a canonical model/);
+
+  const { scribe } = createMemScribeHarnessRuntime({ root, mode: "recall-only" });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   await scribe.onTurnEnd({
@@ -436,9 +454,9 @@ test("createHostMemScribe without a toolCompletion is recall-only (no extraction
   assert.equal(ctx.enabled, true);
 });
 
-test("createHostMemScribe decline (no tool calls) writes nothing", async () => {
+test("createMemScribeHarnessRuntime decline (no tool calls) writes nothing", async () => {
   const root = await tempDir();
-  const { scribe } = createHostMemScribe({ toolCompletion: decliningToolCompletion, root });
+  const { scribe } = createMemScribeHarnessRuntime({ model: decliningModel, root });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   await scribe.onTurnEnd({
@@ -454,7 +472,7 @@ test("createHostMemScribe decline (no tool calls) writes nothing", async () => {
 
 test("disabled scribe makes every hook a no-op", async () => {
   const root = await tempDir();
-  const { scribe } = createHostMemScribe({ toolCompletion: savingToolCompletion(), root, enabled: false });
+  const { scribe } = createMemScribeHarnessRuntime({ model: savingModel(), root, enabled: false });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   await scribe.onTurnEnd({

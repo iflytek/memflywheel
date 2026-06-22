@@ -57,6 +57,7 @@ test("runLearningLoop: normal turn runs extraction, then skill evolution, then d
         coordination: {
           decision: "update",
           targetSkill: "review-skill",
+          mergedSkills: [],
           why: "The reusable review process should move from memory into a learned skill.",
           memoryAction: "compress-memory",
           memoryTopics: ["code review workflow"],
@@ -133,6 +134,7 @@ test("runLearningLoop: error trigger only runs extraction", async () => {
         coordination: {
           decision: "noop",
           targetSkill: null,
+          mergedSkills: [],
           why: "not used",
           memoryAction: "noop",
           memoryTopics: [],
@@ -173,6 +175,7 @@ test("runLearningLoop: inactive flush only runs skill review, never extraction o
         coordination: {
           decision: "noop",
           targetSkill: null,
+          mergedSkills: [],
           why: "No skill update needed.",
           memoryAction: "noop",
           memoryTopics: [],

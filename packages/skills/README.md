@@ -44,8 +44,8 @@ import {
 | Function | Purpose |
 | --- | --- |
 | `createLearnedSkillStore(input)` | Builds the high-level staged learned-skill store used by SDK skill learning. |
-| `createLearnedSkillRecallProvider(input)` | Reads learned skills and returns prompt-routing entries plus recent usage signals. |
-| `buildLearnedSkillPrelude(packet)` | Renders learned-skill routes and usage outcomes as a compact prompt prelude. |
+| `createLearnedSkillRecallProvider(input)` | Reads learned skills and returns prompt-routing entries. |
+| `buildLearnedSkillPrelude(packet)` | Renders learned-skill routes as a compact prompt prelude. |
 | `getLearnedSkillsCatalog(input)` | Reads and validates `memscribe-learned-*` directories and returns a derived catalog. |
 | `validateLearnedSkillPackage(input)` | Validates naming, frontmatter, sections, supporting file placement, file size, sensitive names, and configured forbidden public names. |
 | `checkpointLearnedSkill(input)` | Writes staged skill files to an external checkpoint root and snapshots the existing target skill directory. |
@@ -56,7 +56,7 @@ The high-level store uses a stronger finalized-skill flow:
 
 ```text
 createSkillCheckpoint()
-  -> skill tools write staging only
+  -> skill tools write/archive staging only
   -> finalizeLearnedSkillChanges()
        checks finalized skill tree did not change
        validates changed staged learned skills
@@ -70,7 +70,6 @@ Prompt recall is routing-only:
 createLearnedSkillRecallProvider()
   -> validates learned skill directories
   -> returns name / display name / description / path / trigger hints
-  -> includes recent skill usage records supplied by the SDK
   -> does not execute skills or copy procedure steps into memory
 ```
 
