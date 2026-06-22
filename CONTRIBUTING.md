@@ -25,7 +25,7 @@ Please keep changes inside the public MemScribe scope:
 | Index | `MEMORY.md` is a rebuildable index. Do not hand-edit it. |
 | Recall | Full-index recall only. Do not add embeddings, BM25, top-k, or vector search. |
 | LLM calls | `@memscribe/core` must not call LLMs directly. Use injected runners or `@memscribe/model` canonical model ports. |
-| Naming | Use `MemScribe`, `memscribe`, `@memscribe/*`, `MEMSCRIBE_*`, and `memscribe://...`. |
+| Naming | Use `MemScribe`, `memscribe`, `@memscribe/*`, and `MEMSCRIBE_*`. |
 
 ## Pull Requests
 

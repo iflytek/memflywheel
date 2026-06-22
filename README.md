@@ -3,7 +3,7 @@
 A clean, minimal, file-backed long-term memory subsystem for LLM agents. MemScribe packages a
 file-native long-term memory design — a single file-backed store, full-index recall, and an
 LLM-driven extraction and consolidation flow — as a dependency-free TypeScript library with
-adapter and MCP entry points. It ships a high-quality **default extractor** so that giving it
+SDK and host adapter entry points. It ships a high-quality **default extractor** so that giving it
 one API key is enough to start writing memory, plus direct integrations for selected agent
 hosts.
 
@@ -35,8 +35,8 @@ hosts.
   only through injected `ExtractionAgentRunner` and `DreamAgentRunner` contracts — both
   tool-calling subagents over a single canonical model channel. Supply a host-owned model
   port, or use one of the provider mappers in `@memscribe/model`.
-- **Adapter- and MCP-first.** MemScribe is meant to be wired into an existing agent runtime
-  via host lifecycle adapters or exposed over MCP, not to be a standalone product.
+- **Host-adapter-first.** MemScribe is meant to be wired into an existing agent runtime
+  through SDK lifecycle hooks and host adapters, not to be a standalone product.
 - **Skills are host-executed.** MemScribe can store, validate, route, and evolve learned
   skill packages, but the host owns skill loading, policy, and execution.
 
@@ -50,10 +50,10 @@ hosts.
 - **No extra frontmatter fields.** Only `name` / `description` / `type` (plus minimal
   `created_at` / `updated_at`). No `origin` / `source_ref` / `confidence` / `status` /
   `agent` / `project` / `session`.
-- **No MemScribe-specific read/search wrapper.** MCP exposes ordinary root-bound
-  file tools; recall context is delivered through prompt/resources.
-- **No default skill injection in CLI/MCP.** CLI and MCP are memory-facing surfaces unless
-  a host explicitly wires learned-skill recall through the SDK hooks.
+- **No MemScribe-specific read/search wrapper.** Recall context is delivered through the
+  prompt; the host's own filesystem tools read any selected memory body.
+- **No standalone runtime surface.** Learned-skill recall and evolution are enabled only
+  through SDK/adapters that explicitly wire the host lifecycle and model channel.
 
 ## Packages
 
@@ -63,8 +63,6 @@ hosts.
 | `@memscribe/model` | Provider-neutral tool-calling model protocol plus provider mappers, including OpenAI-compatible Chat Completions. |
 | `@memscribe/sdk` | Lifecycle hooks and wiring for the `ExtractionAgentRunner` / `DreamAgentRunner` injection points and the `createExtractionAgentRunner` / `createDreamAgentRunner` factories. |
 | `@memscribe/skills` | File-native learned skill store with staging, strict validation, prompt recall, finalize, and rollback. |
-| `@memscribe/cli` | `context` / `list` / `read` / `write` / `doctor` / `dream` / `rebuild-index`. |
-| `@memscribe/mcp-server` | MCP prompt/resources for recall plus ordinary root-bound file tools (`read` / `write` / `edit` / `bash` / `glob` / `grep`). |
 | `@memscribe/adapters` | Host lifecycle mappings for selected agent runtimes. |
 
 ## Default extraction subagent (give it one API key)
@@ -132,7 +130,7 @@ Skill learning is exposed as SDK primitives and opt-in hooks: prompt build can
 include learned-skill routes and recent usage signals, and host/adapters can wire
 turn end to run extraction, skill evolution, and dream memory compression in
 order. It is not enabled for every entry point by default.
-- [`docs/integrations.md`](docs/integrations.md) — adapters and MCP.
+- [`docs/integrations.md`](docs/integrations.md) — SDK and host adapters.
 
 ## Develop
 

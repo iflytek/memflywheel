@@ -8,7 +8,7 @@ assignees: ""
 
 ## Package
 
-`@memscribe/core` / `@memscribe/sdk` / `@memscribe/cli` / `@memscribe/mcp-server` / `@memscribe/adapters`
+`@memscribe/core` / `@memscribe/model` / `@memscribe/sdk` / `@memscribe/skills` / `@memscribe/adapters`
 
 ## Environment
 

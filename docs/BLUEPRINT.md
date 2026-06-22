@@ -29,9 +29,9 @@ MemScribe/
 ├── .gitignore                   # (present)
 └── packages/
     ├── core/                    # @memscribe/core   — memory kernel (no LLM, no host)
-    ├── sdk/                     # @memscribe/sdk    — lifecycle hooks + extraction-subagent injection
-    ├── cli/                     # @memscribe/cli    — doctor/dream/rebuild/context/...
-    ├── mcp-server/              # @memscribe/mcp-server — context/save tools
+    ├── model/                   # @memscribe/model  — provider-neutral canonical model protocol
+    ├── sdk/                     # @memscribe/sdk    — lifecycle hooks + extraction/dream/skill orchestration
+    ├── skills/                  # @memscribe/skills — learned skill store + validation
     └── adapters/                # @memscribe/adapters  — host lifecycle mappings
 ```
 
@@ -92,9 +92,9 @@ Each package `package.json` scripts:
 
 Dependency edges (workspace-internal only, via `workspace:*`):
 - `sdk` → `core`
-- `cli` → `core`, `sdk`
-- `mcp-server` → `core`, `sdk`
-- `adapters` → `sdk`
+- `model` → no workspace package
+- `skills` → no workspace package
+- `adapters` → `sdk`, `model`
 
 ---
 
@@ -165,7 +165,7 @@ core/src/
 ├── extract.ts          # runExtractionSession lifecycle + ExtractionAgentRunner contract
 ├── file-tools.ts     # glob / grep / read / write / edit / bash
 ├── dream.ts            # deterministic pre-pass + runDreamSession + DreamAgentRunner contract
-└── health.ts           # structural findings (used by dream + CLI doctor)
+└── health.ts           # structural findings (used by dream + host diagnostics)
 ```
 
 Each module's job + key signatures below. All async I/O is `node:fs/promises`.
@@ -197,7 +197,7 @@ export function isValidMemoryFilename(root: string, filename: string): boolean;
 export function normalizeRelativePath(p: string): string; // "\\" → "/"
 ```
 
-> **Design note:** `root` is threaded explicitly (not a module singleton) so the kernel is testable and embeddable. CLI/SDK resolve it once via `getMemoryRoot()` and pass it down.
+> **Design note:** `root` is threaded explicitly (not a module singleton) so the kernel is testable and embeddable. The SDK/adapters resolve it once via `getMemoryRoot()` and pass it down.
 
 ---
 
@@ -250,7 +250,7 @@ export function writeMemoryDocument(
   input: { type: MemoryType; filename: string; doc: MemoryDocument }
 ): Promise<string>;
 
-// Delete a doc (used by dream apply / CLI). Append audit.
+// Delete a doc (used by dream apply). Append audit.
 export function deleteMemoryDocument(ctx: StorageContext, relativePath: string): Promise<boolean>;
 ```
 
@@ -595,12 +595,10 @@ export function buildDreamAgentUserMessage(input: {
 // DreamAgentRunner (§4.3). The SAME canonical model channel drives extraction.
 
 // Deterministic plan (no LLM): from health findings + duplicate/content analysis.
-// The CLI's `dream plan` prints exactly this.
 export function planDeterministic(root: string, entries: MemoryEntry[]): Promise<DreamOp[]>;
 export function planDream(opts: { root: string }): Promise<DreamOp[]>;
 
 // Apply a deterministic plan, then relocate stray root files + syncMemoryIndex.
-// The CLI's `dream apply` is exactly this (no subagent).
 export function applyDream(opts: {
   ctx: StorageContext;
   plan: DreamOp[];
@@ -631,7 +629,7 @@ export const DREAM_DEFAULT_MIN_SESSIONS = 5;
 
 ### 3.13 `health.ts`
 
-Structural health findings. Used by `dream.planDeterministic` and CLI `doctor`.
+Structural health findings. Used by `dream.planDeterministic` and host diagnostics.
 
 ```ts
 export type HealthCode =
@@ -694,7 +692,7 @@ export interface MemScribe {
   // Idle/scheduled consolidation trigger (gated by minHours/minSessions).
   onIdle(input?: { force?: boolean }): Promise<void>;
 
-  // ---- Explicit operations (also surfaced via MCP/CLI) ----
+  // ---- Explicit host operations ----
   getContext(): Promise<BuildContextResult>;
   readMemory(relativePath: string): Promise<MemoryDocument | null>;
   saveMemory(input: { type: MemoryType; name: string; description?: string; body: string }): Promise<{ changed: string[] }>;
@@ -760,60 +758,7 @@ export function createOpenAIChatCompletionsModel(
 
 ---
 
-## 5. `@memscribe/mcp-server` — minimal tool face
-
-Exactly two tools. **No read/search tool** — full-body recall reads go through the host filesystem surface, and there is no lexical retrieval.
-
-```
-mcp-server/src/
-├── index.ts        # server bootstrap (stdio), wires a MemScribe
-├── tools.ts        # the two tool definitions
-└── tools.test.ts
-```
-
-| Tool | Input | Output | Maps to |
-|---|---|---|---|
-| `memscribe.with_memory` | `{}` | full-index prelude string (`<system-reminder>…`) | `scribe.getContext().preludePrompt` |
-| `write` | `{ type, name, description?, body }` | `{ changed: string[] }` | `scribe.saveMemory(candidate)` |
-
-- The MCP server is transport only; all logic is in `core`/`sdk`.
-- `doctor` / `dream` / `rebuild-index` are **not** MCP tools — they live in the CLI.
-- Built on the stdio JSON-RPC contract by hand (no SDK dep) OR a thin local protocol module — still zero runtime deps.
-
----
-
-## 6. `@memscribe/cli` — command set
-
-```
-cli/src/
-├── index.ts        # arg parse (hand-rolled, no deps) + dispatch
-├── commands/
-│   ├── context.ts
-│   ├── read.ts
-│   ├── write.ts
-│   ├── doctor.ts
-│   ├── dream.ts
-│   ├── rebuild-index.ts
-│   └── list.ts
-└── *.test.ts
-```
-
-| Command | Description | Core/SDK |
-|---|---|---|
-| `memscribe context` | print the two-segment recall (rules + prelude) | `scribe.getContext()` |
-| `memscribe list` | print scan entries (name, type, path, mtime) | `scan.scanMemoryFiles` |
-| `memscribe read <path>` | print a memory body | `readMemoryDocument` |
-| `memscribe write --type --name [--description] --file/-` | write a memory (stdin or file body) | `scribe.saveMemory` |
-| `memscribe doctor` | print health findings (exit ≠0 if errors) | `scribe.doctor` |
-| `memscribe dream [--force]` | run consolidation (deterministic pre-pass; the subagent runs only when a host wires a `dreamRunner`) | `scribe.runDream` |
-| `memscribe rebuild-index` | regenerate MEMORY.md from scan | `scribe.rebuildIndex` |
-
-- The CLI cannot supply an LLM subagent by itself; `dream`/`doctor` run the **deterministic** path. A host integration may pass the extraction / dream subagents through a config module the CLI loads (optional, still no runtime dep).
-- `--root` global flag overrides `MEMSCRIBE_HOME`.
-
----
-
-## 7. `@memscribe/adapters` — host lifecycle mappings
+## 5. `@memscribe/adapters` — host lifecycle mappings
 
 Each adapter maps a host's lifecycle events onto the SDK's `MemScribe` hooks. Adapters contain **no memory logic** — pure event translation.
 
@@ -862,7 +807,7 @@ The `examples/` directory holds a minimal, runnable integration per targeted hos
 
 ---
 
-## 8. Storage Layout on Disk
+## 6. Storage Layout on Disk
 
 ```
 <MEMSCRIBE_HOME or os-data>/memscribe/memory/
@@ -895,7 +840,7 @@ updated_at: 2026-06-15T10:30:00.000Z
 
 ---
 
-## 9. Concurrency, Atomicity, Audit (cross-cutting)
+## 7. Concurrency, Atomicity, Audit (cross-cutting)
 
 - **Write lock** (`lock.ts`) wraps every multi-file mutation (extraction, dream-apply). Stale detection via `process.kill(pid,0)` + 180s timeout.
 - **Atomic write** (`atomic.ts`): temp file in same dir → `rename`. Index sync, doc writes, lock file all atomic.
@@ -903,7 +848,7 @@ updated_at: 2026-06-15T10:30:00.000Z
 
 ---
 
-## 10. Privacy Pipeline (cross-cutting)
+## 8. Privacy Pipeline (cross-cutting)
 
 Order on any inbound body (a subagent tool write or an explicit save):
 1. `redactPrivateSpans` — `<private>…</private>` → `[REDACTED]` (always on, deterministic).
@@ -912,7 +857,7 @@ Order on any inbound body (a subagent tool write or an explicit save):
 
 ---
 
-## 11. Recall ↔ Extraction ↔ Dream data flow (end to end)
+## 9. Recall ↔ Extraction ↔ Dream data flow (end to end)
 
 ```
 [turn N: prompt build]
@@ -939,7 +884,7 @@ Order on any inbound body (a subagent tool write or an explicit save):
 
 ---
 
-## 12. We Deliberately Do NOT Build (do not add these back)
+## 10. We Deliberately Do NOT Build (do not add these back)
 
 These are **out of scope by design** — reviewers and future contributors must not reintroduce them:
 
@@ -947,15 +892,14 @@ These are **out of scope by design** — reviewers and future contributors must 
 - **No retrieval of any kind.** No BM25, no lexical/keyword search, no TF-IDF.
 - **No entity index / knowledge graph.**
 - **No embeddings / vectors / similarity / top-k / re-ranking / scoring.** Recall is full-index injection + LLM self-selection, period.
-- **No `read` / `search` MCP tool.** The tool face is `memscribe.with_memory`, `write` only; recall reads use the host filesystem surface.
 - **No extra frontmatter fields.** No `scope`, `origin`, `source_ref`, `confidence`, `status`, `agent`, `project`, `session`. Only `name` / `description` / `type` (+ `created_at` / `updated_at`).
 - **No LLM calls inside core.** Extraction and dream semantics are pluggable injection points; core stays deterministic.
-- **No runtime npm dependencies.** No YAML lib, no arg-parser lib, no MCP SDK runtime dep — hand-roll on Node stdlib.
+- **No runtime npm dependencies.** No YAML lib, no arg-parser lib, no protocol SDK runtime dep — hand-roll on Node stdlib.
 - **MEMORY.md is never LLM-authored.** It is derived from scan and rebuilt; the model never edits it.
 
 ---
 
-## 13. Design constants and portability notes
+## 11. Design constants and portability notes
 
 - `parseMemoryFrontmatter` requires `name` + `type` only; `description` defaults to `""` — reflected in `frontmatter.ts` / `MemoryEntry`.
 - Locked constants: `MAX_SCAN_ENTRIES=200`, `FRONTMATTER_READ_BYTES=2048`, `INDEX_MAX_LINES=200`, `INDEX_MAX_BYTES=25000`, aging `context`/`ambient = 30d` (others `null`), `LOCK_TIMEOUT_MS=180000`, `EXTRACTION_CONTEXT_WINDOW_SIZE=6`, `EXTRACTION_MAX_MESSAGES=40`, dream `minHours=24` / `minSessions=5`.

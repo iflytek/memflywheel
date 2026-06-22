@@ -9,7 +9,6 @@
     "agent-memory",
     "llm",
     "memory",
-    "mcp",
     "typescript"
   ],
   "engines": {

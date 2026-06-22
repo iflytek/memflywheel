@@ -434,7 +434,7 @@ export interface ConnectResult {
  * One-call install + verify. Resolves the target (explicit path or the
  * adapter's default), plans the wiring, optionally applies it, then — when
  * applied — re-reads from disk and verifies the marker round-trips. This is the
- * mechanism behind a CLI `connect <host>` command.
+ * common installation primitive for host-specific adapter tooling.
  */
 export async function connect(
   adapter: HostAdapter,

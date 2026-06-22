@@ -2,7 +2,7 @@
 
 ## 一句话定位
 
-MemScribe 是一个**文件型长期记忆运行层**:把一套文件型长期记忆方案做成可被其他 Agent 产品直接集成的开源库。TypeScript-first、纯 Node、零运行时依赖,通过 **adapter + MCP** 接入各家 Agent。它**不是**托管记忆 API、向量数据库或通用 RAG 平台。它自带一份高质量的**默认提取器**,给一个 API key 即可开箱提取。
+MemScribe 是一个**文件型长期记忆运行层**:把一套文件型长期记忆方案做成可被其他 Agent 产品直接集成的开源库。TypeScript-first、纯 Node、零运行时依赖,通过 **SDK 生命周期 hooks + host adapters** 接入各家 Agent Harness。它**不是**托管记忆 API、向量数据库、通用 RAG 平台或独立工具产品。它自带一份高质量的**默认提取器**,宿主注入模型通道后即可开箱提取。
 
 ## 核心理念
 
@@ -17,13 +17,13 @@ pnpm workspace,5 个包,零运行时依赖(仅 TypeScript/@types/node 为 devDep
 
 | 包 | 职责 | 规模 |
 | --- | --- | --- |
-| `@memscribe/core` | 记忆内核:存储/索引/召回/提取/整理/隐私/锁/审计 | 16 源文件 |
-| `@memscribe/sdk` | 宿主生命周期集成层 + 两个 LLM 注入点 | 1 源文件 |
-| `@memscribe/mcp-server` | stdio MCP server(通用 Agent 工具入口) | 4 源文件 |
-| `@memscribe/cli` | 本地安装与治理命令 | 1 源文件 |
-| `@memscribe/adapters` | 各宿主生命周期映射 | 10 源文件 |
+| `@memscribe/core` | 记忆内核:存储/索引/召回/提取/整理/隐私/锁/审计 | 36 源文件 |
+| `@memscribe/model` | provider-neutral 结构化 tool-call 模型协议与 provider mapper | 2 源文件 |
+| `@memscribe/sdk` | 宿主生命周期集成层、提取/dream runner 装配、学习闭环编排 | 10 源文件 |
+| `@memscribe/skills` | 文件型 learned skill store、staging、校验、召回索引 | 3 源文件 |
+| `@memscribe/adapters` | 各宿主生命周期映射与 HostHarnessPort 接入 | 22 源文件 |
 
-依赖关系:`sdk → core`,`mcp-server/cli → core (+sdk)`,`adapters → sdk`。
+依赖关系:`sdk → core + skills`,`model` 独立提供模型协议与 provider mapper,`adapters → sdk + model`。
 
 ### core 内部模块
 
@@ -67,21 +67,19 @@ updated_at: 2026-06-15T...
 ## 安全与可靠性
 
 - **并发**:per-root 写锁 + 临时文件原子写(rename)+ append-only 审计日志。
-- **隐私**:`<private>…</private>` 始终脱敏为 `[REDACTED]`;明显 secret(token/password/api key/cookie/ssh key)可通过 `refuseSecrets` 硬闸门拒写(MCP 默认开启,core/SDK/CLI 默认关闭)。
+- **隐私**:`<private>…</private>` 始终脱敏为 `[REDACTED]`;明显 secret(token/password/api key/cookie/ssh key)可通过 `refuseSecrets` 硬闸门拒写,是否开启由宿主写入策略决定。
 - **无静默降级**:写入/索引/审计失败显式暴露。
 
 ## 接入方式
 
 | 入口 | 形态 | 说明 |
 | --- | --- | --- |
-| **MCP** | stdio server | prompt `memscribe.with_memory`;resources `memscribe://index|manifest`;工具为受控普通文件工具 `read/write/edit/bash/glob/grep`,执行层仍强制记忆路径、frontmatter、隐私和索引规则 |
 | **SDK** | `createMemScribe(config)` | 生命周期 hooks:`onSessionStart` / `onPromptBuild` / `onTurnEnd` / `onSessionEnd` / `onAgentEnd` / `onIdle`;两个注入点 `agent`(ExtractionAgentRunner)、`dreamRunner`(DreamAgentRunner) |
-| **CLI** | `memscribe <cmd>` | `init` / `list` / `read` / `context` / `write` / `doctor` / `rebuild-index` / `dream plan|apply` / `mcp` |
 | **adapters** | 宿主生命周期映射 | `hermes` / `opencode` / `openclaw` / `pi` / `codex` / `claude-code`,install 走 plan/apply + 真 round-trip verify |
 
 ## 工程现状(2026-06-15)
 
-- **5 包 build 全过,测试全绿**(core / sdk / adapters / mcp-server / cli)。
+- **5 包 build 全过,测试全绿**(core / model / sdk / skills / adapters)。
 - **零运行时依赖**。
 - 自带默认提取子代理与默认 dream 整理子代理(两者共用同一 canonical model 通道,默认系统提示在 core,工厂 `createExtractionAgentRunner` / `createDreamAgentRunner` 在 sdk,OpenAI-compatible mapper 在 `@memscribe/model`),宿主可直接注入自身模型能力。
 - OpenClaw / Hermes / Pi 三家直接集成示例见 `examples/`。
@@ -89,7 +87,7 @@ updated_at: 2026-06-15T...
 
 ## 刻意不做的(防止重新跑偏)
 
-scope 三级作用域、BM25、实体索引、向量/embedding/top-k、MCP search 工具、frontmatter 额外字段、核心内调用 LLM、运行时 npm 依赖、由 LLM 编写 `MEMORY.md`。
+scope 三级作用域、BM25、实体索引、向量/embedding/top-k、独立运行时入口、frontmatter 额外字段、核心内调用 LLM、运行时 npm 依赖、由 LLM 编写 `MEMORY.md`。
 
 ## 开源可移植性取舍
 

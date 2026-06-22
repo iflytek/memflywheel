@@ -148,7 +148,7 @@ file, `edit` to refine a same-topic file, or `bash` to move retired files under
 | `onAgentEnd(id)` | auxiliary/agent run ends | final extraction sweep over not-yet-processed messages |
 | `onIdle(gate?)` | idle / scheduled | gate-check then `runDreamSession`: deterministic pre-pass, then the consolidation subagent via `dreamRunner` |
 
-### Explicit operations (for MCP tools / CLI)
+### Explicit host operations
 
 - `context()` — the full-index prelude + stable rules.
 - `save(options)` — explicit validated typed Markdown write under the lock, then
@@ -157,8 +157,8 @@ file, `edit` to refine a same-topic file, or `bash` to move retired files under
 
 There is deliberately **no public read/search tool** — MemScribe has no lexical retrieval,
 and recall reads go through the host filesystem surface.
-CLI and MCP remain memory-facing surfaces by default. They do not inject learned
-skills or execute skills unless a future host explicitly adds that surface.
+These operations are for host integrations that need direct governance hooks;
+they are not a standalone runtime surface.
 
 ## Skill learning loop
 

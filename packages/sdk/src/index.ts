@@ -382,13 +382,13 @@ export interface MemScribe {
    */
   onIdle(opts?: DreamGateInput): Promise<DreamRunResult>;
 
-  // ---- Explicit operations (MCP tools / CLI) ----
+  // ---- Explicit host operations ----
 
   /** Return the full-index prelude and stable memory rules. */
   context(): Promise<MemScribeBuildContextResult>;
   /** Explicit, validated memory write (under lock, syncs index). */
   save(options: SaveOptions): Promise<ExtractionResult>;
-  /** Force a dream pass regardless of gate (CLI `dream`). */
+  /** Force a dream pass regardless of gate. */
   runDream(coordination?: DreamCoordination): Promise<DreamRunResult>;
 
   // ---- Introspection ----

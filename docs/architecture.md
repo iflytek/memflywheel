@@ -7,8 +7,7 @@ atomic writes, audit) that every write path shares.
 The core (`@memscribe/core`) is pure: it touches only the filesystem and never calls an LLM.
 The two model-driven steps (extraction, dream) are deterministic in the core and reach the
 model only through injected function contracts. Hosts wire those contracts and the turn
-lifecycle through `@memscribe/sdk` and `@memscribe/adapters`, or expose a subset over
-`@memscribe/mcp-server`.
+lifecycle through `@memscribe/sdk` and `@memscribe/adapters`.
 
 ## Memory root and layout
 
@@ -129,8 +128,8 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 
 - **Privacy.** `redactPrivateSpans` softens `<private>…</private>` to `[REDACTED]`.
   The hard-secret scan (`scanSecrets` / `enforceWritePrivacy`) is controlled by the
-  `refuseSecrets` gate: MCP enables it for `write`; core/SDK/CLI leave it off by
-  default. When enabled, obvious secrets (SSH/PEM keys, API-key and token prefixes,
+  `refuseSecrets` gate. Host integrations decide whether to enable it for their write
+  path. When enabled, obvious secrets (SSH/PEM keys, API-key and token prefixes,
   bearer/JWT tokens, `password:`/`cookie:` assignments) are refused with masked findings.
 - **Locking.** A per-root file lock (`.memory-task-lock`) serializes writers, with stale
   detection (`LOCK_TIMEOUT_MS`) for crashed holders. `withLock` wraps a critical section.
@@ -150,8 +149,6 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
    ▲
    │
 @memscribe/adapters  per-host lifecycle mapping
-@memscribe/mcp-server context / save tools over MCP
-@memscribe/cli       context / list / read / write / doctor / dream / rebuild-index
 ```
 
-See [`integrations.md`](integrations.md) for the adapter and MCP surfaces.
+See [`integrations.md`](integrations.md) for the SDK and host adapter surfaces.

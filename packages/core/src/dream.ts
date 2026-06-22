@@ -5,8 +5,7 @@
  * Two phases, mirroring extraction's "subagent writes files directly" model:
  *  1. Deterministic pre-pass (no LLM): the unambiguous structural fixes —
  *     identical-body duplicates are removed, files sitting in the wrong type
- *     directory are relocated. Safe, fast, and LLM-free (the CLI's
- *     `dream plan`/`dream apply` run exactly this).
+ *     directory are relocated. Safe, fast, and LLM-free.
  *  2. Semantic consolidation (subagent): the injected DreamAgentRunner reads the
  *     health / type-review packets, READS FULL BODIES, and merges / compresses /
  *     retires memories by calling the same ordinary file tools the extraction subagent
@@ -111,7 +110,7 @@ export async function planDeterministic(
   return ops;
 }
 
-/** The deterministic plan for a root. The CLI's `dream plan` prints this. */
+/** The deterministic plan for a root. */
 export async function planDream(opts: { root: string }): Promise<DreamOp[]> {
   const entries = await scanMemoryFiles(opts.root);
   return planDeterministic(opts.root, entries);
@@ -159,7 +158,7 @@ async function applyDreamOps(ctx: StorageContext, ops: DreamOp[]): Promise<Apply
 
 /**
  * Apply a deterministic plan, then relocate stray root files and resync the
- * index. The CLI's `dream apply` is exactly this (no subagent).
+ * index.
  */
 export async function applyDream(opts: {
   ctx: StorageContext;

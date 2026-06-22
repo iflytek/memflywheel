@@ -14,8 +14,7 @@
  *  - `agent_end`          → onTurnEnd (fire-and-forget extraction subagent)
  *  - idle watcher          → onIdle
  *
- * See examples/openclaw for the `register(api)` plugin glue and the optional
- * MCP bridge (@memscribe/mcp-server) for hosts that prefer the tool path.
+ * See examples/openclaw for the `register(api)` plugin glue.
  */
 
 import { makeAdapter, normalizeMessages, readString } from "./make-adapter.js";

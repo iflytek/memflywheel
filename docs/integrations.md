@@ -1,104 +1,68 @@
 # Integrations
 
-MemScribe is meant to be embedded in an existing agent runtime, not run as a standalone
-product. Two integration surfaces sit on top of `@memscribe/core`: **host adapters** (native
-lifecycle wiring) and the **MCP server** (a portable tool surface). Both ultimately call the
-same core functions; the difference is how the host's turn lifecycle reaches them.
+MemScribe is embedded through SDK lifecycle hooks and host adapters. A real
+integration must be owned by the host Agent Harness, because the host owns
+lifecycle events, model access, authentication, prompt assembly, filesystem
+tools, and skill execution policy.
 
-> The core is the implemented kernel. The SDK, CLI, MCP server, and adapter packages are the
-> integration layer around it; their surfaces are described here.
+## Lifecycle Contract
 
-## The lifecycle MemScribe expects
+Every host integration maps concrete host events onto the same MemScribe calls:
 
-Every integration maps three host events onto the core:
+| Host event | MemScribe call | Effect |
+| --- | --- | --- |
+| Prompt build | `onPromptBuild(sessionId)` | Return stable memory rules plus the full `MEMORY.md` index prelude, and optionally learned-skill routes. |
+| Turn end | `onTurnEnd(sessionId, messages)` | Append transcript/tool trajectory, run extraction, then optionally run skill evolution and dream coordination. |
+| Agent/session end | `onAgentEnd(sessionId)` / `onSessionEnd(sessionId)` | Flush not-yet-processed messages and close session state. |
+| Idle/scheduled | `onIdle(gate)` | Run gated dream consolidation. |
 
-| Host event | Core call | Effect |
-|---|---|---|
-| Turn start | `buildContext({ root, enabled })` | Produce the two injection segments (system rules + `<system-reminder>` index prelude). |
-| Turn end (after-turn) | `runExtractionSession({ ctx, agent, messages, sessionId, cursorStore })` | Window recent messages; the extraction subagent writes memory files directly via the tools; sync index. |
-| Idle / scheduled | `shouldRunDream(...)` → `runDreamSession({ ctx, runner })` | Deterministic structural pre-pass, then the consolidation subagent (merge/compress/retire via tools), under the dream lock. |
+The host decides where prompt segments go, how messages and tool calls are
+represented, when lifecycle events fire, and which model channel is used.
+MemScribe consumes normalized inputs and writes the file-native memory/skill
+state.
 
-The two model-driven functions — the `ExtractionAgentRunner` and the `DreamAgentRunner` — can be the built-in
-defaults or host-supplied. The core provides everything deterministic: locking, cursors,
-atomic writes, index sync, relocation, privacy, audit. See [`recall.md`](recall.md),
-[`extraction.md`](extraction.md), and [`architecture.md`](architecture.md).
+## SDK Surface
 
-### The default extraction and dream subagents
+`@memscribe/sdk` is the runtime integration surface:
 
-Both model-driven steps ship with a working default, so a host does not have to author the
-"what is worth remembering" prompt or wire the loop:
+| SDK part | Responsibility |
+| --- | --- |
+| `createMemScribe` | Session state, recall hooks, extraction scheduling, dream scheduling, skill-loop orchestration. |
+| `ExtractionAgentRunner` | Host-injected tool-calling subagent that reads the manifest and writes memory files through `read/write/edit/bash/glob/grep`. |
+| `DreamAgentRunner` | Host-injected tool-calling subagent that consolidates memory files through the same tools. |
+| `learningLoop` | Optional turn-end skill evolution after successful extraction. |
+| `skillRecall` | Optional prompt-build learned-skill route injection. |
 
-- The core owns a curated default extraction **system prompt** plus the **ordinary file tools**
-  (`createFileTools()`: `glob` / `grep` / `read` /
-  `write` / `edit` / `bash`),
-  and ships a default consolidation **system prompt** for dream too. The core makes no network call.
-- The SDK assembles them into running functions via
-  `createExtractionAgentRunner({ model })` and `createDreamAgentRunner({ model })`.
-  A single canonical model channel drives both subagents. Each
-  runner drives a tool-calling subagent that reads full memory bodies and writes the memory
-  files itself through the tools.
-- `@memscribe/model` ships `createOpenAIChatCompletionsModel()`, a mapper built on Node's
-  global `fetch` that targets an OpenAI-compatible `/chat/completions` endpoint with a `tools`
-  array, reading endpoint / key / model from the environment (`MEMSCRIBE_LLM_*`). A native
-  adapter should wrap its host's own LLM channel into `CanonicalModelCompletion` instead.
+Core stays deterministic: storage, frontmatter validation, lock handling,
+privacy filtering, audit, cursor advancement, index rebuilds, and structural
+dream pre-pass. The host or `@memscribe/model` adapter owns all model calls.
 
-## SDK (`@memscribe/sdk`)
+## Host Adapter Surface
 
-The SDK is the glue that wires the injection points and the turn lifecycle so an adapter does
-not re-implement them per host. It exposes lifecycle hooks (turn-start recall, after-turn
-extraction, idle dream) and carries the host-supplied `ExtractionAgentRunner` / `DreamAgentRunner` and
-`CursorStore` through to the core. It adds no LLM behavior of its own — it only schedules the
-core's deterministic steps and forwards the model-driven calls to the host's functions.
+`@memscribe/adapters` translates concrete hosts into the SDK contract. The
+adapter layer should stay thin:
 
-## Adapters (`@memscribe/adapters`)
+| Adapter job | Boundary |
+| --- | --- |
+| Lifecycle mapping | Translate host events into prompt-build, turn-end, session-end, agent-end, and idle calls. |
+| Payload normalization | Convert host transcript/tool trajectory into `ExtractionMessage[]`. |
+| Model port | Wrap the host-owned model channel into MemScribe's canonical tool-call protocol. |
+| Capability gate | Expose whether the host can run recall-only, memory-loop, dream-loop, or full skill-loop. |
+| Installation | Apply and verify host-side wiring without changing MemScribe semantics. |
 
-An adapter translates one host's concrete lifecycle into the three events above.
-Targeted host mappings are documented by the adapter package.
+The adapter must not invent retrieval, silently parse model text as tool calls,
+or execute learned skills inside MemScribe. If a host lacks a native structured
+tool-call model port, the integration should fail fast for extraction/dream/skill
+loops rather than pretending to be connected.
 
-Each adapter's job is narrow: hook the host's turn-start to inject the two recall segments,
-hook the host's turn-completion to trigger extraction with that host's message format mapped
-to `ExtractionMessage[]`, and hook an idle/scheduled signal to trigger dream. The
-host-specific concerns (where the system prompt and prelude are placed, how messages and
-session ids are read, how the host exposes a `HostHarnessPort` / `CanonicalModelCompletion`)
-live in the adapter; the memory semantics stay in the core. `connect` installs the host-side
-wiring and round-trip-verifies it from disk.
+## Capability Levels
 
-Runnable minimal integrations live under [`../examples/`](../examples/), showing
-the full path: expose a canonical model or explicit recall-only mode, build the default
-extraction and dream subagents, mount the lifecycle, and install + verify the wiring.
+| Level | Required host capabilities | MemScribe behavior |
+| --- | --- | --- |
+| Recall | Prompt injection + host filesystem read tools | Inject memory/skill indexes; host's main Agent decides what to read. |
+| Memory loop | Recall + canonical structured tool-call model + turn transcript | Turn-end extraction and idle dream can write memory files. |
+| Skill loop | Memory loop + tool-call trajectory + learned-skill store wiring | Turn-end extraction, skill evolution, dream memory compression, and skill route recall are connected. |
 
-## MCP server (`@memscribe/mcp-server`)
-
-For hosts that speak MCP, MemScribe exposes a deliberately minimal tool surface. There is **no
-read or search tool**, because recall reads should go through the host filesystem surface and
-there is no lexical retrieval.
-
-| Tool | Maps to | Purpose |
-|---|---|---|
-| `memscribe.with_memory` | `buildContext` | Return the full-index recall prelude for the current turn. |
-| `write` | `writeMemoryDocument` (privacy + atomic + audit) | Explicitly save a memory. |
-
-Inspection and maintenance commands (`doctor`, `dream`, `rebuild-index`) are intentionally **not**
-MCP tools — they live in the CLI.
-
-## CLI (`@memscribe/cli`)
-
-The CLI is for operators and scripts working directly against a memory root:
-
-| Command | Purpose |
-|---|---|
-| `context` | Print the recall segments (rules + `<system-reminder>` index) for inspection. |
-| `list` | List scanned entries. |
-| `read` | Print one memory body. |
-| `write` | Write a memory (runs the same privacy/atomic/audit path). |
-| `doctor` | Report health findings (missing/invalid frontmatter, path/type mismatch, duplicates). |
-| `dream` | Run a consolidation pass. |
-| `rebuild-index` | Rescan and rewrite `MEMORY.md` from the files on disk. |
-
-## Choosing a surface
-
-- **Native host runtime** → use the SDK plus the matching adapter; you supply the `ExtractionAgentRunner`
-  and `DreamAgentRunner`.
-- **Any MCP-capable host** → run the MCP server and expose `memscribe.with_memory` /
-  `write`; let the host read selected Markdown files through its own filesystem tools, and run `doctor` / `dream` / `rebuild-index` out of band via the CLI.
-- **Scripts and operations** → use the CLI directly against a memory root.
+Pi is the first-class target for the complete path. Other hosts should be wired
+by adding a host adapter and model-port mapper without changing core memory or
+skill semantics.

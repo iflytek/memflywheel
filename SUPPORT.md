@@ -8,7 +8,7 @@ Before filing an issue, please include:
 
 | Field | Example |
 |---|---|
-| Package | `@memscribe/core`, `@memscribe/sdk`, `@memscribe/cli`, `@memscribe/mcp-server`, or `@memscribe/adapters` |
+| Package | `@memscribe/core`, `@memscribe/model`, `@memscribe/sdk`, `@memscribe/skills`, or `@memscribe/adapters` |
 | Runtime | Node.js version and operating system |
 | Command | The exact command or API call that failed |
 | Expected result | What you expected to happen |

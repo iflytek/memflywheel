@@ -16,8 +16,5 @@ for published packages.
   `glob`, and `grep`.
 - SDK lifecycle integration through `createMemScribe`.
 - Tool-calling extraction and dream runners injected through canonical model ports.
-- MCP stdio server exposing the ordinary file-tool memory surface and
-  `memscribe.with_memory` prompt.
-- CLI governance commands for local memory roots.
 - Host adapters for Hermes, OpenCode, OpenClaw, Pi, Codex, and Claude Code.
 - Runnable examples for Hermes, OpenClaw, and Pi.

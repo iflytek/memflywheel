@@ -10,9 +10,6 @@ drive inference itself. So:
   exposes an in-process canonical model port or an explicit sidecar. MemScribe
   does not parse text as fake tool calls.
 
-An MCP bridge (`@memscribe/mcp-server`) is also available for hosts that prefer the
-tool path (`context` / `read` / `save`).
-
 ## Lifecycle mapping
 
 | OpenClaw hook          | scribe hook        | what the adapter does                         |

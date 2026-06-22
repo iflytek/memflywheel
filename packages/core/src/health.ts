@@ -1,6 +1,6 @@
 /**
- * Structural health findings. Port of memory-health.js. Used by dream's
- * deterministic planner and the CLI doctor command.
+ * Structural health findings used by dream's deterministic planner and host
+ * diagnostics.
  */
 
 import { readdir, readFile } from "node:fs/promises";

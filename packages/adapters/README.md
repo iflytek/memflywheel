@@ -22,7 +22,7 @@ Zero runtime dependencies (Node stdlib + TypeScript only).
 model-call API in this adapter layer, so a plugin cannot drive inference itself.
 Recall + injection are first-class via hooks (`registerMemoryCapability` +
 `context:inject`). Extraction/dream/skill loops require a future canonical model
-port or explicit sidecar. An MCP bridge (`@memscribe/mcp-server`) is also available.
+port or explicit sidecar.
 
 - **`pi`** — real: a Pi `.js` extension exposes `createPiHarnessPort(pi)`;
   `~/.pi/agent/settings.json` carries the wiring marker.
