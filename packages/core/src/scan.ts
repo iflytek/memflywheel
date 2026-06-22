@@ -7,7 +7,7 @@ import path from "node:path";
 
 import { RESERVED_MEMORY_FILES, type MemoryEntry, type MemoryType } from "./types.js";
 import { parseFrontmatter, stripFrontmatter, FRONTMATTER_READ_BYTES } from "./frontmatter.js";
-import { normalizeRelativePath } from "./paths.js";
+import { memoryTypeForRelativePath, normalizeRelativePath } from "./paths.js";
 
 export const MAX_SCAN_ENTRIES = 200;
 
@@ -33,8 +33,10 @@ async function walkMemoryFiles(
     if (dirent.name.startsWith(".")) continue;
 
     const absolutePath = path.join(currentDir, dirent.name);
+    const relativePath = normalizeRelativePath(path.relative(memoryRoot, absolutePath));
 
     if (dirent.isDirectory()) {
+      if (currentDir === memoryRoot && !memoryTypeForRelativePath(relativePath)) continue;
       await walkMemoryFiles(memoryRoot, absolutePath, entries);
       continue;
     }
@@ -42,6 +44,7 @@ async function walkMemoryFiles(
     if (!dirent.isFile()) continue;
     if (!dirent.name.endsWith(".md")) continue;
     if (RESERVED_MEMORY_FILES.has(dirent.name)) continue;
+    if (!memoryTypeForRelativePath(relativePath)) continue;
 
     try {
       const st = await stat(absolutePath);
@@ -53,7 +56,7 @@ async function walkMemoryFiles(
 
       entries.push({
         filename: dirent.name,
-        relativePath: normalizeRelativePath(path.relative(memoryRoot, absolutePath)),
+        relativePath,
         name: meta.name,
         description: meta.description || "",
         type: meta.type,

@@ -1,40 +1,44 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createPiHarnessPort } from "./pi-port.js";
+import { createPiHarnessPort, type PiModelContext } from "./pi-port.js";
 
 test("createPiHarnessPort maps Pi native tool calls into canonical model responses", async () => {
   const events: string[] = [];
+  const model = { id: "deepseek-v4-flash", provider: "deepseek" };
+  const completeSimple = async (
+    actualModel: unknown,
+    context: PiModelContext,
+    options?: Record<string, unknown>,
+  ) => {
+    assert.equal(actualModel, model);
+    assert.equal(context.tools?.[0]?.name, "write");
+    assert.ok(context.tools?.[0]?.parameters);
+    assert.equal(context.systemPrompt, "You are a memory agent.");
+    assert.deepEqual(context.messages, []);
+    assert.equal(options?.signal, undefined);
+    return {
+      role: "assistant" as const,
+      content: [
+        { type: "text", text: "Saving that preference." },
+        {
+          type: "toolCall" as const,
+          id: "pi_call_1",
+          name: "write",
+          arguments: { filePath: "preference/tea.md", content: "---\ntype: preference\nname: Tea\n---\n\nGreen tea\n" },
+        },
+      ],
+      stopReason: "toolUse",
+    };
+  };
   const pi = {
     on(event: string, _handler: unknown) {
       events.push(event);
       return () => undefined;
     },
-    async completeSimple(input: {
-      messages: unknown[];
-      tools: Array<Record<string, unknown>>;
-      signal?: AbortSignal;
-    }) {
-      assert.equal(input.tools[0]?.name, "write");
-      assert.equal((input.messages[0] as { role?: string }).role, "system");
-      assert.equal(input.signal, undefined);
-      return {
-        role: "assistant" as const,
-        content: [
-          { type: "text", text: "Saving that preference." },
-          {
-            type: "toolCall" as const,
-            id: "pi_call_1",
-            name: "write",
-            arguments: { filePath: "preference/tea.md", content: "---\ntype: preference\nname: Tea\n---\n\nGreen tea\n" },
-          },
-        ],
-        stopReason: "toolUse",
-      };
-    },
   };
 
-  const port = createPiHarnessPort(pi);
+  const port = createPiHarnessPort(pi, { completeSimple, piModel: model });
 
   assert.equal(port.name, "pi");
   assert.ok(port.capabilities.has("agentic-tool-loop"));

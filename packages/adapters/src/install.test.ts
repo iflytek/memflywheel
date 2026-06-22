@@ -52,7 +52,7 @@ test("apply creates the config and writes a correct wiring marker", async () => 
   assert.equal(marker!.bindings.length, 4);
   assert.deepEqual(
     marker!.bindings.map((b) => b.hook).sort(),
-    ["onIdle", "onPromptBuild", "onSessionStart", "onTurnEnd"],
+    ["onPromptBuild", "onSessionEnd", "onSessionStart", "onTurnEnd"],
   );
 });
 

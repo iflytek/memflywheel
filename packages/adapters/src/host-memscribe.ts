@@ -37,9 +37,11 @@ import type { CanonicalModelCompletion } from "@memscribe/model";
 import type { MemScribe, MemScribeContext, MemScribeMessage } from "./adapter.js";
 import {
   classifyHostCapabilities,
+  requireHostCapabilities,
   type HostHarnessPort,
   type HostIntegrationMode,
 } from "./harness-port.js";
+import type { CanonicalModelMessage } from "@memscribe/model";
 
 /**
  * Re-exported SDK contracts so hosts/adapters depend only on `@memscribe/adapters`.
@@ -148,6 +150,8 @@ export interface MemScribeHarnessRuntime {
   sdk: SdkMemScribe;
   /** Runtime mode after capability/options resolution. */
   mode: HostIntegrationMode | MemScribeHarnessMode;
+  /** Detach host lifecycle listeners created from `port`, when any. */
+  dispose: () => void;
 }
 
 /** A turn message in either the adapter or core shape. */
@@ -165,6 +169,76 @@ function toExtractionMessages(messages: AnyTurnMessage[]): ExtractionMessage[] {
     out.push(hasTools ? { role: m.role, text, toolCalls } : { role: m.role, text });
   }
   return out;
+}
+
+export function canonicalMessagesToMemScribeMessages(
+  messages: readonly CanonicalModelMessage[],
+): MemScribeMessage[] {
+  const outputs = new Map<string, string | null | undefined>();
+  for (const message of messages) {
+    if (message.role === "tool" && message.toolCallId) {
+      outputs.set(message.toolCallId, message.content);
+    }
+  }
+
+  const out: MemScribeMessage[] = [];
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const text = typeof message.content === "string" ? message.content.trim() : "";
+    const toolCalls =
+      message.role === "assistant"
+        ? (message.toolCalls ?? []).map((call) => ({
+            name: call.name,
+            input: call.input,
+            output: outputs.get(call.id),
+          }))
+        : [];
+    if (text === "" && toolCalls.length === 0) continue;
+    out.push(toolCalls.length > 0 ? { role: message.role, text, toolCalls } : { role: message.role, text });
+  }
+  return out;
+}
+
+export function attachMemScribeToHostPort(
+  scribe: MemScribeHarnessRuntimeAdapter,
+  port: HostHarnessPort,
+): () => void {
+  const disposers: Array<() => void> = [];
+  disposers.push(
+    port.lifecycle.onPromptBuild(async (event) => {
+      const ctx = await scribe.onPromptBuild({ sessionId: event.sessionId ?? "default" });
+      return {
+        systemPrompt: ctx.systemPrompt,
+        preludePrompt: ctx.preludePrompt,
+        skillPreludePrompt: ctx.skillPreludePrompt,
+      };
+    }),
+  );
+  disposers.push(
+    port.lifecycle.onTurnEnd(async (event) => {
+      await scribe.onTurnEnd({
+        sessionId: event.sessionId,
+        messages: canonicalMessagesToMemScribeMessages(event.messages),
+      });
+    }),
+  );
+  disposers.push(
+    port.lifecycle.onSessionEnd(async (event) => {
+      await scribe.onSessionEnd({ sessionId: event.sessionId });
+    }),
+  );
+  if (port.lifecycle.onIdle) {
+    disposers.push(
+      port.lifecycle.onIdle(async (event) => {
+        await scribe.onIdle(event);
+      }),
+    );
+  }
+  return () => {
+    while (disposers.length > 0) {
+      disposers.pop()?.();
+    }
+  };
 }
 
 function compactMessages(messages: readonly ExtractionMessage[]): unknown[] {
@@ -275,6 +349,13 @@ export function createMemScribeHarnessRuntime(
       'createMemScribeHarnessRuntime requires a canonical model or explicit extraction agent; pass mode:"recall-only" to disable extraction.',
     );
   }
+  if (options.port && requestedMode !== "recall-only") {
+    requireHostCapabilities(options.port.name, options.port.capabilities, [
+      "prompt-build",
+      "turn-end",
+      "agentic-tool-loop",
+    ]);
+  }
 
   const agent =
     options.agent ??
@@ -294,6 +375,14 @@ export function createMemScribeHarnessRuntime(
   if (learnedSkills) {
     if (!model) {
       throw new Error("learnedSkills requires a canonical model");
+    }
+    if (options.port) {
+      requireHostCapabilities(options.port.name, options.port.capabilities, [
+        "prompt-build",
+        "turn-end",
+        "agentic-tool-loop",
+        "tool-trajectory",
+      ]);
     }
     const store = createLearnedSkillStore({
       skillsRoot: learnedSkills.skillsRoot,
@@ -337,9 +426,12 @@ export function createMemScribeHarnessRuntime(
     skillPreludeBuilder,
     learningLoop: sdkLearningLoop,
   });
+  const scribe = adaptSdkMemScribe(sdk);
+  const dispose = options.port ? attachMemScribeToHostPort(scribe, options.port) : () => undefined;
   return {
-    scribe: adaptSdkMemScribe(sdk),
+    scribe,
     sdk,
     mode: options.port ? classifyHostCapabilities(options.port.capabilities) : requestedMode,
+    dispose,
   };
 }

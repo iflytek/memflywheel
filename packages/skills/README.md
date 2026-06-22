@@ -11,7 +11,6 @@ runtimes own skill loading, execution policy, permissions, and tool calls.
 A learned skill is a directory named `memscribe-learned-<slug>` that contains:
 
 - `SKILL.md`
-- optional `.memscribe-skill.json`
 - optional supporting files under `references/`, `templates/`, `scripts/`, or `assets/`
 
 `SKILL.md` uses strict frontmatter with exactly:
@@ -56,7 +55,7 @@ The high-level store uses a stronger finalized-skill flow:
 
 ```text
 createSkillCheckpoint()
-  -> skill tools write/archive staging only
+  -> stage-bound ordinary file tools: read/write/edit/bash/glob/grep
   -> finalizeLearnedSkillChanges()
        checks finalized skill tree did not change
        validates changed staged learned skills
@@ -82,5 +81,5 @@ createLearnedSkillRecallProvider()
 | Supporting file size | Non-empty and at most 1 MiB. |
 | Sensitive file names | Refuses common secret, token, password, credential, private key, `.env`, and key-file names. |
 | Finalize scope | Changed paths must be inside the learned skill directory. |
-| Finalize deletion | Any deleted path aborts finalize. |
+| Finalize deletion | Unapproved or partial deletion aborts finalize; a merge may delete whole redundant skill directories declared in `mergedSkills`. |
 | Rollback | Restores the full target snapshot, not a hash-only marker. |

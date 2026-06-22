@@ -80,12 +80,27 @@ export {
 // Pi native port: Pi model/lifecycle/telemetry -> HostHarnessPort.
 export {
   type PiTextContent,
+  type PiImageContent,
   type PiToolCallContent,
+  type PiUserMessage,
   type PiToolResultMessage,
   type PiAssistantMessage,
-  type PiCompletionInput,
-  type PiHarnessLike,
+  type PiAgentMessage,
+  type PiModelContext,
+  type PiModelAuthResult,
+  type PiExtensionContextLike,
+  type PiExtensionHandler,
+  type PiExtensionApiLike,
+  type PiCompleteSimple,
+  type PiSessionIdResolver,
+  type CreatePiModelCompletionOptions,
+  type CreatePiHarnessPortOptions,
+  type PiScribeLike,
+  canonicalMessagesFromPi,
+  memScribeMessagesFromPi,
+  buildPiPromptInjection,
   createPiModelCompletion,
+  attachPiScribe,
   createPiHarnessPort,
 } from "./pi-port.js";
 
@@ -101,6 +116,8 @@ export {
   type SkillPreludeBuilder,
   type SkillRecallProvider,
   type CanonicalModelCompletion,
+  canonicalMessagesToMemScribeMessages,
+  attachMemScribeToHostPort,
   createMemScribeHarnessRuntime,
   adaptSdkMemScribe,
 } from "./host-memscribe.js";

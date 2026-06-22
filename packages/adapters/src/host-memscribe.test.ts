@@ -159,23 +159,9 @@ function learnedSkillLoopModel(): CanonicalModelCompletion {
           finishReason: "tool-calls",
         };
       }
-      if (skillStep === 2) {
-        return {
-          message: {
-            role: "assistant",
-            content: JSON.stringify({
-              decision: "create",
-              targetSkill: TARGET_SKILL,
-              mergedSkills: [],
-              why: "Release preparation has become a reusable procedure.",
-              memoryAction: "compress-memory",
-              memoryTopics: ["release prep"],
-              supportingFiles: [`${TARGET_SKILL}/SKILL.md`],
-            }),
-          },
-          finishReason: "stop",
-        };
-      }
+      // The model is NOT required to emit any skill coordination — the decision is
+      // derived from the file changes, and a real skill change automatically links back
+      // to memory (memoryAction=compress-memory), triggering the follow-up dream pass.
       return STOP;
     }
 
@@ -268,12 +254,12 @@ test("attach drives a real end-to-end extraction through host events", async () 
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
 
-  host.emit("session:ensure", { sessionId: "s1" });
+  host.emit("session_start", { sessionId: "s1" });
   host.emit("agent_end", {
     sessionId: "s1",
     messages: [
-      { role: "user", text: "I always drink green tea, never coffee." },
-      { role: "assistant", text: "Got it." },
+      { role: "user", content: "I always drink green tea, never coffee." },
+      { role: "assistant", content: [{ type: "text", text: "Got it." }] },
     ],
   });
 

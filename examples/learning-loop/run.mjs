@@ -117,23 +117,6 @@ function createFakeLearningModel() {
           finishReason: "tool-calls",
         };
       }
-      if (skillStep === 2) {
-        return {
-          message: {
-            role: "assistant",
-            content: JSON.stringify({
-              decision: "create",
-              targetSkill: TARGET_SKILL,
-              mergedSkills: [],
-              why: "Release preparation has become a reusable procedure.",
-              memoryAction: "compress-memory",
-              memoryTopics: ["release prep workflow"],
-              supportingFiles: [`${TARGET_SKILL}/SKILL.md`],
-            }),
-          },
-          finishReason: "stop",
-        };
-      }
       return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
     }
 
@@ -189,7 +172,7 @@ const skillEvolutionSystemPrompt = `You are running a MemScribe real learned-ski
 2. The SKILL.md file must use strict frontmatter with exactly name, display_name, description.
 3. The SKILL.md body must include ## Use Cases, ## Procedure, and ## Guardrails.
 4. The Procedure section must use contiguous numbered steps starting at 1.
-5. After writing SKILL.md, return the final coordination packet as raw JSON with no markdown fence.
+5. After writing SKILL.md, stop. The system derives the skill coordination from the staged file diff.
 
 # Tool-call format
 
@@ -200,17 +183,6 @@ commas, or explanatory text inside the function arguments.
 For write, filePath is relative to the staged learned-skills root. Therefore
 the only correct SKILL.md write is:
 {"filePath":"${TARGET_SKILL}/SKILL.md","content":"..."}.
-
-# Required decision packet
-
-The final assistant content must be exactly this strict JSON object shape:
-
-{"decision":"create","targetSkill":"${TARGET_SKILL}","mergedSkills":[],"why":"Release preparation has become a reusable procedure.","memoryAction":"compress-memory","memoryTopics":["release prep workflow"],"supportingFiles":["${TARGET_SKILL}/SKILL.md"]}
-
-targetSkill is mandatory for decision="create". It must be the exact non-empty
-string "${TARGET_SKILL}". Never set targetSkill to null, empty string, or any
-other name.
-mergedSkills must be [] for decision="create".
 
 Do not write any other learned skill. Do not call noop.`;
 
@@ -268,7 +240,7 @@ async function main() {
             output: call.output,
           })),
         ),
-      artifactPaths: () => ["README.md", "docs/skill-learning.md", "packages/sdk/src/index.ts"],
+      artifactPaths: () => ["README.md", "docs/skill-learning-loop-walkthrough.md", "packages/sdk/src/index.ts"],
       qualitySignals: () => ({
         repeatedWorkflow: true,
         shouldBecomeSkill: true,

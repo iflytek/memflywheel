@@ -33,6 +33,41 @@ test("scanMemoryFiles finds typed files, skips reserved/hidden/invalid", async (
   }
 });
 
+test("scanMemoryFiles only scans typed memory directories", async () => {
+  const root = await makeRoot();
+  try {
+    await writeFixture(root, "preference", "coffee.md", {
+      name: "Coffee",
+      description: "Drink preference",
+      body: "Prefers iced americano.",
+      mtime: 2000,
+    });
+    await writeRaw(
+      root,
+      "skills/memscribe-learned-release-runbook/SKILL.md",
+      [
+        "---",
+        "name: Release runbook",
+        "description: Reusable release workflow",
+        "---",
+        "",
+        "## Use Cases",
+        "",
+        "Release a package.",
+      ].join("\n"),
+    );
+
+    const entries = await scanMemoryFiles(root);
+
+    assert.deepEqual(
+      entries.map((entry) => entry.relativePath),
+      ["preference/coffee.md"],
+    );
+  } finally {
+    await cleanup(root);
+  }
+});
+
 test("scanMemoryFiles returns [] for missing root", async () => {
   const entries = await scanMemoryFiles("/tmp/does-not-exist-memscribe-xyz");
   assert.deepEqual(entries, []);

@@ -25,6 +25,7 @@
  */
 
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -51,15 +52,110 @@ const ENDPOINT =
 const MODEL = process.env.MEMSCRIBE_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
 const API_KEY = process.env.MEMSCRIBE_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
 const HAVE_KEY = Boolean(API_KEY);
+const CAPTURE_PROXY = HAVE_KEY && process.env.MEMSCRIBE_CAPTURE_PROXY !== "0";
+let ACTIVE_ENDPOINT = ENDPOINT;
+let ACTIVE_API_KEY = API_KEY;
+const proxyLog = [];
 
 function buildModel() {
   return createOpenAIChatCompletionsModel({
-    endpoint: ENDPOINT,
-    apiKey: API_KEY,
+    endpoint: ACTIVE_ENDPOINT,
+    apiKey: ACTIVE_API_KEY,
     model: MODEL,
-    maxTokens: 1024,
+    maxTokens: 4096,
     temperature: 0,
   });
+}
+
+function redactString(value) {
+  let out = value;
+  if (API_KEY) out = out.split(API_KEY).join("[REDACTED_API_KEY]");
+  return out
+    .replace(/Bearer\s+sk-[A-Za-z0-9._-]+/g, "Bearer [REDACTED]")
+    .replace(/sk-[A-Za-z0-9._-]{12,}/g, "[REDACTED_SECRET]");
+}
+
+function redactJson(value) {
+  if (typeof value === "string") return redactString(value);
+  if (Array.isArray(value)) return value.map(redactJson);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, child] of Object.entries(value)) {
+      out[key] = /authorization|api[_-]?key|token|secret/i.test(key)
+        ? "[REDACTED]"
+        : redactJson(child);
+    }
+    return out;
+  }
+  return value;
+}
+
+function requestBodySummary(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const tools = Array.isArray(body?.tools) ? body.tools : [];
+  return {
+    model: body?.model,
+    tool_choice: body?.tool_choice,
+    max_tokens: body?.max_tokens,
+    temperature: body?.temperature,
+    messageRoles: messages.map((m) => m?.role),
+    promptHead: messages
+      .map((m) => typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? ""))
+      .join("\n")
+      .slice(0, 1200),
+    toolNames: tools.map((tool) => tool?.function?.name ?? tool?.name).filter(Boolean),
+  };
+}
+
+async function startCaptureProxy() {
+  const upstream = ENDPOINT.replace(/\/+$/, "");
+  const server = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const raw = Buffer.concat(chunks).toString("utf8");
+    let body;
+    try {
+      body = raw ? JSON.parse(raw) : undefined;
+    } catch {
+      body = raw;
+    }
+    const entry = {
+      method: req.method,
+      url: req.url,
+      request: redactJson(body),
+      summary: requestBodySummary(body),
+    };
+    proxyLog.push(entry);
+
+    const suffix = (req.url ?? "").replace(/^\/v1(?=\/|$)/, "");
+    const target = `${upstream}${suffix}`;
+    const headers = { ...req.headers, authorization: `Bearer ${API_KEY}` };
+    delete headers.host;
+    delete headers["content-length"];
+
+    try {
+      const upstreamResponse = await fetch(target, {
+        method: req.method,
+        headers,
+        body: req.method === "GET" || req.method === "HEAD" ? undefined : raw,
+      });
+      entry.status = upstreamResponse.status;
+      res.writeHead(upstreamResponse.status, Object.fromEntries(upstreamResponse.headers.entries()));
+      res.end(Buffer.from(await upstreamResponse.arrayBuffer()));
+    } catch (error) {
+      entry.error = redactString(error?.message ?? String(error));
+      res.writeHead(502, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: entry.error }));
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  ACTIVE_ENDPOINT = `http://127.0.0.1:${address.port}/v1`;
+  ACTIVE_API_KEY = "memscribe-local-proxy-token";
+  return {
+    url: ACTIVE_ENDPOINT,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
 }
 
 // ──────────────────────────── tiny harness ─────────────────────────────────
@@ -158,7 +254,7 @@ const factsTranscript = [
 ];
 
 const procedureTranscript = [
-  { role: "user", text: "把 MemScribe 的发布流程完整跑一遍，并以后照这个流程来。" },
+  { role: "user", text: "把 MemScribe 的发布流程完整跑一遍。这是我的长期发布约定，必须沉淀成以后可复用的发布 skill。" },
   {
     role: "assistant",
     text: "执行发布流程。",
@@ -179,7 +275,12 @@ const procedureTranscript = [
 // Same skill, but this turn the publish step FAILS — the failure lives in the
 // tool trajectory (no manual usage channel). Evolution should learn from it.
 const failureTranscript = [
-  { role: "user", text: "再按发布流程发一版。" },
+  {
+    role: "user",
+    text:
+      "再按发布流程发一版。记住这个长期发布经验：如果 npm publish 返回 401，" +
+      "以后发布 skill 必须先做 npm auth token / NPM_TOKEN preflight。",
+  },
   {
     role: "assistant",
     text: "按既有发布流程执行。",
@@ -243,7 +344,13 @@ async function groupA() {
   const ctx = await scribe.onPromptBuild({ sessionId });
   const recall = `${ctx.systemPrompt ?? ""}\n${ctx.preludePrompt ?? ""}\n${ctx.skillPreludePrompt ?? ""}`;
   console.log("  prelude (head):", (ctx.preludePrompt ?? "").slice(0, 200).replace(/\n/g, " "));
-  check("A3 prior memory recalled", /美式|咖啡|简洁|Kai|MemScribe|singapore/i.test(recall));
+  const recalledSignals = [
+    /preference|偏好|coffee|咖啡|美式/i,
+    /style|风格|tone|语气|简洁/i,
+    /identity|身份|name|Kai/i,
+    /context|项目|MemScribe|deployment|ap-singapore|singapore/i,
+  ].filter((re) => re.test(recall)).length;
+  check("A3 prior memory recalled", /可用记忆条目|Available memories/i.test(recall) && recalledSignals >= 2);
 
   banner("A4 · idle → dream 整理，索引仍一致");
   let dream;
@@ -275,14 +382,36 @@ async function groupB() {
     return null;
   }
   const root = await mkdtemp(path.join(tmpdir(), "ms-B-"));
-  const skillsRoot = path.join(root, "skills");
-  const checkpointRoot = path.join(root, "checkpoints");
+  const skillsRoot = await mkdtemp(path.join(tmpdir(), "ms-B-skills-"));
+  const checkpointRoot = await mkdtemp(path.join(tmpdir(), "ms-B-checkpoints-"));
   await mkdir(skillsRoot, { recursive: true });
 
   const { scribe } = createMemScribeHarnessRuntime({
     model: buildModel(),
     root,
-    learnedSkills: { skillsRoot, checkpointRoot },
+    learnedSkills: {
+      skillsRoot,
+      checkpointRoot,
+      reviewPacket: (input) => {
+        const recent = JSON.stringify(input.session.messages);
+        const failure = /401|Unauthorized|auth token/i.test(recent);
+        return {
+          goal: failure
+            ? "Update the existing release skill with an auth-token preflight learned from the failing trajectory."
+            : "Create a reusable release runbook learned skill from this successful release trajectory.",
+          requiredDecision: failure ? "update" : "create",
+          targetSkill: "memscribe-learned-release-runbook",
+          requiredFiles: [
+            "memscribe-learned-release-runbook/SKILL.md",
+          ],
+          lastExtraction: {
+            result: input.lastExtraction.result,
+            skipped: input.lastExtraction.skipped,
+          },
+          recentMessages: input.session.messages.slice(-8),
+        };
+      },
+    },
     // Force the gate so a single rich turn triggers evolution in this demo.
     learningLoop: {
       gate: { minDoneTurns: 0, cooldownTurns: 0, minToolCalls: 0 },
@@ -294,7 +423,13 @@ async function groupB() {
   await scribe.onSessionStart({ sessionId });
 
   banner("B1 · 技能演化：可复用流程 + 工具轨迹 → 生成合法 learned skill 包");
-  const t1 = await scribe.onTurnEnd({ sessionId, messages: procedureTranscript });
+  let t1;
+  try {
+    t1 = await scribe.onTurnEnd({ sessionId, messages: procedureTranscript });
+  } catch (error) {
+    record("B1 skill evolution", "fail", error?.message ?? String(error));
+    return { root, skillsRoot };
+  }
   console.log("  onTurnEnd:", JSON.stringify(t1).slice(0, 400));
   let skillFiles = (await listFiles(skillsRoot)).filter((f) => /SKILL\.md$/i.test(f));
   for (const f of skillFiles) console.log(`\n  ── ${path.relative(skillsRoot, f)}\n` + (await readSafe(f)).replace(/^/gm, "    "));
@@ -308,7 +443,13 @@ async function groupB() {
 
   banner("B3 · 轨迹派生失败 → 技能更新（纯看工具轨迹）");
   const before = skillFiles.length ? await readSafe(skillFiles[0]) : "";
-  const t2 = await scribe.onTurnEnd({ sessionId, messages: failureTranscript });
+  let t2;
+  try {
+    t2 = await scribe.onTurnEnd({ sessionId, messages: failureTranscript });
+  } catch (error) {
+    record("B3 trajectory-derived update", "fail", error?.message ?? String(error));
+    return { root, skillsRoot };
+  }
   console.log("  onTurnEnd:", JSON.stringify(t2).slice(0, 400));
   const after = skillFiles.length ? await readSafe(skillFiles[0]) : "";
   record(
@@ -358,8 +499,9 @@ async function groupC() {
     check("C2 only prompt-build → recall-only",
       classifyHostCapabilities(createCapabilitySet(["prompt-build"])) === "recall-only");
     check("C2 empty → none", classifyHostCapabilities(createCapabilitySet([])) === "none");
-    const stubPi = { on: () => () => {}, completeSimple: async () => ({ role: "assistant", content: [] }) };
-    const port = createPiHarnessPort(stubPi);
+    const stubPi = { on: () => () => {} };
+    const stubModel = { complete: async () => ({ message: { role: "assistant", content: null } }) };
+    const port = createPiHarnessPort(stubPi, { model: stubModel });
     check("C2 Pi port classifies as skill-loop", classifyHostCapabilities(port.capabilities) === "skill-loop");
   }
 
@@ -438,7 +580,9 @@ async function groupD() {
     record("D real Pi", "skip", "no key");
     return;
   }
-  let pic, pai;
+  const { createRequire } = await import("node:module");
+  const requireFromHere = createRequire(import.meta.url);
+  let pic, pai, Type;
   try {
     pic = await import("@earendil-works/pi-coding-agent");
     pai = await import("@earendil-works/pi-ai");
@@ -447,49 +591,70 @@ async function groupD() {
     console.log("  Install/link Pi packages before running PI_REAL=1.");
     return;
   }
+  try {
+    ({ Type } = await import("typebox"));
+  } catch {
+    ({ Type } = await import(requireFromHere.resolve("typebox")));
+  }
   record("D pi packages resolvable", "pass");
-  void pai;
 
   const { createAgentSession, DefaultResourceLoader, AuthStorage, ModelRegistry, SessionManager, SettingsManager } = pic;
+  const { completeSimple } = pai;
   const root = await mkdtemp(path.join(tmpdir(), "ms-D-"));
   const agentDir = path.join(root, "agent");
   await mkdir(agentDir, { recursive: true });
 
-  // DeepSeek as an OpenAI-compatible custom provider. VERIFY(pi): exact api/compat.
-  await writeFile(
-    path.join(agentDir, "models.json"),
-    JSON.stringify({ providers: { deepseek: { baseUrl: ENDPOINT, api: "openai-completions", models: [{ id: MODEL, name: "DeepSeek", contextWindow: 65536, maxTokens: 8192 }] } } }, null, 2),
-  );
-  const authStorage = AuthStorage.create(path.join(agentDir, "auth.json"));
-  authStorage.setRuntimeApiKey("deepseek", API_KEY);
+  const authStorage = AuthStorage.inMemory();
+  authStorage.setRuntimeApiKey("deepseek", ACTIVE_API_KEY);
   const modelRegistry = ModelRegistry.create(authStorage, path.join(agentDir, "models.json"));
-  await modelRegistry.reload?.();
-  const model = modelRegistry.find?.("deepseek", MODEL);
-  if (!check("D DeepSeek model resolved in Pi", Boolean(model), model ? "" : "check models.json api/compat")) return;
+  const model = {
+    id: MODEL,
+    name: "DeepSeek",
+    api: "openai-completions",
+    provider: "deepseek",
+    baseUrl: ACTIVE_ENDPOINT,
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 65536,
+    maxTokens: 8192,
+  };
+  check("D DeepSeek model constructed for Pi", model.api === "openai-completions" && model.baseUrl === ACTIVE_ENDPOINT);
 
-  const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root });
-  let injections = 0, turnEnds = 0, toolEvents = 0;
+  let injections = 0, turnEnds = 0, toolEvents = 0, probeExecutions = 0;
 
-  // FIXME(adapter): shipped createPiHarnessPort/piAdapter bind mock-shaped events
-  //   ("turn:build"/"session_end"/"learning:idle") + pi.completeSimple, none of
-  //   which exist on real Pi. Real Pi uses context/agent_end/session_shutdown +
-  //   (event, ctx) handlers. This inline wiring is what the adapter SHOULD produce.
   const extension = (pi) => {
-    pi.on("context", async (event) => {
-      injections += 1;
-      const ctx = await scribe.onPromptBuild({ sessionId: "pi" }).catch(() => null);
-      const recall = [ctx?.preludePrompt, ctx?.skillPreludePrompt].filter(Boolean).join("\n\n");
-      if (!recall) return undefined;
-      return { messages: [{ role: "user", content: [{ type: "text", text: `# Recalled memory\n${recall}` }] }, ...(event.messages ?? [])] };
+    pi.registerTool({
+      name: "memscribe_probe",
+      label: "MemScribe Probe",
+      description: "Return a stable marker for verifying MemScribe Pi tool telemetry.",
+      promptSnippet: "Verify MemScribe Pi telemetry with a stable probe.",
+      promptGuidelines: ["When the user explicitly asks to call memscribe_probe, call memscribe_probe before answering."],
+      parameters: Type.Object({
+        label: Type.String({ description: "Stable label to echo back." }),
+      }),
+      execute: async (_toolCallId, params) => {
+        probeExecutions += 1;
+        return {
+          content: [{ type: "text", text: `memscribe_probe:${params.label}` }],
+          details: { label: params.label },
+        };
+      },
     });
-    pi.on("agent_end", async (event) => {
-      turnEnds += 1;
-      const messages = (event.messages ?? []).map(fromPiAgentMessage).filter(Boolean);
-      await scribe.onTurnEnd({ sessionId: "pi", messages }).catch((e) => console.log("  onTurnEnd error:", e?.message));
-    });
+    const originalOn = pi.on.bind(pi);
+    pi.on = (event, handler) => {
+      const wrapped = async (...args) => {
+        if (event === "context") injections += 1;
+        if (event === "agent_end") turnEnds += 1;
+        return handler(...args);
+      };
+      return originalOn(event, wrapped);
+    };
+    const port = createPiHarnessPort(pi, { completeSimple });
+    const runtime = createMemScribeHarnessRuntime({ port, root });
     pi.on("tool_call", async () => { toolEvents += 1; });
     pi.on("tool_result", async () => { toolEvents += 1; });
-    pi.on("session_shutdown", async () => { await scribe.onSessionEnd({ sessionId: "pi" }).catch(() => {}); });
+    return runtime.dispose;
   };
 
   const resourceLoader = new DefaultResourceLoader({
@@ -502,10 +667,13 @@ async function groupD() {
   const { session } = await createAgentSession({
     cwd: root, agentDir, model, thinkingLevel: "off",
     authStorage, modelRegistry, resourceLoader,
-    tools: ["read", "bash"], sessionManager: SessionManager.inMemory(root),
+    tools: ["read", "bash", "memscribe_probe"], sessionManager: SessionManager.inMemory(root),
   });
   try {
-    await session.prompt("记住：我叫 Kai，做 MemScribe，喝美式不加糖。然后用一句话给我今天的建议。");
+    await session.prompt(
+      "先调用 memscribe_probe 工具，label 必须是 memscribe-pi-e2e；" +
+      "然后记住：我叫 Kai，做 MemScribe，喝美式不加糖。最后用一句话给我今天的建议。",
+    );
   } catch (err) {
     record("D real turn completed", "fail", `session.prompt threw: ${err?.message ?? err}`);
   } finally {
@@ -515,37 +683,53 @@ async function groupD() {
 
   check("D context → recall injected", injections > 0, `injections=${injections}`);
   check("D agent_end → onTurnEnd fired", turnEnds > 0, `turnEnds=${turnEnds}`);
-  record("D tool telemetry observed", toolEvents > 0 ? "pass" : "warn", `toolEvents=${toolEvents}`);
+  check("D probe tool executed", probeExecutions > 0, `probeExecutions=${probeExecutions}`);
+  check("D tool telemetry observed", toolEvents >= 2, `toolEvents=${toolEvents}`);
   const dump = await dumpRoot("after real Pi turn", root);
   check("D memory written from a real Pi turn", dump.index.trim().length > 0);
 }
 
-function fromPiAgentMessage(m) {
-  if (!m || (m.role !== "user" && m.role !== "assistant")) return null;
-  let text = "";
-  const toolCalls = [];
-  const c = m.content;
-  if (typeof c === "string") text = c;
-  else if (Array.isArray(c)) {
-    for (const part of c) {
-      if (part?.type === "text" && typeof part.text === "string") text += part.text;
-      else if (part?.type === "toolCall") toolCalls.push({ name: part.name, input: part.arguments ?? {}, output: "" });
-    }
+function verifyProxyCapture() {
+  banner("P · 反向代理观测（raw request capture, redacted）");
+  check("P requests captured", proxyLog.length > 0, `requests=${proxyLog.length}`);
+  const allToolNames = new Set(proxyLog.flatMap((entry) => entry.summary?.toolNames ?? []));
+  const promptText = proxyLog.map((entry) => entry.summary?.promptHead ?? "").join("\n");
+  const serialized = JSON.stringify(proxyLog);
+  check("P extraction prompt observed", /memory extraction engine|Recent conversation|Existing memories/i.test(promptText));
+  check("P file tools exposed", ["read", "write", "edit", "bash", "glob", "grep"].every((name) => allToolNames.has(name)),
+    `tools=${[...allToolNames].sort().join(",")}`);
+  check("P no API key in captured logs", !API_KEY || !serialized.includes(API_KEY));
+  check("P no bearer secret in captured logs", !/Bearer\s+sk-|sk-[A-Za-z0-9._-]{12,}/.test(serialized));
+  for (const [i, entry] of proxyLog.slice(0, 8).entries()) {
+    console.log(
+      `  #${i + 1} ${entry.method} ${entry.url} status=${entry.status ?? "n/a"} model=${entry.summary?.model ?? "n/a"} tools=${(entry.summary?.toolNames ?? []).join(",") || "(none)"}`,
+    );
+    console.log(`     roles=${(entry.summary?.messageRoles ?? []).join(",")} prompt=${(entry.summary?.promptHead ?? "").replace(/\s+/g, " ").slice(0, 180)}`);
   }
-  const out = { role: m.role, text: text.trim() };
-  if (toolCalls.length) out.toolCalls = toolCalls;
-  return out;
 }
 
 // ──────────────────────────────── main ─────────────────────────────────────
 
 async function main() {
-  console.log(`MemScribe × Pi E2E — model=${MODEL} endpoint=${ENDPOINT} key=${HAVE_KEY ? "yes" : "NO (only group C runs)"}`);
+  let proxy;
+  let a;
+  if (CAPTURE_PROXY) {
+    proxy = await startCaptureProxy();
+  }
+  console.log(`MemScribe × Pi E2E — model=${MODEL} endpoint=${ACTIVE_ENDPOINT} key=${HAVE_KEY ? "yes" : "NO (only group C runs)"}`);
+  if (proxy) console.log(`Proxy capture enabled: ${proxy.url} -> ${ENDPOINT}`);
 
-  await groupC();            // boundaries — always (deterministic, no key)
-  const a = await groupA();  // memory loop — A1 always, A2+ need key
-  await groupB();            // skill loop — needs key
-  if (process.env.PI_REAL === "1") await groupD();
+  try {
+    await groupC();            // boundaries — always (deterministic, no key)
+    a = await groupA();        // memory loop — A1 always, A2+ need key
+    await groupB();            // skill loop — needs key
+    if (process.env.PI_REAL === "1") await groupD();
+  } catch (error) {
+    record("fatal", "fail", error?.message ?? String(error));
+  } finally {
+    if (proxy) verifyProxyCapture();
+    if (proxy) await proxy.close();
+  }
 
   banner("SUMMARY");
   const by = (s) => results.filter((r) => r.status === s).length;

@@ -173,7 +173,7 @@ prompt-build
 turn-end
   -> extraction
   -> skillEvolution({ lastExtraction, session })
-  -> dream({ memoryAction: "compress-memory", topics }) when the skill packet asks for it
+  -> dream({ memoryAction: "compress-memory", topics }) when derived or custom coordination requests memory compression
 ```
 
 ```ts

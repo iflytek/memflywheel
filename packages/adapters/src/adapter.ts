@@ -62,8 +62,13 @@ export interface MemScribe {
 // Lifecycle mapping
 // ---------------------------------------------------------------------------
 
-/** The four canonical scribe hooks a host event can map to. */
-export type MemScribeHook = "onSessionStart" | "onPromptBuild" | "onTurnEnd" | "onIdle";
+/** The canonical scribe hooks a host event can map to. */
+export type MemScribeHook =
+  | "onSessionStart"
+  | "onPromptBuild"
+  | "onTurnEnd"
+  | "onSessionEnd"
+  | "onIdle";
 
 /** One host-event → scribe-hook mapping row (documentation + verification data). */
 export interface LifecycleMapping {
@@ -75,8 +80,8 @@ export interface LifecycleMapping {
   note: string;
 }
 
-/** A host adapter's full lifecycle map keyed by scribe hook. */
-export type LifecycleMap = Readonly<Record<MemScribeHook, LifecycleMapping>>;
+/** A host adapter's lifecycle map keyed by scribe hook. */
+export type LifecycleMap = Readonly<Partial<Record<MemScribeHook, LifecycleMapping>>>;
 
 // ---------------------------------------------------------------------------
 // Install: plan / apply / verify / doctor
@@ -487,6 +492,8 @@ export interface HookTranslators {
   promptSessionId?(payload: unknown): string;
   /** Pull (sessionId, messages) out of a turn-end payload. */
   turnEnd(payload: unknown): { sessionId: string; messages: MemScribeMessage[] };
+  /** Pull a sessionId for session-end; defaults to `sessionId`. */
+  sessionEndSessionId?(payload: unknown): string;
   /** Map an idle payload to onIdle input; defaults to `{}`. */
   idle?(payload: unknown): { force?: boolean } | undefined;
 }
@@ -523,29 +530,44 @@ export function bindLifecycle(
     p.catch(() => {});
   };
 
-  subscribe(lifecycle.onSessionStart.hostEvent, (payload) => {
-    detach(scribe.onSessionStart({ sessionId: translators.sessionId(payload) }));
-  });
+  if (lifecycle.onSessionStart) {
+    subscribe(lifecycle.onSessionStart.hostEvent, (payload) => {
+      detach(scribe.onSessionStart({ sessionId: translators.sessionId(payload) }));
+    });
+  }
 
-  subscribe(lifecycle.onPromptBuild.hostEvent, (payload) => {
-    const sessionId = (translators.promptSessionId ?? translators.sessionId)(payload);
-    const result = scribe.onPromptBuild({ sessionId });
-    // Hosts that need the context attach a `respond` callback to the payload.
-    const respond = (payload as { respond?: (ctx: Promise<MemScribeContext>) => void } | undefined)?.respond;
-    if (typeof respond === "function") respond(result);
-    else detach(result);
-  });
+  if (lifecycle.onPromptBuild) {
+    subscribe(lifecycle.onPromptBuild.hostEvent, (payload) => {
+      const sessionId = (translators.promptSessionId ?? translators.sessionId)(payload);
+      const result = scribe.onPromptBuild({ sessionId });
+      // Hosts that need the context attach a `respond` callback to the payload.
+      const respond = (payload as { respond?: (ctx: Promise<MemScribeContext>) => void } | undefined)?.respond;
+      if (typeof respond === "function") respond(result);
+      else detach(result);
+    });
+  }
 
-  subscribe(lifecycle.onTurnEnd.hostEvent, (payload) => {
-    const { sessionId, messages } = translators.turnEnd(payload);
-    // Fire-and-forget: never block the host's stream.
-    detach(scribe.onTurnEnd({ sessionId, messages }));
-  });
+  if (lifecycle.onTurnEnd) {
+    subscribe(lifecycle.onTurnEnd.hostEvent, (payload) => {
+      const { sessionId, messages } = translators.turnEnd(payload);
+      // Fire-and-forget: never block the host's stream.
+      detach(scribe.onTurnEnd({ sessionId, messages }));
+    });
+  }
 
-  subscribe(lifecycle.onIdle.hostEvent, (payload) => {
-    const input = (translators.idle ?? (() => undefined))(payload);
-    detach(scribe.onIdle(input));
-  });
+  if (lifecycle.onSessionEnd) {
+    subscribe(lifecycle.onSessionEnd.hostEvent, (payload) => {
+      const sessionId = (translators.sessionEndSessionId ?? translators.sessionId)(payload);
+      detach(scribe.onSessionEnd({ sessionId }));
+    });
+  }
+
+  if (lifecycle.onIdle) {
+    subscribe(lifecycle.onIdle.hostEvent, (payload) => {
+      const input = (translators.idle ?? (() => undefined))(payload);
+      detach(scribe.onIdle(input));
+    });
+  }
 
   return () => {
     while (disposers.length > 0) {

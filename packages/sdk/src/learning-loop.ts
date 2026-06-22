@@ -9,7 +9,7 @@
  *   inactive-flush -> skill review only
  */
 
-import { type SkillEvolutionCoordinationPacket } from "./skill-evolution-agent.js";
+import { type SkillEvolutionCoordination } from "./skill-evolution-agent.js";
 
 export type LearningLoopTrigger = "turn-end" | "error" | "inactive-flush";
 export type LearningLoopSource = "local" | "remote";
@@ -72,7 +72,7 @@ export interface DreamCoordinationFromSkill {
 }
 
 export interface SkillEvolutionLoopResult {
-  coordination: SkillEvolutionCoordinationPacket;
+  coordination: SkillEvolutionCoordination;
   changedSkills: string[];
   changedFiles: string[];
 }

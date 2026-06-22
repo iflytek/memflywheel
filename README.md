@@ -126,7 +126,7 @@ hosts are documented by the adapter package and examples.
 - [`docs/memory-schema.md`](docs/memory-schema.md) — frontmatter, the six types, aging.
 - [`docs/recall.md`](docs/recall.md) — full-index injection and model self-selection.
 - [`docs/extraction.md`](docs/extraction.md) — the pluggable extractor and the write path.
-- [`docs/skill-learning.md`](docs/skill-learning.md) — skill vs memory layering and the skill learning loop.
+- [`docs/skill-learning-loop-walkthrough.md`](docs/skill-learning-loop-walkthrough.md) — current skill learning loop, file-diff coordination, and memory feedback path.
 
 Skill learning is exposed as SDK primitives and opt-in hooks: prompt build can
 include learned-skill routes and recent usage signals, and host/adapters can wire

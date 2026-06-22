@@ -12,11 +12,12 @@ for published packages.
 - Initial MemScribe public release.
 - File-native memory storage with Markdown bodies and YAML frontmatter.
 - Rebuildable `MEMORY.md` index and full-index recall.
-- Core memory tools: `memory_list`, `memory_search`, `memory_read`,
-  `memory_save`, `memory_update`, and `memory_archive`.
+- Core ordinary file tools for memory agents: `read`, `write`, `edit`, `bash`,
+  `glob`, and `grep`.
 - SDK lifecycle integration through `createMemScribe`.
 - Tool-calling extraction and dream runners injected through canonical model ports.
-- MCP stdio server with `memory_context`, `memory_read`, and `memory_save`.
+- MCP stdio server exposing the ordinary file-tool memory surface and
+  `memscribe.with_memory` prompt.
 - CLI governance commands for local memory roots.
 - Host adapters for Hermes, OpenCode, OpenClaw, Pi, Codex, and Claude Code.
 - Runnable examples for Hermes, OpenClaw, and Pi.

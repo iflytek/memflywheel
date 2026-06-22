@@ -132,7 +132,7 @@ export {
 export {
   type SkillEvolutionDecision,
   type SkillEvolutionMemoryAction,
-  type SkillEvolutionCoordinationPacket,
+  type SkillEvolutionCoordination,
   type SkillEvolutionToolResult,
   type SkillEvolutionTool,
   type SkillCheckpoint,
@@ -143,7 +143,7 @@ export {
   type RunSkillEvolutionAgentOptions,
   type SkillEvolutionAgentResult,
   DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT,
-  validateSkillEvolutionCoordinationPacket,
+  validateSkillEvolutionCoordination,
   validateSkillEvolutionChangeSet,
   runSkillEvolutionAgent,
 } from "./skill-evolution-agent.js";

@@ -233,11 +233,6 @@ export function validateLearnedSkillPackage(input: ValidateLearnedSkillPackageIn
   const frontmatter = parseStrictSkillFrontmatter(skillFile.text, skillName);
   assertRequiredSections(skillFile.text);
 
-  const manifestFile = normalizedFiles.find((file) => file.relativePath === ".memscribe-skill.json");
-  if (manifestFile) {
-    assertSkillManifest(manifestFile, skillName);
-  }
-
   return {
     slug,
     skillName,
@@ -551,12 +546,32 @@ function createLearnedSkillFileTools(input: {
   return createCoreFileTools().map((tool) => bindStageFileTool(tool, input.checkpoint));
 }
 
+/** A token that begins with "/" — i.e. an absolute filesystem path. */
+function commandUsesAbsolutePath(command: string): boolean {
+  return /(?:^|[\s"'`=(<>|;&])\/[^\s/]/.test(command);
+}
+
 function bindStageFileTool(tool: FileTool, checkpoint: LearnedSkillStoreCheckpoint): LearnedSkillTool {
   return {
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
     handler: async (args) => {
+      // Defense in depth: the model only ever needs relative paths inside the staging
+      // sandbox. bash with /bin/sh can otherwise escape via an absolute path, so reject
+      // any absolute path in a skill-evolution bash command (legitimate uses — e.g.
+      // "rm -rf <dup-dir>" for a merge — are always relative).
+      if (tool.name === "bash") {
+        const record = (args ?? {}) as { command?: unknown; workdir?: unknown };
+        const command = typeof record.command === "string" ? record.command : "";
+        const workdir = typeof record.workdir === "string" ? record.workdir : "";
+        if (commandUsesAbsolutePath(command) || workdir.startsWith("/")) {
+          return {
+            ok: false,
+            text: "bash in skill evolution must use RELATIVE paths only; absolute filesystem paths are not allowed. Use the write tool with a relative path like memscribe-learned-<slug>/SKILL.md.",
+          };
+        }
+      }
       const manifest = await readStoreCheckpointManifest(checkpoint.manifestPath);
       return tool.handler(args, { root: manifest.stageRoot, mode: "files" });
     },
@@ -572,7 +587,11 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
   const currentBeforeFinalize = await listFileFingerprints(manifest.skillsRoot);
   const finalizedTreeDiff = diffFingerprints(manifest.beforeFiles, currentBeforeFinalize);
   if (finalizedTreeDiff.deletedPaths.length > 0 || finalizedTreeDiff.changedPaths.length > 0) {
-    throw new FinalizeSafetyError("finalize refuses finalized skill tree changes after checkpoint");
+    const changed = finalizedTreeDiff.changedPaths.map((p) => `changed:${p}`);
+    const deleted = finalizedTreeDiff.deletedPaths.map((p) => `deleted:${p}`);
+    throw new FinalizeSafetyError(
+      `finalize refuses finalized skill tree changes after checkpoint: ${[...changed, ...deleted].slice(0, 10).join(", ")}`,
+    );
   }
 
   const stagedFiles = await listFileFingerprints(manifest.stageRoot);
@@ -686,7 +705,7 @@ async function collectSkillDirectoryFiles(
       throw new LearnedSkillValidationError(`only regular files are allowed in learned skill directories: ${relativePath}`);
     }
     const bytes = await readFile(filePath);
-    out[relativePath] = relativePath === "SKILL.md" || relativePath === ".memscribe-skill.json"
+    out[relativePath] = relativePath === "SKILL.md"
       ? new TextDecoder("utf8", { fatal: true }).decode(bytes)
       : bytes;
   }
@@ -867,7 +886,7 @@ function normalizeSkillRelativePath(rawRelativePath: string): string {
 }
 
 function assertAllowedSkillPath(relativePath: string): void {
-  if (relativePath === "SKILL.md" || relativePath === ".memscribe-skill.json") {
+  if (relativePath === "SKILL.md") {
     return;
   }
   const [top] = relativePath.split("/");
@@ -890,13 +909,13 @@ function assertSafeFileName(relativePath: string): void {
 function normalizeContent(relativePath: string, content: LearnedSkillFileContent): { bytes: Uint8Array; text?: string } {
   if (typeof content === "string") {
     const bytes = new TextEncoder().encode(content);
-    if (bytes.byteLength === 0 && (relativePath === "SKILL.md" || relativePath === ".memscribe-skill.json")) {
+    if (bytes.byteLength === 0 && relativePath === "SKILL.md") {
       throw new LearnedSkillValidationError(`required text file must be non-empty: ${relativePath}`);
     }
     return { bytes, text: content };
   }
 
-  if (relativePath === "SKILL.md" || relativePath === ".memscribe-skill.json") {
+  if (relativePath === "SKILL.md") {
     throw new LearnedSkillValidationError(`${relativePath} must be provided as text`);
   }
   return { bytes: content };
@@ -1018,27 +1037,6 @@ function assertNumberedProcedure(content: string): void {
     if (step !== index + 1) {
       throw new LearnedSkillValidationError("Procedure numbered steps must start at 1 and be contiguous");
     }
-  }
-}
-
-function assertSkillManifest(file: NormalizedLearnedSkillFile, skillName: string): void {
-  if (file.text === undefined) {
-    throw new LearnedSkillValidationError(".memscribe-skill.json must be text");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(file.text);
-  } catch (error) {
-    throw new LearnedSkillValidationError(".memscribe-skill.json must be valid JSON");
-  }
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new LearnedSkillValidationError(".memscribe-skill.json must be a JSON object");
-  }
-  const name = (parsed as { name?: unknown }).name;
-  if (name !== undefined && name !== skillName) {
-    throw new LearnedSkillValidationError(`.memscribe-skill.json name must equal ${skillName}`);
   }
 }
 

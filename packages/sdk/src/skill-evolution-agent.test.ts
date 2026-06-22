@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   runSkillEvolutionAgent,
-  validateSkillEvolutionCoordinationPacket,
+  validateSkillEvolutionCoordination,
+  validateSkillEvolutionChangeSet,
   type LearnedSkillChangeSet,
+  type SkillEvolutionCoordination,
   type SkillEvolutionStore,
   type SkillEvolutionTool,
 } from "./skill-evolution-agent.js";
@@ -41,36 +43,35 @@ function scriptedModel(responses: CanonicalModelResponse[]): {
 
 function toolCallResponse(name: string, args: unknown, id = "c1"): CanonicalModelResponse {
   return {
-    message: {
-      role: "assistant",
-      content: null,
-      toolCalls: [{ id, name, input: args }],
-    },
+    message: { role: "assistant", content: null, toolCalls: [{ id, name, input: args }] },
     finishReason: "tool-calls",
   };
 }
 
-function finalCoordinationResponse(packet: unknown): CanonicalModelResponse {
-  return {
-    message: { role: "assistant", content: JSON.stringify(packet) },
-    finishReason: "stop",
-  };
-}
-
-const NON_JSON_STOP_RESPONSE: CanonicalModelResponse = {
+const STOP_RESPONSE: CanonicalModelResponse = {
   message: { role: "assistant", content: "done" },
   finishReason: "stop",
 };
 
-function makeStore(finalizeResult: LearnedSkillChangeSet): {
+/**
+ * A mock store whose tools operate on an in-memory staged file map seeded from the
+ * pre-existing catalog (mirroring how a real checkpoint stages a copy of skillsRoot).
+ * The coordination is DERIVED from what the model actually changes — the model never
+ * emits JSON — so the tools include a real glob/read/bash that the derivation reads.
+ */
+function makeStore(opts: { catalog?: string[]; finalizeResult: LearnedSkillChangeSet }): {
   store: SkillEvolutionStore;
-  state: { checkpointed: number; finalized: number; rolledBack: number; toolCalls: string[] };
+  state: { checkpointed: number; finalized: number; rolledBack: number; toolCalls: string[]; files: Map<string, string> };
 } {
-  const state = { checkpointed: 0, finalized: 0, rolledBack: 0, toolCalls: [] as string[] };
+  const catalog = opts.catalog ?? [];
+  const files = new Map<string, string>();
+  for (const name of catalog) files.set(`${name}/SKILL.md`, "existing body");
+  const state = { checkpointed: 0, finalized: 0, rolledBack: 0, toolCalls: [] as string[], files };
+
   const tools: SkillEvolutionTool[] = [
     {
       name: "write",
-      description: "Update exactly one learned skill.",
+      description: "Write a staged learned skill file.",
       inputSchema: {
         type: "object",
         properties: { filePath: { type: "string" }, content: { type: "string" } },
@@ -78,13 +79,15 @@ function makeStore(finalizeResult: LearnedSkillChangeSet): {
         additionalProperties: false,
       },
       handler: async (args) => {
-        state.toolCalls.push(`write:${(args as { filePath: string }).filePath}`);
-        return { ok: true, text: "updated" };
+        const filePath = (args as { filePath: string }).filePath;
+        files.set(filePath, (args as { content: string }).content);
+        state.toolCalls.push(`write:${filePath}`);
+        return { ok: true, text: "written", changed: [filePath] };
       },
     },
     {
       name: "bash",
-      description: "Archive one learned skill.",
+      description: "Run a shell command in the staged tree (e.g. rm -rf <dir>).",
       inputSchema: {
         type: "object",
         properties: { command: { type: "string" } },
@@ -92,20 +95,57 @@ function makeStore(finalizeResult: LearnedSkillChangeSet): {
         additionalProperties: false,
       },
       handler: async (args) => {
-        state.toolCalls.push(`bash:${(args as { command: string }).command}`);
-        return { ok: true, text: "archived" };
+        const command = (args as { command: string }).command;
+        state.toolCalls.push(`bash:${command}`);
+        const rm = command.match(/rm\s+-rf\s+(\S+)/);
+        if (rm) {
+          const dir = rm[1]!.replace(/\/+$/, "");
+          for (const key of [...files.keys()]) {
+            if (key === dir || key.startsWith(`${dir}/`)) files.delete(key);
+          }
+        }
+        return { ok: true, text: "ok" };
+      },
+    },
+    {
+      name: "glob",
+      description: "Match staged files.",
+      inputSchema: {
+        type: "object",
+        properties: { pattern: { type: "string" } },
+        required: ["pattern"],
+        additionalProperties: false,
+      },
+      handler: async (args) => {
+        const pattern = (args as { pattern: string }).pattern;
+        const suffix = pattern.replace(/^\*\//, "/");
+        const matches = [...files.keys()].filter((key) => key.endsWith(suffix)).sort();
+        return { ok: true, text: matches.length ? matches.join("\n") : "No files found" };
+      },
+    },
+    {
+      name: "read",
+      description: "Read a staged file.",
+      inputSchema: {
+        type: "object",
+        properties: { filePath: { type: "string" }, limit: { type: "number" } },
+        required: ["filePath"],
+        additionalProperties: false,
+      },
+      handler: async (args) => {
+        const content = files.get((args as { filePath: string }).filePath);
+        if (content === undefined) return { ok: false, text: "File not found" };
+        return { ok: true, text: content.split(/\r?\n/).map((line, index) => `${index + 1}: ${line}`).join("\n") };
       },
     },
   ];
+
   return {
     state,
     store: {
       getLearnedSkillsCatalog: async ({ includeContent }) => ({
         includeContent,
-        skills: [
-          { id: "review-skill", name: "Review skill", relativePath: "review-skill/SKILL.md" },
-          { id: "debug-skill", name: "Debug skill", relativePath: "debug-skill/SKILL.md" },
-        ],
+        skills: catalog.map((name) => ({ name, relativePath: `${name}/SKILL.md` })),
       }),
       createSkillCheckpoint: async () => {
         state.checkpointed += 1;
@@ -113,7 +153,7 @@ function makeStore(finalizeResult: LearnedSkillChangeSet): {
       },
       finalizeLearnedSkillChanges: async () => {
         state.finalized += 1;
-        return finalizeResult;
+        return opts.finalizeResult;
       },
       rollbackSkillCheckpoint: async () => {
         state.rolledBack += 1;
@@ -123,251 +163,188 @@ function makeStore(finalizeResult: LearnedSkillChangeSet): {
   };
 }
 
-test("runSkillEvolutionAgent: update decision must change exactly the target learned skill", async () => {
-  const { store, state } = makeStore({
-    changedSkills: ["review-skill"],
-    changedFiles: ["review-skill/SKILL.md"],
-  });
-  const { model, requests } = scriptedModel([
-    toolCallResponse("write", { filePath: "review-skill/SKILL.md", content: "new body" }, "u1"),
-    finalCoordinationResponse({
-        decision: "update",
-        targetSkill: "review-skill",
-        mergedSkills: [],
-        why: "The review workflow recurred and was successfully reused.",
-        memoryAction: "compress-memory",
-        memoryTopics: ["code review workflow"],
-        supportingFiles: ["review-skill/SKILL.md"],
-    }),
-  ]);
+const REVIEW = "memscribe-learned-review";
+const DEBUG = "memscribe-learned-debug";
 
-  const result = await runSkillEvolutionAgent({
+function run(store: SkillEvolutionStore, model: CanonicalModelCompletion) {
+  return runSkillEvolutionAgent({
     model,
     store,
     sessionId: "s1",
     reviewPacket: { summary: "review packet" },
-    toolTrajectory: [{ name: "Bash", ok: true }],
+    toolTrajectory: [{ name: "bash", ok: true }],
     artifactPaths: ["packages/sdk/src/index.ts"],
     qualitySignals: { doneTurns: 3, toolCalls: 7 },
   });
+}
+
+test("runSkillEvolutionAgent: a new skill file derives a create coordination (no JSON emitted)", async () => {
+  const { store, state } = makeStore({ catalog: [], finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] } });
+  const { model, requests } = scriptedModel([
+    toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "new body" }, "u1"),
+    STOP_RESPONSE,
+  ]);
+
+  const result = await run(store, model);
 
   assert.equal(state.checkpointed, 1);
   assert.equal(state.finalized, 1);
   assert.equal(state.rolledBack, 0);
-  assert.deepEqual(state.toolCalls, ["write:review-skill/SKILL.md"]);
-  assert.deepEqual(result.changedSkills, ["review-skill"]);
-  assert.equal(result.coordination.decision, "update");
+  assert.deepEqual(result.changedSkills, [REVIEW]);
+  assert.equal(result.coordination.decision, "create");
+  assert.equal(result.coordination.targetSkill, REVIEW);
+  // A real skill change links back to memory: dream compresses the redundant detail
+  // into a cue. memoryAction defaults to compress-memory with a derived topic.
   assert.equal(result.coordination.memoryAction, "compress-memory");
+  assert.ok(result.coordination.memoryTopics.length > 0);
 
   const seed = String(requests()[0].messages[1].content);
-  assert.match(seed, /# Review packet/);
-  assert.match(seed, /# Learned skill index/);
-  assert.match(seed, /# Tool trajectory/);
-  assert.match(seed, /# Artifact paths/);
-  assert.match(seed, /# Quality signals/);
-
+  for (const section of [/# Review packet/, /# Learned skill index/, /# Tool trajectory/, /# Artifact paths/, /# Quality signals/]) {
+    assert.match(seed, section);
+  }
   const specs = requests()[0].tools;
   assert.ok(specs.every((tool) => tool.strict === true));
-  assert.deepEqual(specs.map((tool) => tool.name).sort(), ["bash", "write"]);
-  assert.ok(!specs.some((tool) => tool.name.startsWith("skill_")));
+  assert.ok(specs.some((tool) => tool.name === "write"));
 });
 
-test("runSkillEvolutionAgent: noop decision rejects any learned skill file change", async () => {
-  const { store, state } = makeStore({
-    changedSkills: ["review-skill"],
-    changedFiles: ["review-skill/SKILL.md"],
-  });
+test("runSkillEvolutionAgent: editing an existing catalog skill derives an update coordination", async () => {
+  const { store, state } = makeStore({ catalog: [REVIEW], finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] } });
   const { model } = scriptedModel([
-    finalCoordinationResponse({
-        decision: "noop",
-        targetSkill: null,
-        mergedSkills: [],
-        why: "No durable reusable method emerged.",
-        memoryAction: "noop",
-        memoryTopics: [],
-        supportingFiles: [],
-    }),
+    toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "improved body" }, "u1"),
+    STOP_RESPONSE,
   ]);
 
-  await assert.rejects(
-    runSkillEvolutionAgent({
-      model,
-      store,
-      sessionId: "s1",
-      reviewPacket: { summary: "review packet" },
-      toolTrajectory: [],
-      artifactPaths: [],
-      qualitySignals: {},
-    }),
-    /noop decision changed learned skill files/,
-  );
-  assert.equal(state.rolledBack, 1);
+  const result = await run(store, model);
+
+  assert.equal(state.rolledBack, 0);
+  assert.equal(result.coordination.decision, "update");
+  assert.equal(result.coordination.targetSkill, REVIEW);
 });
 
-test("runSkillEvolutionAgent: update decision rejects multiple learned skill changes", async () => {
-  const { store, state } = makeStore({
-    changedSkills: ["review-skill", "debug-skill"],
-    changedFiles: ["review-skill/SKILL.md", "debug-skill/SKILL.md"],
-  });
+test("runSkillEvolutionAgent: a skill change auto-links memory via a compress-memory coordination", async () => {
+  const { store } = makeStore({ catalog: [REVIEW], finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] } });
   const { model } = scriptedModel([
-    finalCoordinationResponse({
-        decision: "update",
-        targetSkill: "review-skill",
-        mergedSkills: [],
-        why: "The review workflow recurred.",
-        memoryAction: "compress-memory",
-        memoryTopics: ["code review workflow"],
-        supportingFiles: ["review-skill/SKILL.md"],
-    }),
+    toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "improved" }, "u1"),
+    STOP_RESPONSE,
   ]);
 
-  await assert.rejects(
-    runSkillEvolutionAgent({
-      model,
-      store,
-      sessionId: "s1",
-      reviewPacket: { summary: "review packet" },
-      toolTrajectory: [],
-      artifactPaths: [],
-      qualitySignals: {},
-    }),
-    /must change exactly one learned skill/,
-  );
-  assert.equal(state.rolledBack, 1);
+  const result = await run(store, model);
+
+  // The memory↔skill link: a real skill change always triggers a follow-up memory
+  // compression with a topic derived from the skill.
+  assert.equal(result.coordination.decision, "update");
+  assert.equal(result.coordination.memoryAction, "compress-memory");
+  assert.deepEqual(result.coordination.memoryTopics, ["review"]);
 });
 
-test("runSkillEvolutionAgent: merge decision must change target and archived duplicate skills", async () => {
+test("runSkillEvolutionAgent: making no file change is a graceful noop, not a throw", async () => {
+  const { store, state } = makeStore({ catalog: [], finalizeResult: { changedSkills: [], changedFiles: [] } });
+  const { model } = scriptedModel([STOP_RESPONSE]);
+
+  const result = await run(store, model);
+
+  assert.equal(state.finalized, 1);
+  assert.equal(state.rolledBack, 0);
+  assert.equal(result.coordination.decision, "noop");
+  assert.equal(result.coordination.targetSkill, null);
+});
+
+test("runSkillEvolutionAgent: deleting a duplicate directory derives a merge coordination", async () => {
   const { store, state } = makeStore({
-    changedSkills: ["review-skill", "debug-skill"],
-    changedFiles: ["review-skill/SKILL.md", "debug-skill/SKILL.md"],
+    catalog: [REVIEW, DEBUG],
+    finalizeResult: { changedSkills: [REVIEW, DEBUG], changedFiles: [`${REVIEW}/SKILL.md`] },
   });
   const { model } = scriptedModel([
-    toolCallResponse("write", { filePath: "review-skill/SKILL.md", content: "merged body" }, "u1"),
-    toolCallResponse("bash", { command: "rm -rf debug-skill" }, "a1"),
-    finalCoordinationResponse({
-        decision: "merge",
-        targetSkill: "review-skill",
-        mergedSkills: ["debug-skill"],
-        why: "The debug workflow duplicated the review workflow and was merged.",
-        memoryAction: "compress-memory",
-        memoryTopics: ["code review workflow"],
-        supportingFiles: ["review-skill/SKILL.md"],
-    }),
+    toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "merged body" }, "u1"),
+    toolCallResponse("bash", { command: `rm -rf ${DEBUG}` }, "a1"),
+    STOP_RESPONSE,
   ]);
 
-  const result = await runSkillEvolutionAgent({
-    model,
-    store,
-    sessionId: "s1",
-    reviewPacket: { summary: "review packet" },
-    toolTrajectory: [{ name: "Bash", ok: true }],
-    artifactPaths: [],
-    qualitySignals: { doneTurns: 4, toolCalls: 3 },
-  });
+  const result = await run(store, model);
 
-  assert.deepEqual(state.toolCalls, [
-    "write:review-skill/SKILL.md",
-    "bash:rm -rf debug-skill",
-  ]);
   assert.equal(state.rolledBack, 0);
   assert.equal(result.coordination.decision, "merge");
-  assert.deepEqual(result.coordination.mergedSkills, ["debug-skill"]);
-  assert.deepEqual(result.changedSkills.sort(), ["debug-skill", "review-skill"]);
+  assert.equal(result.coordination.targetSkill, REVIEW);
+  assert.deepEqual(result.coordination.mergedSkills, [DEBUG]);
+  assert.deepEqual([...result.changedSkills].sort(), [DEBUG, REVIEW]);
+});
+
+test("runSkillEvolutionAgent: rolls back when the change set violates the one-skill invariant", async () => {
+  const { store, state } = makeStore({
+    catalog: [],
+    finalizeResult: { changedSkills: [REVIEW, DEBUG], changedFiles: [`${REVIEW}/SKILL.md`, `${DEBUG}/SKILL.md`] },
+  });
+  const { model } = scriptedModel([
+    toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "a" }, "u1"),
+    toolCallResponse("write", { filePath: `${DEBUG}/SKILL.md`, content: "b" }, "u2"),
+    STOP_RESPONSE,
+  ]);
+
+  await assert.rejects(run(store, model), /must change exactly one learned skill/);
+  assert.equal(state.rolledBack, 1);
 });
 
 test("runSkillEvolutionAgent: feeds skill tool validation errors back so the model can correct them", async () => {
-  const state = { checkpointed: 0, finalized: 0, rolledBack: 0, toolCalls: [] as string[] };
-  const store: SkillEvolutionStore = {
-    getLearnedSkillsCatalog: async () => ({ skills: [] }),
-    createSkillCheckpoint: async () => {
-      state.checkpointed += 1;
-      return { id: "cp" };
-    },
-    finalizeLearnedSkillChanges: async () => {
-      state.finalized += 1;
-      return {
-        changedSkills: ["memscribe-learned-release-runbook"],
-        changedFiles: ["memscribe-learned-release-runbook/SKILL.md"],
-      };
-    },
-    rollbackSkillCheckpoint: async () => {
-      state.rolledBack += 1;
-    },
-    createFileTools: () => [
-      {
-        name: "write",
-        description: "Write one learned skill file.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            filePath: { type: "string" },
-            content: { type: "string" },
-          },
-          required: ["filePath", "content"],
-          additionalProperties: false,
-        },
-        handler: async (args) => {
-          const filePath = (args as { filePath?: string }).filePath;
-          state.toolCalls.push(`write:${filePath}`);
-          if (filePath !== "memscribe-learned-release-runbook/SKILL.md") {
-            return { ok: false, text: "filePath must be memscribe-learned-<slug>/SKILL.md" };
-          }
-          return { ok: true, text: "wrote memscribe-learned-release-runbook/SKILL.md" };
-        },
-      },
-    ],
+  const { store, state } = makeStore({ catalog: [], finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] } });
+  // Reject any write that is not the canonical path, so the model must correct it.
+  const writeTool = store.createFileTools({ id: "cp" }).find((tool) => tool.name === "write")!;
+  const originalWrite = writeTool.handler;
+  writeTool.handler = async (args) => {
+    const filePath = (args as { filePath?: string }).filePath;
+    if (filePath !== `${REVIEW}/SKILL.md`) return { ok: false, text: "filePath must be memscribe-learned-<slug>/SKILL.md" };
+    return originalWrite(args);
   };
   const { model, requests } = scriptedModel([
-    toolCallResponse(
-      "write",
-      { filePath: "release-runbook/SKILL.md", content: "bad" },
-      "bad",
-    ),
-    toolCallResponse(
-      "write",
-      {
-        filePath: "memscribe-learned-release-runbook/SKILL.md",
-        content: "good",
-      },
-      "good",
-    ),
-    finalCoordinationResponse({
-        decision: "create",
-        targetSkill: "memscribe-learned-release-runbook",
-        mergedSkills: [],
-        why: "The release procedure is reusable.",
-        memoryAction: "compress-memory",
-        memoryTopics: ["release runbook"],
-        supportingFiles: ["memscribe-learned-release-runbook/SKILL.md"],
-    }),
+    toolCallResponse("write", { filePath: "review/SKILL.md", content: "bad" }, "bad"),
+    toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "good" }, "good"),
+    STOP_RESPONSE,
   ]);
 
-  const result = await runSkillEvolutionAgent({
-    model,
-    store,
-    sessionId: "s1",
-    reviewPacket: { summary: "release workflow" },
-    toolTrajectory: [{ name: "bash", output: "ok" }],
-    artifactPaths: [],
-    qualitySignals: { doneTurns: 3, toolCalls: 1 },
-  });
+  const result = await run(store, model);
 
-  assert.deepEqual(state.toolCalls, [
-    "write:release-runbook/SKILL.md",
-    "write:memscribe-learned-release-runbook/SKILL.md",
-  ]);
-  assert.equal(state.finalized, 1);
   assert.equal(state.rolledBack, 0);
-  assert.equal(result.coordination.targetSkill, "memscribe-learned-release-runbook");
+  assert.equal(result.coordination.targetSkill, REVIEW);
+  // the tool error was surfaced back to the model as a tool result
   assert.match(String(requests()[1].messages.at(-1)?.content), /memscribe-learned-<slug>\/SKILL\.md/);
 });
 
-test("validateSkillEvolutionCoordinationPacket: hard-validates required enum fields", () => {
+test("validateSkillEvolutionChangeSet: enforces noop / one-skill / merge invariants", () => {
+  const noopBase: Omit<SkillEvolutionCoordination, "decision"> = {
+    targetSkill: null,
+    mergedSkills: [],
+    why: "x",
+    memoryAction: "noop",
+    memoryTopics: [],
+    supportingFiles: [],
+  };
+  const compressBase: Omit<SkillEvolutionCoordination, "decision"> = {
+    targetSkill: REVIEW,
+    mergedSkills: [],
+    why: "x",
+    memoryAction: "compress-memory",
+    memoryTopics: ["review"],
+    supportingFiles: [],
+  };
+  assert.throws(
+    () => validateSkillEvolutionChangeSet({ ...noopBase, decision: "noop" }, { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] }),
+    /noop decision changed learned skill files/,
+  );
+  assert.throws(
+    () => validateSkillEvolutionChangeSet({ ...compressBase, decision: "create" }, { changedSkills: [REVIEW, DEBUG], changedFiles: [`${REVIEW}/SKILL.md`, `${DEBUG}/SKILL.md`] }),
+    /must change exactly one learned skill/,
+  );
+  assert.throws(
+    () => validateSkillEvolutionChangeSet({ ...compressBase, decision: "merge", mergedSkills: [DEBUG] }, { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] }),
+    /merge decision must change targetSkill and every mergedSkills entry/,
+  );
+});
+
+test("validateSkillEvolutionCoordination: rejects an invalid memoryAction enum", () => {
   assert.throws(
     () =>
-      validateSkillEvolutionCoordinationPacket({
+      validateSkillEvolutionCoordination({
         decision: "update",
-        targetSkill: "review-skill",
+        targetSkill: REVIEW,
         mergedSkills: [],
         why: "valid reason",
         memoryAction: "consolidate",

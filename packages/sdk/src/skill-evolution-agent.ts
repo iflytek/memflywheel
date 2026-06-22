@@ -3,9 +3,9 @@
  *
  * This mirrors extraction/dream at the SDK layer: the SDK owns the model loop and
  * the skill package owns file mutations through its tools. The runner wraps the
- * pass in a skill checkpoint, requires an explicit coordination packet, finalizes
- * the checkpoint, then hard-validates that the packet and actual changed skills
- * agree.
+ * pass in a skill checkpoint, finalizes the staged file changes, derives skill
+ * coordination from the resulting diff, then hard-validates that the coordination
+ * and actual changed skills agree.
  */
 
 import { clampSteps } from "./tool-agent.js";
@@ -19,30 +19,30 @@ import type {
 const DEFAULT_MAX_STEPS = 12;
 const MAX_TOOL_RESULT_CHARS = 4000;
 
-export const DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT = `You are a learned-skill evolution agent. Your job is to improve durable executable methods by editing learned skills through ordinary file tools, then return exactly one final coordination packet as raw JSON.
+export const DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT = `You are a learned-skill evolution agent. You improve durable, reusable executable methods by editing learned-skill files with ordinary file tools. You do NOT report decisions as JSON — the system derives exactly what you did from the files you change.
 
 # Scope
 
-Review the supplied packet, learned skill index, tool trajectory, artifact paths, and quality signals. Decide whether a reusable method should become a learned skill, update an existing learned skill, merge duplicate learned skills, or stay as no change.
+Review the supplied packet, learned skill index, tool trajectory, artifact paths, and quality signals, then decide whether a reusable method should become a NEW learned skill, UPDATE an existing one, MERGE duplicates, or stay unchanged. Act by editing files; nothing else is required.
 
-# Rules
+# How to act (just edit files)
 
-- Use only the provided ordinary file tools: read, write, edit, bash, glob, grep.
-- All tool paths are relative to the staged learned-skills root.
-- decision=create or decision=update must change exactly one learned skill: the targetSkill named in the coordination packet.
-- decision=merge must write the merged content into targetSkill and delete every redundant skill directory listed in mergedSkills.
-- targetSkill and every learned skill directory must match memscribe-learned-<slug>. If the observed skill name is "release-runbook", convert it to "memscribe-learned-release-runbook" before writing files or deciding.
-- A created/updated/merged target learned skill package is invalid unless you write a non-empty SKILL.md at "<targetSkill>/SKILL.md". Supporting files under references/, scripts/, templates/, or assets/ are optional and never replace SKILL.md.
-- SKILL.md must start with strict YAML frontmatter containing exactly name, display_name, and description. The name value must equal targetSkill.
-- SKILL.md must include these sections: "## Use Cases", "## Procedure", and "## Guardrails". Procedure steps must be numbered with "1.", "2.", etc., not bullets.
-- decision=noop must not change any learned skill files.
-- Do not write memory files. If memory should be compressed after a skill update, set memoryAction=compress-memory and list the memoryTopics.
-- Keep public names generic; do not leak host project names into learned skills unless they are part of the user's actual requested skill.
-- If there is no durable reusable method, make no file changes and return a noop coordination packet.
+- Use only the provided file tools: read, write, edit, bash, glob, grep.
+- EVERY path is RELATIVE to your sandboxed working directory. Use relative paths like "memscribe-learned-<slug>/SKILL.md". NEVER use an absolute filesystem path (do not write to any path that starts with "/").
+- To CREATE or UPDATE: call the WRITE tool with a relative path "<skill-dir>/SKILL.md" and the full file contents. Do NOT use bash to create or write skill files. Updating an existing skill edits that skill's existing directory; creating uses a new directory.
+- To MERGE duplicates: write the consolidated SKILL.md into the surviving skill directory (write tool), then delete each redundant skill directory with bash using a RELATIVE path (e.g. "rm -rf <dup-dir>"). Read each source in full before consolidating.
+- If there is NO durable reusable method, change no files and stop. That is a valid no-op — do not invent a skill.
+- Change at most ONE surviving skill per pass (plus, for a merge, the directories you delete).
+
+# Skill directory + SKILL.md rules
+
+- Every skill directory must be named memscribe-learned-<slug> (lowercase slug). If the method's natural name is "release-runbook", use directory "memscribe-learned-release-runbook".
+- "<skill-dir>/SKILL.md" must start with strict YAML frontmatter containing EXACTLY: name, display_name, description. The name value must equal the directory name (memscribe-learned-<slug>).
+- SKILL.md must include the sections "## Use Cases", "## Procedure", and "## Guardrails". Procedure steps must be numbered "1.", "2.", ... contiguously, not bullets.
+- Optional supporting files may live under references/, scripts/, templates/, or assets/. They never replace SKILL.md.
+- Keep names generic; never leak host project names or secrets into a learned skill.
 
 # Valid SKILL.md shape
-
-Use this structure for the required SKILL.md entrypoint, replacing names and content with the actual skill:
 
 ---
 name: memscribe-learned-release-runbook
@@ -67,16 +67,7 @@ description: Reusable procedure for safely running a release.
 - Do not publish when build or tests fail.
 - Do not write secrets or private credentials into files.
 
-# Required final coordination packet
-
-After all file changes are done, stop calling tools and make your final assistant content exactly this JSON object with no markdown fence and no surrounding prose:
-- decision: create | update | merge | noop
-- targetSkill: string for create/update/merge, null for noop
-- mergedSkills: string[]; non-empty only for merge
-- why: concise reason
-- memoryAction: compress-memory | noop
-- memoryTopics: string[]
-- supportingFiles: string[]`;
+When your file edits are complete, stop calling tools. You do not need to emit any JSON, summary, or skill coordination.`;
 
 export const LEARNED_SKILL_MD_TEMPLATE = `---
 name: memscribe-learned-release-runbook
@@ -105,7 +96,7 @@ description: Reusable procedure for safely running a release.
 export type SkillEvolutionDecision = "create" | "update" | "merge" | "noop";
 export type SkillEvolutionMemoryAction = "compress-memory" | "noop";
 
-export interface SkillEvolutionCoordinationPacket {
+export interface SkillEvolutionCoordination {
   decision: SkillEvolutionDecision;
   targetSkill: string | null;
   mergedSkills: string[];
@@ -145,7 +136,7 @@ export interface LearnedSkillChangeSet {
 }
 
 export interface SkillEvolutionLearningSummary {
-  coordination: SkillEvolutionCoordinationPacket;
+  coordination: SkillEvolutionCoordination;
   reviewPacket: unknown;
   toolTrajectory: unknown;
   artifactPaths: string[];
@@ -179,7 +170,7 @@ export interface RunSkillEvolutionAgentOptions<TCheckpoint = unknown> {
 }
 
 export interface SkillEvolutionAgentResult extends LearnedSkillChangeSet {
-  coordination: SkillEvolutionCoordinationPacket;
+  coordination: SkillEvolutionCoordination;
   learnedSkillIndex: LearnedSkillsCatalog;
   toolCalls: string[];
   stoppedReason: "no-tool-calls" | "max-steps" | "aborted";
@@ -221,69 +212,69 @@ function assertStringArray(value: unknown, label: string): string[] {
   return [...value];
 }
 
-export function validateSkillEvolutionCoordinationPacket(
+export function validateSkillEvolutionCoordination(
   value: unknown,
-): SkillEvolutionCoordinationPacket {
-  const record = assertRecord(value, "coordination packet");
+): SkillEvolutionCoordination {
+  const record = assertRecord(value, "skill coordination");
   assertExactKeys(
     record,
     ["decision", "targetSkill", "mergedSkills", "why", "memoryAction", "memoryTopics", "supportingFiles"],
-    "coordination packet",
+    "skill coordination",
   );
 
   const decision = record.decision;
   if (decision !== "create" && decision !== "update" && decision !== "merge" && decision !== "noop") {
-    throw new Error("coordination packet decision must be create, update, merge, or noop");
+    throw new Error("skill coordination decision must be create, update, merge, or noop");
   }
 
   const targetSkill = record.targetSkill;
   if (decision === "noop") {
     if (targetSkill !== null) {
-      throw new Error("coordination packet targetSkill must be null for noop");
+      throw new Error("skill coordination targetSkill must be null for noop");
     }
   } else if (typeof targetSkill !== "string" || targetSkill.trim() === "") {
-    throw new Error("coordination packet targetSkill must be a non-empty string");
+    throw new Error("skill coordination targetSkill must be a non-empty string");
   }
 
   if (typeof record.why !== "string" || record.why.trim() === "") {
-    throw new Error("coordination packet why must be a non-empty string");
+    throw new Error("skill coordination why must be a non-empty string");
   }
 
-  const mergedSkills = assertStringArray(record.mergedSkills, "coordination packet mergedSkills");
+  const mergedSkills = assertStringArray(record.mergedSkills, "skill coordination mergedSkills");
   if (decision === "merge") {
     if (mergedSkills.length === 0) {
-      throw new Error("coordination packet merge decision must declare mergedSkills");
+      throw new Error("skill coordination merge decision must declare mergedSkills");
     }
     if (mergedSkills.includes(targetSkill as string)) {
-      throw new Error("coordination packet mergedSkills must not include targetSkill");
+      throw new Error("skill coordination mergedSkills must not include targetSkill");
     }
   } else if (mergedSkills.length > 0) {
-    throw new Error("coordination packet mergedSkills is only allowed for merge");
+    throw new Error("skill coordination mergedSkills is only allowed for merge");
   }
 
   const memoryAction = record.memoryAction;
   if (memoryAction !== "compress-memory" && memoryAction !== "noop") {
-    throw new Error("coordination packet memoryAction must be compress-memory or noop");
+    throw new Error("skill coordination memoryAction must be compress-memory or noop");
   }
 
-  const memoryTopics = assertStringArray(record.memoryTopics, "coordination packet memoryTopics");
-  const supportingFiles = assertStringArray(record.supportingFiles, "coordination packet supportingFiles");
+  const memoryTopics = assertStringArray(record.memoryTopics, "skill coordination memoryTopics");
+  const supportingFiles = assertStringArray(record.supportingFiles, "skill coordination supportingFiles");
   if (decision === "noop") {
     if (memoryAction !== "noop") {
-      throw new Error("coordination packet noop decision must use memoryAction=noop");
+      throw new Error("skill coordination noop decision must use memoryAction=noop");
     }
     if (memoryTopics.length > 0) {
-      throw new Error("coordination packet noop decision must not declare memoryTopics");
+      throw new Error("skill coordination noop decision must not declare memoryTopics");
     }
     if (supportingFiles.length > 0) {
-      throw new Error("coordination packet noop decision must not declare supportingFiles");
+      throw new Error("skill coordination noop decision must not declare supportingFiles");
     }
   } else {
     if (memoryAction !== "compress-memory") {
-      throw new Error("coordination packet create/update/merge decision must use memoryAction=compress-memory");
+      throw new Error("skill coordination create/update/merge decision must use memoryAction=compress-memory");
     }
     if (memoryTopics.length === 0) {
-      throw new Error("coordination packet create/update/merge decision must declare memoryTopics");
+      throw new Error("skill coordination create/update/merge decision must declare memoryTopics");
     }
   }
 
@@ -308,7 +299,7 @@ function validateChangeSet(value: unknown): LearnedSkillChangeSet {
 }
 
 export function validateSkillEvolutionChangeSet(
-  coordination: SkillEvolutionCoordinationPacket,
+  coordination: SkillEvolutionCoordination,
   value: unknown,
 ): LearnedSkillChangeSet {
   const changeSet = validateChangeSet(value);
@@ -367,6 +358,27 @@ function toToolSpecs(tools: SkillEvolutionTool[]): CanonicalToolDefinition[] {
   }));
 }
 
+/**
+ * Project the catalog down to relative, model-safe fields. Critically this DROPS the
+ * absolute `skillsRoot` path (and any other absolute paths): the model must only ever
+ * see and write RELATIVE skill paths into the sandboxed staging tree — never the real
+ * published root, which it could otherwise target directly via bash.
+ */
+function sanitizeSkillIndex(index: LearnedSkillsCatalog): unknown {
+  const skills = Array.isArray(index?.skills) ? index.skills : [];
+  return skills.map((skill) => {
+    if (!skill || typeof skill !== "object") return skill;
+    const entry = skill as Record<string, unknown>;
+    return {
+      name: entry.name,
+      displayName: entry.displayName,
+      description: entry.description,
+      relativePath: entry.relativePath,
+      ...(typeof entry.skillContent === "string" ? { skillContent: entry.skillContent } : {}),
+    };
+  });
+}
+
 function buildSkillEvolutionUserMessage(input: {
   reviewPacket: unknown;
   learnedSkillIndex: LearnedSkillsCatalog;
@@ -379,7 +391,7 @@ function buildSkillEvolutionUserMessage(input: {
     JSON.stringify(input.reviewPacket, null, 2),
     "",
     "# Learned skill index",
-    JSON.stringify(input.learnedSkillIndex, null, 2),
+    JSON.stringify(sanitizeSkillIndex(input.learnedSkillIndex), null, 2),
     "",
     "# Tool trajectory",
     JSON.stringify(input.toolTrajectory, null, 2),
@@ -390,8 +402,86 @@ function buildSkillEvolutionUserMessage(input: {
     "# Quality signals",
     JSON.stringify(input.qualitySignals, null, 2),
     "",
-    "Use read/write/edit/bash/glob/grep if a learned skill must change. After tool work is complete, return the final coordination packet as strict raw JSON.",
+    "Use read/write/edit/bash/glob/grep to make the skill file changes. The system derives what changed from the files — you do not need to emit any JSON. If no durable reusable method exists, change nothing.",
   ].join("\n");
+}
+
+/** The skill name == its directory name (memscribe-learned-<slug>). */
+function skillDirOf(relativePath: string): string {
+  return relativePath.split("/")[0] ?? "";
+}
+
+/** All skill directories present in the staged tree after the model's edits. */
+async function listStagedSkillNames(tools: SkillEvolutionTool[]): Promise<Set<string>> {
+  const glob = new Map(tools.map((tool) => [tool.name, tool])).get("glob");
+  if (!glob) return new Set();
+  const res = await glob.handler({ pattern: "*/SKILL.md" });
+  if (!res.ok) return new Set();
+  return new Set(
+    res.text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.endsWith("/SKILL.md"))
+      .map(skillDirOf)
+      .filter(Boolean),
+  );
+}
+
+const NOOP_COORDINATION: SkillEvolutionCoordination = {
+  decision: "noop",
+  targetSkill: null,
+  mergedSkills: [],
+  why: "no durable reusable method was observed",
+  memoryAction: "noop",
+  memoryTopics: [],
+  supportingFiles: [],
+};
+
+/** A human-readable topic derived from a skill directory name, for memory compression. */
+function humanizeSkillSlug(skillName: string): string {
+  const slug = skillName.replace(/^memscribe-learned-/, "").replace(/[-_]+/g, " ").trim();
+  return slug || skillName;
+}
+
+/**
+ * Derive the skill coordination from what the model ACTUALLY changed, classified
+ * against the catalog that existed before the pass. Because the decision/targetSkill/
+ * mergedSkills are inferred from the real change set, they always agree with it.
+ */
+function deriveCoordination(input: {
+  changeSet: LearnedSkillChangeSet;
+  catalogNames: Set<string>;
+  deletedNames: string[];
+}): SkillEvolutionCoordination {
+  const { changeSet, catalogNames, deletedNames } = input;
+  if (changeSet.changedSkills.length === 0) return NOOP_COORDINATION;
+
+  const survivors = changeSet.changedSkills.filter((name) => !deletedNames.includes(name));
+  let decision: SkillEvolutionDecision;
+  let targetSkill: string;
+  let mergedSkills: string[];
+  if (deletedNames.length > 0 && survivors.length >= 1) {
+    decision = "merge";
+    targetSkill = survivors[0] as string;
+    mergedSkills = [...deletedNames];
+  } else {
+    targetSkill = (survivors[0] ?? changeSet.changedSkills[0]) as string;
+    decision = catalogNames.has(targetSkill) ? "update" : "create";
+    mergedSkills = [];
+  }
+
+  // Close the loop back onto memory: a real skill change always triggers a follow-up
+  // dream pass that compresses the now-redundant procedural detail in memory into a cue
+  // pointing at the learned skill (the memory↔skill link).
+  return {
+    decision,
+    targetSkill,
+    mergedSkills,
+    why: `${decision} ${targetSkill} from the observed reusable method`,
+    memoryAction: "compress-memory",
+    memoryTopics: [humanizeSkillSlug(targetSkill)],
+    supportingFiles: [],
+  };
 }
 
 async function runSkillToolLoop(input: {
@@ -463,25 +553,17 @@ async function runSkillToolLoop(input: {
   return { steps, toolCalls, finalContent: null, stoppedReason: "max-steps" };
 }
 
-function parseFinalCoordinationPacket(content: string | null): SkillEvolutionCoordinationPacket {
-  if (content === null || content.trim() === "") {
-    throw new Error("skill evolution final response must be a raw JSON coordination packet");
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(content.trim());
-  } catch (error) {
-    throw new Error("skill evolution final response must be valid JSON");
-  }
-  return validateSkillEvolutionCoordinationPacket(parsed);
-}
-
 export async function runSkillEvolutionAgent<TCheckpoint>(
   options: RunSkillEvolutionAgentOptions<TCheckpoint>,
 ): Promise<SkillEvolutionAgentResult> {
   const learnedSkillIndex = await options.store.getLearnedSkillsCatalog({
     includeContent: options.includeSkillContent,
   });
+  const catalogNames = new Set(
+    (learnedSkillIndex.skills ?? [])
+      .map((skill) => (skill && typeof skill === "object" ? (skill as { name?: unknown }).name : undefined))
+      .filter((name): name is string => typeof name === "string"),
+  );
   const checkpoint = await options.store.createSkillCheckpoint();
 
   try {
@@ -500,22 +582,32 @@ export async function runSkillEvolutionAgent<TCheckpoint>(
       maxSteps: options.maxSteps,
       signal: options.signal,
     });
-    const coordination = parseFinalCoordinationPacket(loop.finalContent);
 
-    const changeSet = validateSkillEvolutionChangeSet(
-      coordination,
-      await options.store.finalizeLearnedSkillChanges({
-        checkpoint,
-        sessionId: options.sessionId,
-        learningSummary: {
-          coordination,
-          reviewPacket: options.reviewPacket,
-          toolTrajectory: options.toolTrajectory,
-          artifactPaths: options.artifactPaths,
-          qualitySignals: options.qualitySignals,
-        },
-      }),
-    );
+    // Derive what the model actually did from the staged file tree. A skill in the
+    // catalog but no longer staged was deleted (authorizes a merge); otherwise it is a
+    // create/update of the surviving skill. The model emits no JSON coordination.
+    const stagedNames = await listStagedSkillNames(tools);
+    const deletedNames = [...catalogNames].filter((name) => !stagedNames.has(name)).sort();
+
+    const changeSet = await options.store.finalizeLearnedSkillChanges({
+      checkpoint,
+      sessionId: options.sessionId,
+      learningSummary: {
+        // finalize consults this only to authorize directory deletions for a merge.
+        coordination:
+          deletedNames.length > 0
+            ? { ...NOOP_COORDINATION, decision: "merge", mergedSkills: deletedNames }
+            : NOOP_COORDINATION,
+        reviewPacket: options.reviewPacket,
+        toolTrajectory: options.toolTrajectory,
+        artifactPaths: options.artifactPaths,
+        qualitySignals: options.qualitySignals,
+      },
+    });
+
+    const coordination = deriveCoordination({ changeSet, catalogNames, deletedNames });
+    validateSkillEvolutionCoordination(coordination);
+    validateSkillEvolutionChangeSet(coordination, changeSet);
 
     return {
       ...changeSet,

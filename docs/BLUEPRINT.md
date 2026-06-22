@@ -501,7 +501,7 @@ export function stripSystemReminderBlocks(text: string): string;
 // body non-empty, privacy (always redact <private>; optionally refuse hard
 // secrets via the refuseSecrets gate), atomic write, audit append, index resync.
 export interface FileTool {
-  name: "write" | "edit" | "bash" | "glob";
+  name: "read" | "write" | "edit" | "bash" | "glob" | "grep";
   description: string;
   inputSchema: JsonSchema;
   handler: (args: unknown, toolCtx: FileToolContext) => Promise<FileToolResult>;
@@ -515,7 +515,7 @@ export enum ExtractionResult { Queued = "queued", Completed = "completed", Skipp
 //  3 before = scanMemoryFiles → manifest
 //  4 select window via cursor
 //  5 build bound tools + toolCtx (sharing the lock); changed = await agent({...})
-//    — the subagent writes via the tools (glob → write/update/archive)
+//    — the subagent acts through read/write/edit/bash/glob/grep
 //  6 relocateRootFiles again
 //  7 after = scanMemoryFiles → syncMemoryIndex
 //  8 advance cursor ONLY on success; stamp .last-extraction

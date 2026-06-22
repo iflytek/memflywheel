@@ -10,7 +10,7 @@ through `MEMSCRIBE_LLM_*`.
 ```text
 turn-end
   -> extraction agent writes a workflow memory through ordinary file tools
-  -> skill evolution agent writes a learned skill through skill tools
+  -> skill evolution agent writes a learned skill through stage-bound ordinary file tools
   -> dream agent compresses the workflow memory into a skill cue
   -> next prompt build contains the learned skill route
 ```

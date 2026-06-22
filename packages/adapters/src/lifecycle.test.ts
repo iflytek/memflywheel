@@ -18,16 +18,16 @@ test("attach binds each host event to its scribe hook (pi)", async () => {
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
 
-  host.emit("session:ensure", { sessionId: "s1" });
-  host.emit("turn:build", { sessionId: "s1" });
+  host.emit("session_start", { sessionId: "s1" });
+  host.emit("context", { sessionId: "s1", messages: [] });
   host.emit("agent_end", {
     sessionId: "s1",
     messages: [
-      { role: "user", text: "hi" },
-      { role: "assistant", text: "yo" },
+      { role: "user", content: "hi" },
+      { role: "assistant", content: [{ type: "text", text: "yo" }] },
     ],
   });
-  host.emit("learning:idle", {});
+  host.emit("session_shutdown", { sessionId: "s1" });
   await flush();
 
   assert.deepEqual(scribe.calls.sessionStart, [{ sessionId: "s1" }]);
@@ -38,7 +38,7 @@ test("attach binds each host event to its scribe hook (pi)", async () => {
     { role: "user", text: "hi" },
     { role: "assistant", text: "yo" },
   ]);
-  assert.equal(scribe.calls.idle.length, 1);
+  assert.deepEqual(scribe.calls.sessionEnd, [{ sessionId: "s1" }]);
 
   dispose();
 });
@@ -47,11 +47,11 @@ test("dispose removes all listeners (on-returns-unsubscribe path)", async () => 
   const scribe = createRecordingMemScribe();
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
-  assert.equal(host.listenerCount("session:ensure"), 1);
+  assert.equal(host.listenerCount("session_start"), 1);
   dispose();
-  assert.equal(host.listenerCount("session:ensure"), 0);
+  assert.equal(host.listenerCount("session_start"), 0);
 
-  host.emit("session:ensure", { sessionId: "ghost" });
+  host.emit("session_start", { sessionId: "ghost" });
   await flush();
   assert.equal(scribe.calls.sessionStart.length, 0);
 });

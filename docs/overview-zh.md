@@ -74,7 +74,7 @@ updated_at: 2026-06-15T...
 
 | 入口 | 形态 | 说明 |
 | --- | --- | --- |
-| **MCP** | stdio server | 工具仅 `memscribe.with_memory` / `write`(**无 read/search**);主 Agent 读完整记忆走宿主 Read/file 工具;resources `memscribe://index|manifest`;prompt `memscribe.with_memory` |
+| **MCP** | stdio server | prompt `memscribe.with_memory`;resources `memscribe://index|manifest`;工具为受控普通文件工具 `read/write/edit/bash/glob/grep`,执行层仍强制记忆路径、frontmatter、隐私和索引规则 |
 | **SDK** | `createMemScribe(config)` | 生命周期 hooks:`onSessionStart` / `onPromptBuild` / `onTurnEnd` / `onSessionEnd` / `onAgentEnd` / `onIdle`;两个注入点 `agent`(ExtractionAgentRunner)、`dreamRunner`(DreamAgentRunner) |
 | **CLI** | `memscribe <cmd>` | `init` / `list` / `read` / `context` / `write` / `doctor` / `rebuild-index` / `dream plan|apply` / `mcp` |
 | **adapters** | 宿主生命周期映射 | `hermes` / `opencode` / `openclaw` / `pi` / `codex` / `claude-code`,install 走 plan/apply + 真 round-trip verify |

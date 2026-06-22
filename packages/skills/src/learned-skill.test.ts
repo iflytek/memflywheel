@@ -64,7 +64,6 @@ description: ${description}
 function validFiles(): Record<string, string> {
   return {
     "SKILL.md": validSkill,
-    ".memscribe-skill.json": `${JSON.stringify({ name: "memscribe-learned-editor-workflow" }, null, 2)}\n`,
     "references/source.md": "Reference notes.\n",
     "templates/report.md": "# Report\n",
     "scripts/check.mjs": "export function check() { return true; }\n",
@@ -164,6 +163,17 @@ test("validateLearnedSkillPackage rejects invalid supporting files and configure
       error instanceof LearnedSkillValidationError &&
       error.message.includes("forbidden public name"),
   );
+
+  assert.throws(
+    () =>
+      validateLearnedSkillPackage({
+        slug: "editor-workflow",
+        files: { ...validFiles(), ".internal.json": "{}\n" },
+      }),
+    (error: unknown) =>
+      error instanceof LearnedSkillValidationError &&
+      error.message.includes("supporting files must live under"),
+  );
 });
 
 test("checkpointLearnedSkill stages files outside the skills root and finalize writes only the learned skill directory", async () => {
@@ -188,7 +198,6 @@ test("checkpointLearnedSkill stages files outside the skills root and finalize w
     const result = await finalizeLearnedSkillCheckpoint(checkpoint);
     assert.equal(result.skillDir, "memscribe-learned-editor-workflow");
     assert.deepEqual(result.changedPaths.sort(), [
-      "memscribe-learned-editor-workflow/.memscribe-skill.json",
       "memscribe-learned-editor-workflow/SKILL.md",
       "memscribe-learned-editor-workflow/assets/schema.json",
       "memscribe-learned-editor-workflow/references/source.md",
@@ -307,10 +316,6 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
       filePath: "memscribe-learned-editor-workflow/SKILL.md",
       content: validSkill,
     });
-    await write.handler({
-      filePath: "memscribe-learned-editor-workflow/.memscribe-skill.json",
-      content: `${JSON.stringify({ name: "memscribe-learned-editor-workflow" }, null, 2)}\n`,
-    });
 
     const result = await store.finalizeLearnedSkillChanges({
       checkpoint,
@@ -318,7 +323,6 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
     });
     assert.deepEqual(result.changedSkills, ["memscribe-learned-editor-workflow"]);
     assert.deepEqual(result.changedFiles.sort(), [
-      "memscribe-learned-editor-workflow/.memscribe-skill.json",
       "memscribe-learned-editor-workflow/SKILL.md",
     ]);
 
