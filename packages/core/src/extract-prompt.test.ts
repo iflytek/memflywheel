@@ -35,6 +35,18 @@ test("buildExtractionAgentUserMessage renders manifest and labelled turns", () =
   assert.ok(out.includes("Use the ordinary file tools"));
 });
 
+test("buildExtractionAgentUserMessage renders the timestamp anchor in the speaker label", () => {
+  const out = buildExtractionAgentUserMessage({
+    messages: [
+      { role: "user", text: "I went to the support group yesterday", timestamp: "2023-05-08" },
+      { role: "assistant", text: "Noted." },
+    ],
+    manifest: "",
+  });
+  assert.ok(out.includes("User [2023-05-08]: I went to the support group yesterday"));
+  assert.ok(out.includes("Assistant: Noted."));
+});
+
 test("buildExtractionAgentUserMessage falls back to (none) for empty manifest", () => {
   const out = buildExtractionAgentUserMessage({ messages: [], manifest: "" });
   assert.ok(out.includes("(none)"));

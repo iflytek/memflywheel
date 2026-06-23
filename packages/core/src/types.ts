@@ -15,8 +15,15 @@ export type MemoryType =
   | "ambient";
 
 /**
- * Persisted YAML frontmatter. NOTHING beyond these fields.
- * (No scope / origin / source_ref / confidence / status / agent / project / session.)
+ * Persisted YAML frontmatter. Beyond the four core fields only `occurred_on` is
+ * allowed. (No scope / origin / source_ref / confidence / status / agent /
+ * project / session.)
+ *
+ * `created_at` / `updated_at` are WRITE times (when the memory was recorded).
+ * `occurred_on` is the EVENT time — when the remembered fact actually happened —
+ * resolved to an absolute ISO date (YYYY-MM-DD). It is distinct from the write
+ * times and is only present when a fact is bound to a specific date that the
+ * extractor could resolve from an explicit time anchor; it is never guessed.
  */
 export interface MemoryFrontmatter {
   name: string;
@@ -24,6 +31,7 @@ export interface MemoryFrontmatter {
   type: MemoryType;
   created_at?: string;
   updated_at?: string;
+  occurred_on?: string;
 }
 
 /** A parsed memory file (frontmatter + body). */

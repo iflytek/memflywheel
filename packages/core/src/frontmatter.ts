@@ -8,7 +8,7 @@ import { VALID_MEMORY_TYPES, type MemoryFrontmatter, type MemoryDocument, type M
 export const FRONTMATTER_READ_BYTES = 2048;
 export const MAX_FRONTMATTER_LINES = 30;
 
-const FRONTMATTER_KEY_ORDER = ["name", "description", "type", "created_at", "updated_at"] as const;
+const FRONTMATTER_KEY_ORDER = ["name", "description", "type", "created_at", "updated_at", "occurred_on"] as const;
 
 /**
  * Port of parseMemoryFrontmatter.
@@ -40,6 +40,7 @@ export function parseFrontmatter(content: string): MemoryFrontmatter | null {
   };
   if (meta.created_at) frontmatter.created_at = meta.created_at;
   if (meta.updated_at) frontmatter.updated_at = meta.updated_at;
+  if (meta.occurred_on) frontmatter.occurred_on = meta.occurred_on;
   return frontmatter;
 }
 
@@ -66,7 +67,7 @@ export function parseDocument(content: string): MemoryDocument | null {
 
 /**
  * Deterministic serializer: "---\n" + ordered keys + "---\n\n" + body + "\n".
- * Key order is fixed: name, description, type, created_at, updated_at.
+ * Key order is fixed: name, description, type, created_at, updated_at, occurred_on.
  * Values must be single-line (multi-line values are rejected upstream).
  */
 export function serializeDocument(doc: MemoryDocument): string {

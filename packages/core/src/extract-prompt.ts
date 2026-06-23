@@ -56,6 +56,17 @@ description: Preferred drinks
 
 The user prefers green tea and iced coffee.
 
+Frontmatter keys are type, name, description (always), plus the OPTIONAL occurred_on event-date line for a fact bound to a specific date (see "Time anchoring"; omit it for undated facts). A dated memory adds that one line:
+
+---
+type: context
+name: Team Reorg
+description: When the user's team merged into Infra
+occurred_on: 2024-11-05
+---
+
+The user's team merged into the Infra org on 2024-11-05.
+
 Typical flow: glob or grep to locate existing memories → read the one you intend to refine → write a new typed Markdown file or edit an existing same-topic file. Prefer few, high-value writes — one fact per call, and do not write more than ~3 memories per round.
 
 CRITICAL — read before you update: before edit or overwrite, you MUST read the target first and build the new body from its real current content. For list-type preferences (e.g. favorite drinks, tools, shortcuts), APPEND the new item to the existing body — never overwrite it and drop what was already there.
@@ -99,7 +110,7 @@ Each memory is a single fact, independently understandable in one sentence. Pref
 # Prohibited content (ignore completely)
 
 - One-time questions, one-time confirmations, temporary needs, the current task.
-- Time-bounded info: "recently", "this week", "currently", "temporarily", "next week", "this month".
+- Vague, dateless time words used on their own: "recently", "this week", "currently", "temporarily", "next week", "this month". Exception: when an explicit turn anchor lets you resolve a real calendar date for a fact that is otherwise worth remembering, keep the fact and record the resolved date as occurred_on — see "Time anchoring".
 - Temporary states: "feeling X today", "don't call me Y this week", "dieting right now".
 - The assistant's own plans, reasoning, suggestions, or summaries.
 - Conclusions only inferable from context; vague, uncertain, or unverifiable info.
@@ -124,6 +135,30 @@ Special handling: never create files like "*-protected" or "*-blocked". If the o
 # ADD / UPDATE guidance
 
 Call glob or grep first to find existing same-topic files. Prefer updating an existing file with edit over creating a near-duplicate — but ALWAYS read it first and build the new body from its real current content. For preference / context / ambient, when a clear long-term signal matches an existing topic, target that file; list-type preferences append the new item to the existing body. Use bash to move a file under .archive/ only when the user explicitly corrects or retracts a prior memory, then optionally write the corrected fact.
+
+# Time anchoring (occurred_on)
+
+Some turns carry an absolute time anchor in square brackets right after the speaker label, e.g. "User [2023-05-08]: ...". That bracket is the real-world date the turn was spoken — the date to reason from, never the date you are writing on. occurred_on is the EVENT date (when the remembered fact happened or began), written as YYYY-MM-DD, distinct from your write time, and applies to any memory type. It MUST appear as its own frontmatter line, exactly like created_at — for example "occurred_on: 2025-02-20". Mentioning the date only inside a body sentence does NOT count; the frontmatter line is what makes the date queryable, so always add the line (you may also keep the date in the body).
+
+When you decide a fact is worth remembering AND that fact is tied to a moment in time — an event, a change, a start, a join/leave/switch/move/milestone, or any "X happened / started / began on <time>" — you MUST record its date as occurred_on whenever the in-scope anchor lets you resolve one:
+- A relative phrase ("yesterday", "two days ago", "last Tuesday", "last month") -> resolve it against the anchor and write the absolute occurred_on.
+- An absolute date stated in the text -> write it directly.
+- This holds EVEN WHEN you generalize the event into a stable identity/state memory. "Joined as tech lead two days ago" becomes a stable role memory that STILL carries occurred_on = the join date. Generalizing a fact never means dropping its date — fold the date into the same memory.
+
+Never guess: with no anchor in scope and no absolute date in the text, OMIT occurred_on and keep the wording verbatim. A dateless "recently" / "currently" on its own stays noise (see Prohibited content); the only thing that turns it into signal is a resolvable date.
+
+The decision bar is unchanged (ownership, long-term stability, reuse value). occurred_on changes exactly one thing: when a worth-remembering fact has a resolvable date, that date is preserved on the memory instead of discarded.
+
+Example:
+
+---
+type: context
+name: Postgres Migration
+description: Database the user migrated to
+occurred_on: 2025-03-14
+---
+
+The user migrated the primary database from MySQL to Postgres on 2025-03-14.
 
 # Body shape
 
@@ -183,7 +218,8 @@ export function buildExtractionAgentUserMessage(input: {
 
   for (const message of input.messages) {
     const label = message.role === "user" ? "User" : "Assistant";
-    lines.push(`${label}: ${String(message.text || "").trim()}`);
+    const stamp = message.timestamp ? ` [${String(message.timestamp).trim()}]` : "";
+    lines.push(`${label}${stamp}: ${String(message.text || "").trim()}`);
 
     if (!fold || !message.toolCalls) continue;
     for (const call of message.toolCalls) {

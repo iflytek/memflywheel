@@ -55,6 +55,14 @@ export interface ExtractionMessage {
    * message with no toolCalls renders exactly as before.
    */
   toolCalls?: ExtractionToolCall[];
+  /**
+   * Absolute time anchor for THIS turn (e.g. "2023-05-08" or an ISO datetime),
+   * supplied by the host when the turn's wall-clock time is known. It lets the
+   * extractor resolve relative dates in the text ("yesterday", "last week")
+   * into an absolute `occurred_on`. Optional and backward-compatible: when
+   * absent the message renders exactly as before and no date is ever guessed.
+   */
+  timestamp?: string;
 }
 
 // ---- Tool-call folding (per-field truncation + window-level backstop) ----
@@ -152,7 +160,10 @@ export function cleanMessages(messages: ExtractionMessage[]): ExtractionMessage[
     }
     const cleaned = stripSystemReminderBlocks(m.text);
     if (!cleaned || isPreludeText(cleaned)) continue;
-    out.push(m.toolCalls ? { role: "user", text: cleaned, toolCalls: m.toolCalls } : { role: "user", text: cleaned });
+    const rebuilt: ExtractionMessage = { role: "user", text: cleaned };
+    if (m.toolCalls) rebuilt.toolCalls = m.toolCalls;
+    if (m.timestamp) rebuilt.timestamp = m.timestamp;
+    out.push(rebuilt);
   }
   return out;
 }

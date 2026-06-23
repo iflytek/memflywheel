@@ -166,7 +166,11 @@ function toExtractionMessages(messages: AnyTurnMessage[]): ExtractionMessage[] {
     const hasTools = Array.isArray(toolCalls) && toolCalls.length > 0;
     // Keep a tool-only assistant turn (empty text but real tool calls).
     if (text === "" && !hasTools) continue;
-    out.push(hasTools ? { role: m.role, text, toolCalls } : { role: m.role, text });
+    const out1: ExtractionMessage = { role: m.role, text };
+    if (hasTools) out1.toolCalls = toolCalls;
+    const timestamp = (m as ExtractionMessage).timestamp;
+    if (typeof timestamp === "string" && timestamp.trim() !== "") out1.timestamp = timestamp.trim();
+    out.push(out1);
   }
   return out;
 }

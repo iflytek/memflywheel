@@ -65,6 +65,30 @@ test("serializeDocument is round-trippable and ordered", () => {
   assert.equal(reparsed?.body, "the body");
 });
 
+test("serializeDocument round-trips occurred_on after the write times", () => {
+  const serialized = serializeDocument({
+    frontmatter: {
+      name: "Support Group",
+      description: "When the user attended",
+      type: "context",
+      created_at: "2026-06-23T00:00:00.000Z",
+      updated_at: "2026-06-23T00:00:00.000Z",
+      occurred_on: "2023-05-07",
+    },
+    body: "The user attended an LGBTQ support group on 2023-05-07.",
+  });
+  const lines = serialized.split("\n");
+  assert.equal(lines[6], "occurred_on: 2023-05-07");
+
+  const reparsed = parseFrontmatter(serialized);
+  assert.equal(reparsed?.occurred_on, "2023-05-07");
+});
+
+test("parseFrontmatter omits occurred_on when absent", () => {
+  const fm = parseFrontmatter("---\nname: a\ntype: identity\n---\nbody");
+  assert.equal(fm?.occurred_on, undefined);
+});
+
 test("isSingleLineValue detects newlines", () => {
   assert.equal(isSingleLineValue("one line"), true);
   assert.equal(isSingleLineValue("two\nlines"), false);

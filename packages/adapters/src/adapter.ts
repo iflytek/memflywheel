@@ -33,6 +33,12 @@ export interface MemScribeMessage {
   text: string;
   /** Host tool calls made on this turn, folded into extraction as truncated text. */
   toolCalls?: MemScribeToolCall[];
+  /**
+   * Absolute time anchor for this turn (e.g. "2023-05-08"), when the host knows
+   * the turn's wall-clock time. Forwarded to extraction so relative dates can be
+   * resolved to occurred_on. Optional; absent means no anchor and no date guess.
+   */
+  timestamp?: string;
 }
 
 /** The two recall segments core produces. */

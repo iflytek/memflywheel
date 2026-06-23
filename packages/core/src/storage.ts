@@ -104,6 +104,11 @@ export async function writeMemoryDocument(
     created_at: createdAt,
     updated_at: now,
   };
+  // Preserve the model-authored event date. occurred_on is the EVENT time, set
+  // by the extractor when a fact is bound to a resolvable date — distinct from
+  // the write-time created_at/updated_at above. Dropping it here would silently
+  // discard the only structured temporal field.
+  if (doc.frontmatter.occurred_on) frontmatter.occurred_on = doc.frontmatter.occurred_on;
 
   const serialized = serializeDocument({ frontmatter, body: safeBody });
   await atomicWriteFile(targetPath, serialized);

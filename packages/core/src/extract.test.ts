@@ -59,6 +59,16 @@ test("cleanMessages strips system-reminder + prelude from user turns", () => {
   assert.equal(cleaned[1]!.role, "assistant");
 });
 
+test("cleanMessages preserves the per-turn timestamp anchor", () => {
+  const cleaned = cleanMessages([
+    { role: "user", text: "I went to the support group yesterday", timestamp: "2023-05-08" },
+    { role: "assistant", text: "Got it", timestamp: "2023-05-08" },
+  ]);
+  assert.equal(cleaned.length, 2);
+  assert.equal(cleaned[0]!.timestamp, "2023-05-08");
+  assert.equal(cleaned[1]!.timestamp, "2023-05-08");
+});
+
 test("relocateRootFiles moves stray root .md into typed dir", async () => {
   const root = await makeRoot();
   try {
