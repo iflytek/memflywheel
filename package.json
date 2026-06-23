@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.5.0",
+    "typebox": "^1.2.19",
     "typescript": "^5.5.4"
   }
 }
