@@ -18,6 +18,7 @@ export type Dispose = () => void;
 
 export interface HostPromptBuildEvent {
   sessionId?: string;
+  query?: string;
 }
 
 export interface HostPromptBuildResult {

@@ -17,7 +17,7 @@ import { atomicWriteFile } from "./atomic.js";
 import { isSingleLineValue, parseDocument, serializeDocument } from "./frontmatter.js";
 import { syncMemoryIndex } from "./index-file.js";
 import { memoryTypeForRelativePath, normalizeRelativePath, resolveRelativePath } from "./paths.js";
-import { scanMemoryFiles } from "./scan.js";
+import { scanAllMemoryFiles } from "./scan.js";
 import { type StorageContext, writeMemoryDocument } from "./storage.js";
 import { type MemoryType, RESERVED_MEMORY_FILES } from "./types.js";
 
@@ -50,7 +50,14 @@ export interface FileToolContext {
   audit?: AuditLogger;
   mode?: "memory" | "files";
   refuseSecrets?: boolean;
+  sourceRef?: MemorySourceRef;
   afterMutation?: () => Promise<void>;
+}
+
+export interface MemorySourceRef {
+  relativePath: string;
+  startLine: number;
+  endLine: number;
 }
 
 export interface FileTool {
@@ -147,6 +154,32 @@ function parseMemoryWritePath(relativePath: string): { type: MemoryType; filenam
   return { type, filename };
 }
 
+function formatSourceRef(ref: MemorySourceRef): string {
+  return `${ref.relativePath}#L${ref.startLine}-L${ref.endLine}`;
+}
+
+function validateRetrievalTerms(terms: string[] | undefined): void {
+  if (terms === undefined) return;
+  if (!Array.isArray(terms)) throw new Error("frontmatter.retrieval_terms must be a YAML string list");
+  if (terms.length > 12) throw new Error("frontmatter.retrieval_terms must contain at most 12 items");
+  for (const term of terms) {
+    if (!term || !isSingleLineValue(term) || term.length > 80) {
+      throw new Error("frontmatter.retrieval_terms items must be non-empty single-line values up to 80 chars");
+    }
+  }
+}
+
+function appendSourceRef(body: string, ref: MemorySourceRef | undefined): string {
+  if (!ref) return body;
+  const sourceLine = `- ${formatSourceRef(ref)}`;
+  const trimmed = body.trimEnd();
+  if (trimmed.includes(sourceLine)) return trimmed;
+  if (/(^|\n)## Sources\n/.test(trimmed)) {
+    return `${trimmed}\n${sourceLine}`;
+  }
+  return `${trimmed}\n\n## Sources\n\n${sourceLine}`;
+}
+
 async function writeByPolicy(toolCtx: FileToolContext, rawPath: string, content: string): Promise<FileToolResult> {
   const { relativePath, absolutePath } = resolveUnderRoot(toolCtx.root, rawPath, "filePath");
   if (toolCtx.mode === "memory") {
@@ -162,12 +195,17 @@ async function writeByPolicy(toolCtx: FileToolContext, rawPath: string, content:
     if (!isSingleLineValue(doc.frontmatter.description ?? "")) {
       throw new Error("frontmatter.description must be single-line");
     }
+    validateRetrievalTerms(doc.frontmatter.retrieval_terms);
     if (!doc.body.trim()) throw new Error("memory body is empty");
+    const docWithSource = {
+      ...doc,
+      body: appendSourceRef(doc.body, toolCtx.sourceRef),
+    };
 
     const written = await writeMemoryDocument(storageCtx(toolCtx), {
       type,
       filename,
-      doc,
+      doc: docWithSource,
       refuseSecrets: toolCtx.refuseSecrets,
     });
     await afterMutation(toolCtx);
@@ -562,14 +600,16 @@ export function fileToolMap(tools: FileTool[]): Map<string, FileTool> {
 export function createMemoryFileToolContext(input: {
   ctx: StorageContext;
   refuseSecrets?: boolean;
+  sourceRef?: MemorySourceRef;
 }): FileToolContext {
   return {
     root: input.ctx.root,
     audit: input.ctx.audit,
     mode: "memory",
     refuseSecrets: input.refuseSecrets,
+    sourceRef: input.sourceRef,
     afterMutation: async () => {
-      const entries = await scanMemoryFiles(input.ctx.root);
+      const entries = await scanAllMemoryFiles(input.ctx.root);
       await syncMemoryIndex(input.ctx.root, entries);
     },
   };

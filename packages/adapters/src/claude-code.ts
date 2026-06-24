@@ -42,6 +42,10 @@ export const claudeCodeAdapter: HostAdapter = makeAdapter({
     "Hook-driven recall wiring marker until Claude Code exposes a host-owned canonical model port.",
   translators: {
     sessionId: (payload) => readString(payload, "session_id") || readString(payload, "sessionId"),
+    promptQuery: (payload) =>
+      readString(payload, "prompt") ||
+      readString(payload, "query") ||
+      readString(payload, "message"),
     turnEnd: (payload) => ({
       sessionId: readString(payload, "session_id") || readString(payload, "sessionId"),
       messages: normalizeMessages((payload as { messages?: unknown } | undefined)?.messages),

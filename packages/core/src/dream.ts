@@ -28,7 +28,7 @@ import {
   deleteMemoryDocument,
 } from "./storage.js";
 import { normalizeRelativePath, ensureMemoryDir } from "./paths.js";
-import { scanMemoryFiles, formatManifest } from "./scan.js";
+import { scanAllMemoryFiles, scanMemoryFiles, formatManifest } from "./scan.js";
 import { syncMemoryIndex, readMemoryIndex } from "./index-file.js";
 import { buildHealthFindings, buildTypeReviewPacket, type HealthFinding, type TypeReviewItem } from "./health.js";
 import { relocateRootFiles } from "./extract.js";
@@ -174,8 +174,7 @@ export async function applyDream(opts: {
   });
 
   await relocateRootFiles(ctx);
-  const after = await scanMemoryFiles(ctx.root);
-  await syncMemoryIndex(ctx.root, after);
+  await syncMemoryIndex(ctx.root, await scanAllMemoryFiles(ctx.root));
 
   return result;
 }
@@ -263,8 +262,7 @@ export async function runDreamSession(opts: RunDreamSessionOptions): Promise<Dre
     });
 
     await relocateRootFiles(ctx);
-    const after = await scanMemoryFiles(ctx.root);
-    await syncMemoryIndex(ctx.root, after);
+    await syncMemoryIndex(ctx.root, await scanAllMemoryFiles(ctx.root));
 
     // Advance the gate ONLY on a successful pass. A runner-failed pass leaves the
     // gate where it was, so the next idle tick retries promptly instead of being

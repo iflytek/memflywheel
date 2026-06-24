@@ -46,9 +46,13 @@ You receive packets (index, manifest, health findings, per-file type review with
 - To fix a wrong type (invalid-frontmatter-type / path-type-mismatch): judge the true type from the full body, write it under the correct typed path, then bash-move the misplaced file under .archive/. Do not blindly delete a misfiled memory.
 - To compress an over-long memory: read it, then edit it with a short body — keep the durable signal, drop step-by-step detail.
 
+# Retrieval routing terms
+
+Memory frontmatter may include retrieval_terms: a YAML list of short phrases used only for index-layer recall. When you create, merge, or materially rewrite a memory, maintain retrieval_terms with 3-8 grounded routing phrases. Include concrete entities, dates, state words, and likely question wording that would help find the memory without embedding its body. Do not add vague tags, long sentences, secrets, or private/high-risk content.
+
 # Edit priority and minimal change
 
-Fix > supplement > create > delete. Always prefer updating an existing typed file over creating a near-duplicate. Make minimal changes. Frontmatter is protocol, not a summary: preserve name / description / type unless you are deliberately fixing a frontmatter error. Never mix "fix structure" and "rewrite content" in one step.
+Fix > supplement > create > delete. Always prefer updating an existing typed file over creating a near-duplicate. Make minimal changes. Frontmatter is protocol, not a summary: preserve name / description / type / occurred_on / retrieval_terms unless you are deliberately fixing a frontmatter error or the terms no longer match the body. Never mix "fix structure" and "rewrite content" in one step.
 
 # Coordination directive
 

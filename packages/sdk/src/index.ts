@@ -33,6 +33,7 @@ import {
   type DreamAgentRunner,
   type DreamCoordination,
   type BuildContextResult,
+  type MemoryIndexRetrievalOptions,
   ExtractionResult,
   getMemoryRoot,
   ensureMemoryDir,
@@ -51,7 +52,6 @@ import {
   buildMemoryInstructionPrompt,
   archiveMemoryDocument,
   syncMemoryIndex,
-  scanMemoryFiles,
   deriveMemoryFilename,
 } from "@memscribe/core";
 
@@ -82,6 +82,8 @@ export type {
   MemoryEntry,
   MemoryType,
   BuildContextResult,
+  EmbeddingProvider,
+  MemoryIndexRetrievalOptions,
 } from "@memscribe/core";
 export {
   ExtractionResult,
@@ -102,8 +104,11 @@ export {
   type CanonicalModelResponse,
   type CanonicalModelCompletion,
   type CanonicalModelComplete,
+  type CanonicalEmbeddingProvider,
   type OpenAIChatCompletionsModelConfig,
+  type OpenAIEmbeddingsModelConfig,
   createOpenAIChatCompletionsModel,
+  createOpenAIEmbeddingsModel,
 } from "@memscribe/model";
 
 // Runtime assembly layer: the extraction & dream subagents over the canonical
@@ -208,6 +213,11 @@ export interface MemScribeBuildContextResult extends BuildContextResult {
   skillPreludePrompt?: string;
 }
 
+export interface PromptBuildInput {
+  sessionId?: string;
+  query?: string;
+}
+
 /** Configuration for a memory scribe. The host supplies the LLM injection points. */
 export interface MemScribeConfig {
   /** Override the memory root. Falls back to MEMSCRIBE_HOME / OS data dir. */
@@ -243,6 +253,8 @@ export interface MemScribeConfig {
   skillPreludeBuilder?: SkillPreludeBuilder;
   /** Optional turn-end learning loop. When set, onTurnEnd runs extraction -> skill -> dream. */
   learningLoop?: MemScribeLearningLoopConfig;
+  /** Optional MEMORY.md index-layer hybrid retrieval. Host still owns the embedding provider. */
+  memoryIndexRetrieval?: MemoryIndexRetrievalOptions;
 }
 
 /** What a single session collects between session-start and turn-ends. */
@@ -359,9 +371,9 @@ export interface MemScribe {
   /**
    * Host is assembling the prompt. Returns the two recall segments:
    *  - systemPrompt: STABLE memory rules (cache-friendly prefix)
-   *  - preludePrompt: DYNAMIC full MEMORY.md index wrapped in <system-reminder>
+   *  - preludePrompt: DYNAMIC index cues wrapped in <system-reminder>
    */
-  onPromptBuild(sessionId?: string): Promise<MemScribeBuildContextResult>;
+  onPromptBuild(input?: PromptBuildInput): Promise<MemScribeBuildContextResult>;
   /**
    * A turn finished. The host passes the turn's user+assistant messages; the SDK
    * appends them to session state and runs after-turn extraction via the
@@ -384,7 +396,7 @@ export interface MemScribe {
 
   // ---- Explicit host operations ----
 
-  /** Return the full-index prelude and stable memory rules. */
+  /** Return the default index prelude and stable memory rules. */
   context(): Promise<MemScribeBuildContextResult>;
   /** Explicit, validated memory write (under lock, syncs index). */
   save(options: SaveOptions): Promise<ExtractionResult>;
@@ -415,6 +427,7 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
   const skillRecall = config.skillRecall;
   const skillPreludeBuilder = config.skillPreludeBuilder ?? buildDefaultSkillPrelude;
   const learningLoop = config.learningLoop;
+  const memoryIndexRetrieval = config.memoryIndexRetrieval;
 
   const sessions = new Map<string, SessionState>();
   const lastSkillEvolutionTurn = new Map<string, number>();
@@ -493,11 +506,16 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
     };
   }
 
-  async function buildPromptContext(sessionId?: string): Promise<MemScribeBuildContextResult> {
-    const memoryContext = await buildContext({ root, enabled });
+  async function buildPromptContext(input?: PromptBuildInput): Promise<MemScribeBuildContextResult> {
+    const memoryContext = await buildContext({
+      root,
+      enabled,
+      query: input?.query,
+      indexRetrieval: memoryIndexRetrieval,
+    });
     if (!enabled || !skillRecall) return memoryContext;
 
-    const packet = await skillRecall({ sessionId });
+    const packet = await skillRecall({ sessionId: input?.sessionId });
     const skillPreludePrompt = skillPreludeBuilder(packet);
     if (!skillPreludePrompt) return { ...memoryContext, skillPreludePrompt: "" };
 
@@ -593,8 +611,8 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
       ensureSession(sessionId);
     },
 
-    async onPromptBuild(sessionId?: string): Promise<MemScribeBuildContextResult> {
-      return buildPromptContext(sessionId);
+    async onPromptBuild(input?: PromptBuildInput): Promise<MemScribeBuildContextResult> {
+      return buildPromptContext(input);
     },
 
     async onTurnEnd(
@@ -663,7 +681,7 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
           toolCtx,
         );
         if (result.ok && result.changed) changed.push(...result.changed);
-        await syncMemoryIndex(root, await scanMemoryFiles(root));
+        await syncMemoryIndex(root);
         return changed.length > 0 ? ExtractionResult.Completed : ExtractionResult.Skipped;
       } finally {
         await releaseLock(root);

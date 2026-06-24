@@ -54,6 +54,10 @@ export const hermesAdapter: HostAdapter = makeAdapter({
       readString(payload, "session_id") ||
       readString(payload, "conversationId") ||
       readString(payload, "sessionId"),
+    promptQuery: (payload) =>
+      readString(payload, "user_message") ||
+      readString(payload, "prompt") ||
+      readString(payload, "query"),
     turnEnd: (payload) => {
       const sessionId =
         readString(payload, "session_id") ||

@@ -52,22 +52,32 @@ Typed memory files must live directly under identity/, preference/, style/, work
 type: preference
 name: Drinks
 description: Preferred drinks
+retrieval_terms:
+  - beverage preference
+  - green tea
+  - iced coffee
 ---
 
 The user prefers green tea and iced coffee.
 
-Frontmatter keys are type, name, description (always), plus the OPTIONAL occurred_on event-date line for a fact bound to a specific date (see "Time anchoring"; omit it for undated facts). A dated memory adds that one line:
+Frontmatter keys are type, name, description, retrieval_terms (always for new or updated memories), plus the OPTIONAL occurred_on event-date line for a fact bound to a specific date (see "Time anchoring"; omit it for undated facts). A dated memory adds that one line:
 
 ---
 type: context
 name: Team Reorg
 description: When the user's team merged into Infra
 occurred_on: 2024-11-05
+retrieval_terms:
+  - team reorg
+  - Infra org
+  - merged team
 ---
 
 The user's team merged into the Infra org on 2024-11-05.
 
-Typical flow: glob or grep to locate existing memories → read the one you intend to refine → write a new typed Markdown file or edit an existing same-topic file. Prefer few, high-value writes — one fact per call, and do not write more than ~3 memories per round.
+Path contract: never use absolute paths; never prefix paths with memory/; never use event/ or any directory outside the six valid types; never write .txt or nested files. The frontmatter type must match the first path segment exactly, for example context/foo.md must contain type: context.
+
+Typical flow: glob or grep to locate existing memories → read the one you intend to refine → write a new typed Markdown file or edit an existing same-topic file. Prefer few, high-value writes — one fact per call, and do not write more than ~3 memories per extraction pass.
 
 CRITICAL — read before you update: before edit or overwrite, you MUST read the target first and build the new body from its real current content. For list-type preferences (e.g. favorite drinks, tools, shortcuts), APPEND the new item to the existing body — never overwrite it and drop what was already there.
 
@@ -107,6 +117,20 @@ When the user says "remember this", "don't forget", "from now on", "do it this w
 
 Each memory is a single fact, independently understandable in one sentence. Prefer few, high-value writes; do not write more than ~3 memories per round. Fewer is better.
 
+# Retrieval routing terms
+
+Every new or updated memory MUST include retrieval_terms: a YAML list of 3-8 short routing phrases that help future index-layer recall find this memory without embedding the full body. These are NOT a second body and NOT generic tags.
+
+Good retrieval_terms:
+- concrete nouns, entities, dates, relationship/state words, user likely question wording.
+- terms that are grounded in the fact itself or the user's plausible future phrasing.
+- short phrases like "relationship status", "single parent", "release PR", "support group", "2023-05-07".
+
+Bad retrieval_terms:
+- vague words like "important", "misc", "note", "recent".
+- sensitive/private data, secrets, or anything from the High-risk block.
+- long sentences copied from the body.
+
 # Prohibited content (ignore completely)
 
 - One-time questions, one-time confirmations, temporary needs, the current task.
@@ -145,6 +169,8 @@ When you decide a fact is worth remembering AND that fact is tied to a moment in
 - An absolute date stated in the text -> write it directly.
 - This holds EVEN WHEN you generalize the event into a stable identity/state memory. "Joined as tech lead two days ago" becomes a stable role memory that STILL carries occurred_on = the join date. Generalizing a fact never means dropping its date — fold the date into the same memory.
 
+When the source used a relative or natural-language time phrase, preserve that original phrase in the body alongside the resolved date. Example: write "the week before 9 June 2023, resolved to 2023-06-02" in the body, while frontmatter carries "occurred_on: 2023-06-02". Do not replace the natural wording with only the ISO date.
+
 Never guess: with no anchor in scope and no absolute date in the text, OMIT occurred_on and keep the wording verbatim. A dateless "recently" / "currently" on its own stays noise (see Prohibited content); the only thing that turns it into signal is a resolvable date.
 
 The decision bar is unchanged (ownership, long-term stability, reuse value). occurred_on changes exactly one thing: when a worth-remembering fact has a resolvable date, that date is preserved on the memory instead of discarded.
@@ -162,7 +188,34 @@ The user migrated the primary database from MySQL to Postgres on 2025-03-14.
 
 # Body shape
 
-The body of each memory is 1-4 natural-language sentences (identity may be slightly longer); never a numbered list, checklist, template, or SOP. name and description are single-line.
+The body of each memory is a compact but self-sufficient natural-language fact record: usually 2-5 sentences, identity may be slightly longer. It must be answerable by itself after the file is read: preserve the exact people, dates, places, objects, status words, field names, certifications, quantities, and other answer-bearing nouns. Include the concrete who/what/when/object details that made the fact worth remembering; do not replace specifics with broad categories (for example, keep "Psychology and counseling certification", not only "mental health"). Do not paste raw transcripts, long tool outputs, numbered lists, checklists, templates, or SOPs. name and description are single-line; retrieval_terms is a YAML list.
+
+Good full memory example for an image-backed personal fact:
+
+---
+type: ambient
+name: Caroline Flower Drawing
+description: Caroline's own flower drawing photo
+occurred_on: 2023-08-25
+retrieval_terms:
+  - Caroline drawing
+  - flower drawing
+  - own drawing
+  - photo of flowers
+  - 2023-08-25
+---
+
+Caroline shared a photo of her own drawing of a bunch of flowers on a table on 2023-08-25. The object in the image was a flower drawing she made herself, not a generic picture she found. She told Melanie that drawing flowers is one of her favorite drawing subjects.
+
+Why this is good: who = Caroline; what = shared a photo and described her drawing habit; when = 2023-08-25; object = her own drawing of flowers on a table.
+
+Too thin:
+
+Caroline shared a photo of a drawing of flowers on a table.
+
+Too raw:
+
+Caroline (D12:9): Here's my drawing... [image caption: ...] Assistant: Looks nice...
 
 # Worked examples
 

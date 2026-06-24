@@ -8,9 +8,9 @@
 ## 0. Guiding Constraints (non-negotiable)
 
 - **Zero runtime dependencies.** Node stdlib + TypeScript only. No npm runtime deps, ever. Frontmatter parsing, atomic writes, locking — all hand-rolled on `node:fs/promises`, `node:path`, `node:crypto`.
-- **Core never calls an LLM.** Extraction and dream LLM steps are **pluggable injection points** (function contracts) supplied by the host/SDK. Core owns timing, locking, atomic writes, index sync, cursor/relocation, audit.
-- **File-backed storage.** Each memory = Markdown body + YAML frontmatter (`name` / `description` / `type`). Markdown is the source of truth; `MEMORY.md` is a rebuildable derived index.
-- **Full-index recall, no retrieval.** The whole index is injected each turn; the main model self-selects and decides whether to `Read` a body. No top-k, no scoring, no BM25, no entity index, no embeddings, no vectors.
+- **Core never owns model/auth.** Extraction and dream LLM steps are **pluggable injection points** (function contracts) supplied by the host/SDK. Optional index retrieval consumes a host-supplied embedding provider. Core owns timing, locking, atomic writes, index sync, cursor/relocation, audit.
+- **File-backed storage.** Each memory = Markdown body + tight YAML frontmatter (`name` / `description` / `type` / optional `occurred_on` / `retrieval_terms`). Markdown is the source of truth; `MEMORY.md` is a rebuildable derived index.
+- **Progressive index recall.** Small stores inject the whole index. Large stores may use host-supplied embedding + BM25 + RRF over `MEMORY.md` index lines only, then inject top index cues plus a `MEMORY.md` fallback. Memory bodies are not embedded or searched.
 - **No scope.** A single global store only — no per-user/project/workspace memory directory (see §13).
 - **Style:** double quotes, 2-space indent, named exports only, `async/await`, `node:fs/promises`. No AI/assistant attribution anywhere.
 - **Tests:** `node:test` + `node:assert`, compiled by `tsc` then run via `node --test`.
@@ -118,6 +118,8 @@ export interface MemoryFrontmatter {
   name: string;          // required, unique display name
   description: string;   // optional in file; normalized to "" when absent
   type: MemoryType;      // required, must be one of the six
+  occurred_on?: string;  // optional event date, YYYY-MM-DD
+  retrieval_terms?: string[]; // optional old files; required for new/updated extraction writes
   created_at?: string;   // ISO 8601, minimal-necessary
   updated_at?: string;   // ISO 8601, minimal-necessary
 }
@@ -155,9 +157,9 @@ core/src/
 ├── paths.ts            # root resolution, typed dirs, filename validation
 ├── frontmatter.ts      # parse / serialize YAML frontmatter (no deps)
 ├── storage.ts          # read/write/delete a single memory doc (atomic)
-├── scan.ts             # scanMemoryFiles, readAllMemoryContents, formatManifest
+├── scan.ts             # scanMemoryFiles, scanAllMemoryFiles, readAllMemoryContents, formatManifest
 ├── index-file.ts       # MEMORY.md: build / truncate / aging / sync
-├── recall.ts           # buildContext: stable rules + full-index prelude
+├── recall.ts           # buildContext: stable rules + full/retrieved index prelude
 ├── privacy.ts          # <private> redaction + secret scanning
 ├── lock.ts             # per-root write lock (stale detection)
 ├── atomic.ts           # temp-file + rename atomic write
@@ -315,13 +317,13 @@ export function readMemoryIndex(root: string): Promise<string>;
 
 ### 3.6 `recall.ts` — `buildContext` (the two-segment injection)
 
-This is MemScribe's recall path: a knowledge-layer build that assembles the two injection segments. **Full-index, no retrieval.**
+This is MemScribe's recall path: a knowledge-layer build that assembles the two injection segments. Small indexes are injected whole; larger indexes can use optional index-layer hybrid retrieval.
 
 ```ts
 export interface BuildContextResult {
   // Segment 1: STABLE memory rules → host puts in systemPrompt (cache-friendly prefix).
   systemPrompt: string;
-  // Segment 2: DYNAMIC prelude = full MEMORY.md index, wrapped in <system-reminder>.
+  // Segment 2: DYNAMIC prelude = full or retrieved MEMORY.md index cues, wrapped in <system-reminder>.
   // Host injects this immediately before the user message, every turn.
   preludePrompt: string;
   enabled: boolean;
@@ -831,6 +833,10 @@ Memory file = frontmatter + body:
 name: 用户称呼
 description: 用户偏好的称呼
 type: identity
+retrieval_terms:
+  - 用户称呼
+  - preferred name
+  - address user
 created_at: 2026-06-15T10:30:00.000Z
 updated_at: 2026-06-15T10:30:00.000Z
 ---
@@ -863,7 +869,7 @@ Order on any inbound body (a subagent tool write or an explicit save):
 [turn N: prompt build]
   scribe.onPromptBuild → recall.buildContext
      scan → syncIndex → readIndex → truncate → aging
-     ⇒ { systemPrompt(rules), preludePrompt(<system-reminder> full index) }
+     ⇒ { systemPrompt(rules), preludePrompt(<system-reminder> index cues) }
   host injects both → model self-selects, optionally Reads a body
 
 [turn N: done]  (async, never blocks)
@@ -889,10 +895,10 @@ Order on any inbound body (a subagent tool write or an explicit save):
 These are **out of scope by design** — reviewers and future contributors must not reintroduce them:
 
 - **No scope / multi-tenancy.** No user/project/workspace tiers. Single global store. (There is no `getWorkspaceMemoryDir`; MemScribe is deliberately a single global store.)
-- **No retrieval of any kind.** No BM25, no lexical/keyword search, no TF-IDF.
+- **No memory-body retrieval.** Do not embed, rank, or search memory bodies. Optional retrieval is limited to `MEMORY.md` index lines.
 - **No entity index / knowledge graph.**
-- **No embeddings / vectors / similarity / top-k / re-ranking / scoring.** Recall is full-index injection + LLM self-selection, period.
-- **No extra frontmatter fields.** No `scope`, `origin`, `source_ref`, `confidence`, `status`, `agent`, `project`, `session`. Only `name` / `description` / `type` (+ `created_at` / `updated_at`).
+- **No embedded default model / reranker.** Embedding providers are host-supplied, apply only to index lines, and are skipped when the full index fits.
+- **No open-ended frontmatter fields.** No `scope`, `origin`, `source_ref`, `confidence`, `status`, `agent`, `project`, `session`. Only `name` / `description` / `type`, optional `occurred_on` / `retrieval_terms`, and minimal `created_at` / `updated_at`.
 - **No LLM calls inside core.** Extraction and dream semantics are pluggable injection points; core stays deterministic.
 - **No runtime npm dependencies.** No YAML lib, no arg-parser lib, no protocol SDK runtime dep — hand-roll on Node stdlib.
 - **MEMORY.md is never LLM-authored.** It is derived from scan and rebuilt; the model never edits it.
@@ -901,7 +907,7 @@ These are **out of scope by design** — reviewers and future contributors must 
 
 ## 11. Design constants and portability notes
 
-- `parseMemoryFrontmatter` requires `name` + `type` only; `description` defaults to `""` — reflected in `frontmatter.ts` / `MemoryEntry`.
+- `parseMemoryFrontmatter` requires `name` + `type` only; `description` defaults to `""`; `retrieval_terms` is the only supported YAML list field — reflected in `frontmatter.ts` / `MemoryEntry`.
 - Locked constants: `MAX_SCAN_ENTRIES=200`, `FRONTMATTER_READ_BYTES=2048`, `INDEX_MAX_LINES=200`, `INDEX_MAX_BYTES=25000`, aging `context`/`ambient = 30d` (others `null`), `LOCK_TIMEOUT_MS=180000`, `EXTRACTION_CONTEXT_WINDOW_SIZE=6`, `EXTRACTION_MAX_MESSAGES=40`, dream `minHours=24` / `minSessions=5`.
 - Two-segment injection (`buildMemoryInstructionPrompt` stable rules + `buildMemoryIndexPrompt` `<system-reminder>` prelude) lives in `recall.ts`.
 - No desktop-framework coupling: root resolves via the `MEMSCRIBE_HOME` env or an OS data dir helper in `paths.ts` (pure Node, fully portable). The index uses relative paths.

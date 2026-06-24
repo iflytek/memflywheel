@@ -1,7 +1,7 @@
 # MemScribe
 
 A clean, minimal, file-backed long-term memory subsystem for LLM agents. MemScribe packages a
-file-native long-term memory design — a single file-backed store, full-index recall, and an
+file-native long-term memory design — a single file-backed store, progressive index recall, and an
 LLM-driven extraction and consolidation flow — as a dependency-free TypeScript library with
 SDK and host adapter entry points. It ships a high-quality **default extractor** so that giving it
 one API key is enough to start writing memory, plus direct integrations for selected agent
@@ -10,14 +10,19 @@ hosts.
 ## What MemScribe is
 
 - **File-backed.** Each memory is a Markdown body plus a small YAML frontmatter
-  (`name` / `description` / `type`). The Markdown files are the source of truth.
+  (`name` / `description` / `type` / optional `occurred_on` / `retrieval_terms`).
+  The Markdown files are the source of truth.
   `MEMORY.md` is a derived, rebuildable index — never hand-edited.
-- **Full-index recall, no retrieval.** Every turn, the *whole* index is injected and the
-  main model decides for itself whether a given memory is relevant and whether to `Read`
-  its body. There is no per-turn search.
+- **Progressive index recall.** Small stores inject the whole `MEMORY.md` index. Larger
+  stores can use host-supplied embedding + BM25 + RRF over index lines only, including
+  `retrieval_terms` routing phrases, then inject the top paths plus a `MEMORY.md` fallback.
+  Memory bodies are never embedded or searched.
+- **Progressive drill-down.** Extraction-written memories include `## Sources` body refs to
+  cleaned execution-trace JSONL under `.memscribe/sources/`, so a host agent can read exact
+  supporting details only after it has selected a relevant memory.
 - **Two-segment injection.** Stable memory rules go into the system prompt (cache-friendly
-  prefix); the full `MEMORY.md` index goes into a `<system-reminder>` prelude that is
-  re-injected each turn.
+  prefix); the current index cues go into a `<system-reminder>` prelude that is re-injected
+  each turn.
 - **Six memory types.** `identity` / `preference` / `style` / `workflow` / `context` /
   `ambient`. `context` and `ambient` age after 30 days
   (a "suggest verification" hint is appended in the index); the rest are permanent.
@@ -31,10 +36,10 @@ hosts.
   model channel and assembles the default prompt, the model loop, and the tools into a
   ready-to-run subagent that writes memory files itself. Dream consolidation is the same
   kind of tool-calling subagent, shipped via `createDreamAgentRunner({ model })`.
-- **LLM steps stay pluggable.** The core never calls an LLM; the model-driven steps enter
-  only through injected `ExtractionAgentRunner` and `DreamAgentRunner` contracts — both
-  tool-calling subagents over a single canonical model channel. Supply a host-owned model
-  port, or use one of the provider mappers in `@memscribe/model`.
+- **Model steps stay pluggable.** The core never owns model transport, auth, or provider
+  wire shape. Extraction and dream enter through injected runners; optional index retrieval
+  consumes a host-supplied embedding provider. Supply host-owned model ports, or use the
+  provider mappers in `@memscribe/model`.
 - **Host-adapter-first.** MemScribe is meant to be wired into an existing agent runtime
   through SDK lifecycle hooks and host adapters, not to be a standalone product.
 - **Skills are host-executed.** MemScribe can store, validate, route, and evolve learned
@@ -42,14 +47,15 @@ hosts.
 
 ## What MemScribe is not
 
-- **No embeddings / vectors / similarity search.** Recall never computes a distance.
-- **No top-k, no scoring, no BM25, no entity index.** The index is injected whole; the
-  model self-selects.
+- **Not a vector database.** Optional retrieval ranks `MEMORY.md` index lines only; memory
+  bodies are not embedded, chunked, or searched.
+- **No built-in embedding model / reranker / entity graph.** Providers are host-supplied,
+  and full-index injection is used when the index fits.
 - **No scope.** MemScribe is a single global store. There is no user / project / workspace
   tiering.
-- **No extra frontmatter fields.** Only `name` / `description` / `type` (plus minimal
-  `created_at` / `updated_at`). No `origin` / `source_ref` / `confidence` / `status` /
-  `agent` / `project` / `session`.
+- **Tight frontmatter.** Only `name` / `description` / `type`, optional `occurred_on`,
+  `retrieval_terms`, and minimal `created_at` / `updated_at`. No `origin` / `source_ref` /
+  `confidence` / `status` / `agent` / `project` / `session`.
 - **No MemScribe-specific read/search wrapper.** Recall context is delivered through the
   prompt; the host's own filesystem tools read any selected memory body.
 - **No standalone runtime surface.** Learned-skill recall and evolution are enabled only
@@ -114,7 +120,7 @@ hosts are documented by the adapter package and examples.
 - **Zero runtime dependencies.** Node stdlib + TypeScript only. Frontmatter parsing,
   atomic writes, and locking are hand-rolled on `node:fs/promises`, `node:path`,
   `node:crypto`.
-- **The core never calls an LLM.**
+- **The core never owns model/auth.**
 - TypeScript-first, pure Node, pnpm workspace monorepo. Tests use `node:test` /
   `node:assert`, compiled by `tsc` then run via `node --test`.
 
@@ -122,7 +128,7 @@ hosts are documented by the adapter package and examples.
 
 - [`docs/architecture.md`](docs/architecture.md) — storage, recall, extraction, dream.
 - [`docs/memory-schema.md`](docs/memory-schema.md) — frontmatter, the six types, aging.
-- [`docs/recall.md`](docs/recall.md) — full-index injection and model self-selection.
+- [`docs/recall.md`](docs/recall.md) — full-index injection, optional index-layer hybrid retrieval, and model self-selection.
 - [`docs/extraction.md`](docs/extraction.md) — the pluggable extractor and the write path.
 - [`docs/skill-learning-loop-walkthrough.md`](docs/skill-learning-loop-walkthrough.md) — current skill learning loop, file-diff coordination, and memory feedback path.
 

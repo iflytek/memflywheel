@@ -18,6 +18,7 @@ import {
   type ExtractionMessage,
   type MemScribe as SdkMemScribe,
   type MemScribeLearningLoopConfig,
+  type MemoryIndexRetrievalOptions,
   type SessionState,
   type SkillPreludeBuilder,
   type SkillRecallProvider,
@@ -48,6 +49,7 @@ import type { CanonicalModelMessage } from "@memscribe/model";
  */
 export type {
   MemScribeLearningLoopConfig,
+  MemoryIndexRetrievalOptions,
   SessionState,
   SkillPreludeBuilder,
   SkillRecallProvider,
@@ -125,6 +127,8 @@ export interface MemScribeHarnessRuntimeOptions {
   skillPreludeBuilder?: SkillPreludeBuilder;
   /** Optional turn-end learning loop. When set, onTurnEnd runs extraction -> skill -> dream. */
   learningLoop?: MemScribeLearningLoopConfig;
+  /** Optional MEMORY.md index-layer hybrid retrieval. Host owns embedding/auth. */
+  memoryIndexRetrieval?: MemoryIndexRetrievalOptions;
   /**
    * Opt-in learned-skill assembly. When set with `model`, the bridge creates a
    * file-native learned-skill store, recall provider, and
@@ -210,7 +214,7 @@ export function attachMemScribeToHostPort(
   const disposers: Array<() => void> = [];
   disposers.push(
     port.lifecycle.onPromptBuild(async (event) => {
-      const ctx = await scribe.onPromptBuild({ sessionId: event.sessionId ?? "default" });
+      const ctx = await scribe.onPromptBuild({ sessionId: event.sessionId ?? "default", query: event.query });
       return {
         systemPrompt: ctx.systemPrompt,
         preludePrompt: ctx.preludePrompt,
@@ -302,8 +306,8 @@ export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribeHarnessRuntimeAda
     async onSessionStart(input: { sessionId: string }): Promise<void> {
       await sdk.onSessionStart(input.sessionId);
     },
-    async onPromptBuild(input: { sessionId: string }): Promise<MemScribeContext> {
-      const ctx = await sdk.onPromptBuild(input.sessionId);
+    async onPromptBuild(input: { sessionId: string; query?: string }): Promise<MemScribeContext> {
+      const ctx = await sdk.onPromptBuild({ sessionId: input.sessionId, query: input.query });
       return {
         systemPrompt: ctx.systemPrompt,
         preludePrompt: ctx.preludePrompt,
@@ -343,6 +347,7 @@ export function createMemScribeHarnessRuntime(
     skillRecall,
     skillPreludeBuilder,
     learningLoop,
+    memoryIndexRetrieval,
     learnedSkills,
   } = options;
   const model = options.model ?? options.port?.model;
@@ -429,6 +434,7 @@ export function createMemScribeHarnessRuntime(
     skillRecall: sdkSkillRecall,
     skillPreludeBuilder,
     learningLoop: sdkLearningLoop,
+    memoryIndexRetrieval,
   });
   const scribe = adaptSdkMemScribe(sdk);
   const dispose = options.port ? attachMemScribeToHostPort(scribe, options.port) : () => undefined;

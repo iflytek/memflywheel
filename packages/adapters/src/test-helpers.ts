@@ -9,7 +9,7 @@ import type { HostRuntime, MemScribe, MemScribeContext, MemScribeMessage } from 
 export interface RecordingMemScribe extends MemScribe {
   readonly calls: {
     sessionStart: { sessionId: string }[];
-    promptBuild: { sessionId: string }[];
+    promptBuild: { sessionId: string; query?: string }[];
     turnEnd: { sessionId: string; messages: MemScribeMessage[] }[];
     sessionEnd: { sessionId: string }[];
     idle: ({ force?: boolean } | undefined)[];

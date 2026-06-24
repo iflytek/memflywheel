@@ -45,7 +45,7 @@ export interface MemScribeMessage {
 export interface MemScribeContext {
   /** STABLE memory rules — host merges into its systemPrompt (cache-friendly). */
   systemPrompt: string;
-  /** DYNAMIC full-index prelude, wrapped in <system-reminder>, injected per turn. */
+  /** DYNAMIC index prelude, wrapped in <system-reminder>, injected per turn. */
   preludePrompt: string;
   /** Optional learned-skill prelude appended by the SDK when skill recall is configured. */
   skillPreludePrompt?: string;
@@ -58,7 +58,7 @@ export interface MemScribeContext {
  */
 export interface MemScribe {
   onSessionStart(input: { sessionId: string }): Promise<void>;
-  onPromptBuild(input: { sessionId: string }): Promise<MemScribeContext>;
+  onPromptBuild(input: { sessionId: string; query?: string }): Promise<MemScribeContext>;
   onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<unknown>;
   onSessionEnd(input: { sessionId: string }): Promise<void>;
   onIdle(input?: { force?: boolean }): Promise<void>;
@@ -496,6 +496,8 @@ export interface HookTranslators {
   sessionId(payload: unknown): string;
   /** Pull a sessionId for prompt-build; defaults to `sessionId`. */
   promptSessionId?(payload: unknown): string;
+  /** Pull the current user request / task for index-layer retrieval. */
+  promptQuery?(payload: unknown): string | undefined;
   /** Pull (sessionId, messages) out of a turn-end payload. */
   turnEnd(payload: unknown): { sessionId: string; messages: MemScribeMessage[] };
   /** Pull a sessionId for session-end; defaults to `sessionId`. */
@@ -545,7 +547,8 @@ export function bindLifecycle(
   if (lifecycle.onPromptBuild) {
     subscribe(lifecycle.onPromptBuild.hostEvent, (payload) => {
       const sessionId = (translators.promptSessionId ?? translators.sessionId)(payload);
-      const result = scribe.onPromptBuild({ sessionId });
+      const query = translators.promptQuery?.(payload);
+      const result = scribe.onPromptBuild({ sessionId, query });
       // Hosts that need the context attach a `respond` callback to the payload.
       const respond = (payload as { respond?: (ctx: Promise<MemScribeContext>) => void } | undefined)?.respond;
       if (typeof respond === "function") respond(result);

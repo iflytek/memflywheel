@@ -19,7 +19,7 @@ test("attach binds each host event to its scribe hook (pi)", async () => {
   const dispose = piAdapter.attach(scribe, host);
 
   host.emit("session_start", { sessionId: "s1" });
-  host.emit("context", { sessionId: "s1", messages: [] });
+  host.emit("context", { sessionId: "s1", prompt: "how do I release this package?", messages: [] });
   host.emit("agent_end", {
     sessionId: "s1",
     messages: [
@@ -31,7 +31,7 @@ test("attach binds each host event to its scribe hook (pi)", async () => {
   await flush();
 
   assert.deepEqual(scribe.calls.sessionStart, [{ sessionId: "s1" }]);
-  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "s1" }]);
+  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "s1", query: "how do I release this package?" }]);
   assert.equal(scribe.calls.turnEnd.length, 1);
   assert.equal(scribe.calls.turnEnd[0]?.sessionId, "s1");
   assert.deepEqual(scribe.calls.turnEnd[0]?.messages, [
@@ -73,6 +73,7 @@ test("onPromptBuild result is delivered via a respond callback", async () => {
   let received: MemScribeContext | undefined;
   host.emit("UserPromptSubmit", {
     session_id: "abc",
+    prompt: "review this release",
     respond: (p: Promise<MemScribeContext>) => {
       void p.then((ctx) => {
         received = ctx;
@@ -81,7 +82,7 @@ test("onPromptBuild result is delivered via a respond callback", async () => {
   });
   await flush();
 
-  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "abc" }]);
+  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "abc", query: "review this release" }]);
   assert.ok(received);
   assert.equal(received!.systemPrompt, "RULES");
   assert.equal(received!.preludePrompt, "PRELUDE");

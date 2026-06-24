@@ -1,9 +1,9 @@
 /**
  * Domain types and constants for the MemScribe memory kernel.
  *
- * The persisted frontmatter carries only `name` / `description` / `type` (plus
- * minimal `created_at` / `updated_at`). The six memory categories are the
- * canonical VALID_MEMORY_TYPES.
+ * The persisted frontmatter carries `name` / `description` / `type`, optional
+ * retrieval routing terms, and minimal write/event timestamps. The six memory
+ * categories are the canonical VALID_MEMORY_TYPES.
  */
 
 export type MemoryType =
@@ -15,9 +15,9 @@ export type MemoryType =
   | "ambient";
 
 /**
- * Persisted YAML frontmatter. Beyond the four core fields only `occurred_on` is
- * allowed. (No scope / origin / source_ref / confidence / status / agent /
- * project / session.)
+ * Persisted YAML frontmatter. Beyond the core fields only `occurred_on` and
+ * `retrieval_terms` are allowed. (No scope / origin / source_ref / confidence /
+ * status / agent / project / session.)
  *
  * `created_at` / `updated_at` are WRITE times (when the memory was recorded).
  * `occurred_on` is the EVENT time — when the remembered fact actually happened —
@@ -32,6 +32,7 @@ export interface MemoryFrontmatter {
   created_at?: string;
   updated_at?: string;
   occurred_on?: string;
+  retrieval_terms?: string[];
 }
 
 /** A parsed memory file (frontmatter + body). */
@@ -47,6 +48,8 @@ export interface MemoryEntry {
   name: string;
   description: string;
   type: MemoryType;
+  occurredOn?: string;
+  retrievalTerms?: string[];
   mtime: number;
 }
 

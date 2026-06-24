@@ -16,6 +16,11 @@ test("default prompt covers the spec surface, tool contract, and is name-free", 
   }
   assert.doesNotMatch(p, /memory_(list|search|read|save|update|archive)/);
   assert.ok(/read before you update/i.test(p), "prompt has the read-before-update rule");
+  assert.ok(/retrieval_terms/i.test(p), "prompt requires retrieval routing terms");
+  assert.ok(/without embedding the full body/i.test(p), "prompt keeps body out of embedding");
+  assert.ok(/never use absolute paths/i.test(p), "prompt forbids absolute paths");
+  assert.ok(/never prefix paths with memory\//i.test(p), "prompt forbids memory/ prefix");
+  assert.ok(/never use event\//i.test(p), "prompt forbids invented event type");
   assert.ok(/high-risk/i.test(p));
   assert.ok(!/```json/.test(p), "prompt no longer asks for a JSON array");
   assert.ok(!new RegExp(["loo", "my"].join(""), "i").test(p), "prompt is name-free");

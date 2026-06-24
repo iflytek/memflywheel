@@ -1,23 +1,70 @@
 /**
- * Two-segment recall injection — MemScribe's clean equivalent of the reference
- * knowledge-layer build() recall path. Full-index, no retrieval.
+ * Two-segment recall injection.
  *
  * Segment 1 (systemPrompt): STABLE memory rules → cache-friendly prefix.
- * Segment 2 (preludePrompt): DYNAMIC full MEMORY.md index in <system-reminder>.
+ * Segment 2 (preludePrompt): DYNAMIC index cues in <system-reminder>.
  */
 
-import { scanMemoryFiles } from "./scan.js";
+import { scanAllMemoryFiles } from "./scan.js";
+import { stat } from "node:fs/promises";
 import {
   syncMemoryIndex,
   readMemoryIndex,
   truncateIndex,
   applyAgingHints,
+  INDEX_MAX_BYTES,
+  INDEX_MAX_LINES,
 } from "./index-file.js";
+import { resolveRelativePath } from "./paths.js";
+import {
+  type EmbeddingProvider,
+  buildMemoryIndexSearchCache,
+  buildRelevantMemoryIndexPrompt,
+  hybridSearchMemoryIndex,
+  parseMemoryIndexRecords,
+} from "./recall-index.js";
+
+export type { EmbeddingProvider } from "./recall-index.js";
 
 export interface BuildContextResult {
   systemPrompt: string;
   preludePrompt: string;
   enabled: boolean;
+}
+
+export type MemoryIndexRetrievalMode = "auto" | "off" | "required";
+
+export interface MemoryIndexRetrievalDiagnostic {
+  stage:
+    | "skip"
+    | "records"
+    | "cache-start"
+    | "cache-complete"
+    | "search-start"
+    | "search-complete"
+    | "fallback";
+  reason?: string;
+  mode?: MemoryIndexRetrievalMode;
+  records?: number;
+  selected?: number;
+  bytes?: number;
+  limit?: number;
+  minRecords?: number;
+  errorName?: string;
+  errorMessage?: string;
+  errorCauseName?: string;
+  errorCauseCode?: string;
+  errorCauseMessage?: string;
+}
+
+export interface MemoryIndexRetrievalOptions {
+  mode?: MemoryIndexRetrievalMode;
+  embeddingProvider?: EmbeddingProvider;
+  model?: string;
+  limit?: number;
+  minRecords?: number;
+  signal?: AbortSignal;
+  onDiagnostic?: (event: MemoryIndexRetrievalDiagnostic) => void;
 }
 
 /** Stable memory rules. Port of buildMemoryInstructionPrompt. */
@@ -36,6 +83,7 @@ export function buildMemoryInstructionPrompt(): string {
 - 当用户在请求解释、写作、推荐、实现、调试、review、命名或方案推进时，应优先命中 1-2 条最相关的 style、workflow、preference、context、ambient 记忆
 - 同类型记忆有多条时，优先读取与当前问题语义最接近的那 1-2 条，不要随便读取同类型但不相关的其他记忆
 - 只对命中的具体记忆文件使用 Read，不要先 Read 整个记忆目录来确认文件列表
+- 读取具体记忆文件后，如果正文信息不足以回答、问题涉及相对时间/日期推理/多个相似事件，且文件包含 ## Sources，应继续用 Read 读取引用的 .memscribe/sources/*.jsonl 行范围；例如 #L10-L18 对应 offset=10, limit=9
 - 不要自己构造、猜测或补全任何记忆文件名或路径
 - 不要用 Read 读取记忆目录本身
 - 除非最新可用记忆条目末尾明确提示内容已截断，否则不要再次 Read MEMORY.md
@@ -71,27 +119,132 @@ export function buildMemoryIndexPrompt(indexContent: string): string {
 /**
  * Deterministic recall pipeline (no LLM):
  *   scan → syncIndex → readIndex → truncate → aging
- *   → systemPrompt = rules, preludePrompt = <system-reminder> full index.
+ *   → systemPrompt = rules, preludePrompt = <system-reminder> index cues.
  * When enabled is false, returns empty strings and performs no scan/inject.
  */
 export async function buildContext(opts: {
   root: string;
   enabled?: boolean;
+  query?: string;
+  indexRetrieval?: MemoryIndexRetrievalOptions;
 }): Promise<BuildContextResult> {
   const enabled = opts.enabled !== false;
   if (!enabled) {
     return { systemPrompt: "", preludePrompt: "", enabled: false };
   }
 
-  const entries = await scanMemoryFiles(opts.root);
+  const entries = await scanAllMemoryFiles(opts.root);
   await syncMemoryIndex(opts.root, entries);
   const rawIndex = await readMemoryIndex(opts.root);
   const truncated = truncateIndex(rawIndex);
   const hinted = applyAgingHints(truncated, entries);
+  const fallback: BuildContextResult = {
+    systemPrompt: buildMemoryInstructionPrompt(),
+    preludePrompt: buildMemoryIndexPrompt(hinted),
+    enabled: true,
+  };
+
+  const retrieval = opts.indexRetrieval;
+  const mode = retrieval?.mode ?? "auto";
+  if (!retrieval) return fallback;
+  const emit = (event: MemoryIndexRetrievalDiagnostic): void => {
+    retrieval.onDiagnostic?.(event);
+  };
+  if (mode === "off") {
+    emit({ stage: "skip", reason: "mode-off", mode });
+    return fallback;
+  }
+  if (!opts.query?.trim()) {
+    emit({ stage: "skip", reason: "missing-query", mode });
+    return fallback;
+  }
+
+  if (!retrieval.embeddingProvider) {
+    emit({ stage: "skip", reason: "missing-embedding-provider", mode });
+    if (mode === "required") {
+      throw new Error("Memory index retrieval requires an embedding provider.");
+    }
+    return fallback;
+  }
+
+  const records = parseMemoryIndexRecords(rawIndex);
+  const minRecords = retrieval.minRecords ?? INDEX_MAX_LINES;
+  emit({
+    stage: "records",
+    mode,
+    records: records.length,
+    bytes: Buffer.byteLength(rawIndex, "utf8"),
+    limit: retrieval.limit ?? 30,
+    minRecords,
+  });
+  const fitsFullIndex =
+    records.length <= minRecords &&
+    Buffer.byteLength(rawIndex, "utf8") <= INDEX_MAX_BYTES;
+  if (fitsFullIndex) {
+    emit({
+      stage: "skip",
+      reason: "full-index-fits",
+      mode,
+      records: records.length,
+      bytes: Buffer.byteLength(rawIndex, "utf8"),
+      minRecords,
+    });
+    return fallback;
+  }
+
+  let selected = records;
+  let stage: MemoryIndexRetrievalDiagnostic["stage"] = "cache-start";
+  try {
+    emit({ stage: "cache-start", mode, records: records.length });
+    const cache = await buildMemoryIndexSearchCache({
+      root: opts.root,
+      records,
+      embeddingProvider: retrieval.embeddingProvider,
+      model: retrieval.model ?? "default",
+      signal: retrieval.signal,
+    });
+    emit({ stage: "cache-complete", mode, records: cache.records.length });
+    stage = "search-start";
+    emit({ stage: "search-start", mode, records: cache.records.length, limit: retrieval.limit ?? 30 });
+    selected = await hybridSearchMemoryIndex({
+      query: opts.query,
+      records: cache.records,
+      vectors: cache.vectors,
+      embeddingProvider: retrieval.embeddingProvider,
+      limit: retrieval.limit ?? 30,
+      signal: retrieval.signal,
+    });
+    emit({ stage: "search-complete", mode, records: cache.records.length, selected: selected.length });
+  } catch (error) {
+    const cause =
+      error instanceof Error && typeof error.cause === "object" && error.cause !== null
+        ? (error.cause as { name?: unknown; code?: unknown; message?: unknown })
+        : undefined;
+    emit({
+      stage: "fallback",
+      reason: stage,
+      mode,
+      records: records.length,
+      errorName: error instanceof Error ? error.name : undefined,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCauseName: typeof cause?.name === "string" ? cause.name : undefined,
+      errorCauseCode: typeof cause?.code === "string" ? cause.code : undefined,
+      errorCauseMessage: typeof cause?.message === "string" ? cause.message : undefined,
+    });
+    return fallback;
+  }
+
+  for (const record of selected) {
+    const abs = resolveRelativePath(opts.root, record.path);
+    if (!abs) {
+      throw new Error(`Memory index retrieval selected an invalid path: ${record.path}`);
+    }
+    await stat(abs);
+  }
 
   return {
     systemPrompt: buildMemoryInstructionPrompt(),
-    preludePrompt: buildMemoryIndexPrompt(hinted),
+    preludePrompt: buildRelevantMemoryIndexPrompt(selected),
     enabled: true,
   };
 }

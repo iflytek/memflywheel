@@ -1,13 +1,13 @@
 /**
  * @memscribe/core — public surface.
  *
- * File-backed memory kernel: storage, derived MEMORY.md index, full-index recall
- * (no retrieval), extraction and dream consolidation with pluggable LLM injection
- * points, privacy redaction, per-root write locking, atomic writes, audit log.
+ * File-backed memory kernel: storage, derived MEMORY.md index, progressive index
+ * recall, extraction and dream consolidation with pluggable model injection points,
+ * privacy redaction, per-root write locking, atomic writes, audit log.
  *
- * Core never calls an LLM. Both extraction and dream write through a subagent
- * that calls ordinary file tools directly (ExtractionAgentRunner / DreamAgentRunner);
- * both are injected — core owns only the session closure.
+ * Core never owns model transport or auth. Extraction and dream write through
+ * injected subagents; optional index retrieval consumes an injected embedding
+ * provider and only ranks index lines.
  */
 
 // Types & constants
@@ -61,6 +61,7 @@ export {
 export {
   MAX_SCAN_ENTRIES,
   scanMemoryFiles,
+  scanAllMemoryFiles,
   readAllMemoryContents,
   formatManifest,
 } from "./scan.js";
@@ -81,10 +82,24 @@ export {
 // Recall
 export {
   type BuildContextResult,
+  type EmbeddingProvider,
+  type MemoryIndexRetrievalMode,
+  type MemoryIndexRetrievalOptions,
   buildContext,
   buildMemoryInstructionPrompt,
   buildMemoryIndexPrompt,
 } from "./recall.js";
+
+export {
+  type MemoryIndexRecord,
+  type MemoryIndexSearchCache,
+  type RankedPath,
+  parseMemoryIndexRecords,
+  buildMemoryIndexSearchCache,
+  hybridSearchMemoryIndex,
+  rrfFuse,
+  buildRelevantMemoryIndexPrompt,
+} from "./recall-index.js";
 
 // Privacy
 export {

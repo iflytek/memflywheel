@@ -53,6 +53,19 @@ function validateFrontmatterFields(fm: MemoryFrontmatter): void {
   if (!isSingleLineValue(fm.description ?? "")) {
     throw new InvalidMemoryError("frontmatter.description must be single-line");
   }
+  if (fm.retrieval_terms !== undefined) {
+    if (!Array.isArray(fm.retrieval_terms)) {
+      throw new InvalidMemoryError("frontmatter.retrieval_terms must be a string list");
+    }
+    if (fm.retrieval_terms.length > 12) {
+      throw new InvalidMemoryError("frontmatter.retrieval_terms must contain at most 12 items");
+    }
+    for (const term of fm.retrieval_terms) {
+      if (!term || !isSingleLineValue(term) || term.length > 80) {
+        throw new InvalidMemoryError("frontmatter.retrieval_terms items must be non-empty single-line values up to 80 chars");
+      }
+    }
+  }
 }
 
 /**
@@ -109,6 +122,9 @@ export async function writeMemoryDocument(
   // the write-time created_at/updated_at above. Dropping it here would silently
   // discard the only structured temporal field.
   if (doc.frontmatter.occurred_on) frontmatter.occurred_on = doc.frontmatter.occurred_on;
+  if (doc.frontmatter.retrieval_terms?.length) {
+    frontmatter.retrieval_terms = Array.from(new Set(doc.frontmatter.retrieval_terms.map((term) => term.trim()).filter(Boolean)));
+  }
 
   const serialized = serializeDocument({ frontmatter, body: safeBody });
   await atomicWriteFile(targetPath, serialized);

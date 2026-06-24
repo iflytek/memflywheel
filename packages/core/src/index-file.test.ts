@@ -41,6 +41,20 @@ test("buildIndexContent uses （无描述） placeholder", () => {
   assert.ok(out.includes(" - （无描述） "));
 });
 
+test("buildIndexContent includes retrieval terms in the derived index metadata", () => {
+  const out = buildIndexContent([
+    entry({
+      description: "Caroline plans to adopt as a single parent",
+      retrievalTerms: ["relationship status", "single", "single parent", "adoption"],
+    }),
+  ]);
+
+  assert.equal(
+    out,
+    "- [Name](identity/u.md) - Caroline plans to adopt as a single parent (type: identity, path: identity/u.md, terms: relationship status; single; single parent; adoption)",
+  );
+});
+
 test("truncateIndex caps lines and appends marker", () => {
   const many = Array.from({ length: INDEX_MAX_LINES + 50 }, (_, i) => `- line ${i}`).join("\n");
   const out = truncateIndex(many);

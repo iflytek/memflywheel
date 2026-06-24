@@ -62,8 +62,6 @@ function buildModel() {
     endpoint: ACTIVE_ENDPOINT,
     apiKey: ACTIVE_API_KEY,
     model: MODEL,
-    maxTokens: 4096,
-    temperature: 0,
   });
 }
 
@@ -580,9 +578,7 @@ async function groupD() {
     record("D real Pi", "skip", "no key");
     return;
   }
-  const { createRequire } = await import("node:module");
-  const requireFromHere = createRequire(import.meta.url);
-  let pic, pai, Type;
+  let pic, pai;
   try {
     pic = await import("@earendil-works/pi-coding-agent");
     pai = await import("@earendil-works/pi-ai");
@@ -590,11 +586,6 @@ async function groupD() {
     record("D pi packages resolvable", "fail", `import failed: ${err?.message ?? err}`);
     console.log("  Install/link Pi packages before running PI_REAL=1.");
     return;
-  }
-  try {
-    ({ Type } = await import("typebox"));
-  } catch {
-    ({ Type } = await import(requireFromHere.resolve("typebox")));
   }
   record("D pi packages resolvable", "pass");
 
@@ -617,30 +608,12 @@ async function groupD() {
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 65536,
-    maxTokens: 8192,
   };
   check("D DeepSeek model constructed for Pi", model.api === "openai-completions" && model.baseUrl === ACTIVE_ENDPOINT);
 
-  let injections = 0, turnEnds = 0, toolEvents = 0, probeExecutions = 0;
+  let injections = 0, turnEnds = 0, toolEvents = 0;
 
   const extension = (pi) => {
-    pi.registerTool({
-      name: "memscribe_probe",
-      label: "MemScribe Probe",
-      description: "Return a stable marker for verifying MemScribe Pi tool telemetry.",
-      promptSnippet: "Verify MemScribe Pi telemetry with a stable probe.",
-      promptGuidelines: ["When the user explicitly asks to call memscribe_probe, call memscribe_probe before answering."],
-      parameters: Type.Object({
-        label: Type.String({ description: "Stable label to echo back." }),
-      }),
-      execute: async (_toolCallId, params) => {
-        probeExecutions += 1;
-        return {
-          content: [{ type: "text", text: `memscribe_probe:${params.label}` }],
-          details: { label: params.label },
-        };
-      },
-    });
     const originalOn = pi.on.bind(pi);
     pi.on = (event, handler) => {
       const wrapped = async (...args) => {
@@ -665,13 +638,13 @@ async function groupD() {
   await resourceLoader.reload();
 
   const { session } = await createAgentSession({
-    cwd: root, agentDir, model, thinkingLevel: "off",
+    cwd: root, agentDir, model,
     authStorage, modelRegistry, resourceLoader,
-    tools: ["read", "bash", "memscribe_probe"], sessionManager: SessionManager.inMemory(root),
+    sessionManager: SessionManager.inMemory(root),
   });
   try {
     await session.prompt(
-      "先调用 memscribe_probe 工具，label 必须是 memscribe-pi-e2e；" +
+      "先使用 Pi 原生 bash 工具执行 `pwd`；" +
       "然后记住：我叫 Kai，做 MemScribe，喝美式不加糖。最后用一句话给我今天的建议。",
     );
   } catch (err) {
@@ -683,7 +656,6 @@ async function groupD() {
 
   check("D context → recall injected", injections > 0, `injections=${injections}`);
   check("D agent_end → onTurnEnd fired", turnEnds > 0, `turnEnds=${turnEnds}`);
-  check("D probe tool executed", probeExecutions > 0, `probeExecutions=${probeExecutions}`);
   check("D tool telemetry observed", toolEvents >= 2, `toolEvents=${toolEvents}`);
   const dump = await dumpRoot("after real Pi turn", root);
   check("D memory written from a real Pi turn", dump.index.trim().length > 0);

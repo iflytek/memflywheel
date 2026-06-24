@@ -9,6 +9,7 @@ import {
   ExtractionResult,
   type ExtractionAgentRunner,
   type DreamAgentRunner,
+  type EmbeddingProvider,
 } from "./index.js";
 import { readDreamState, markDreamConsolidated, serializeMemoryFile, type MemoryType } from "@memscribe/core";
 
@@ -58,12 +59,22 @@ function onceAgent(save: { type: MemoryType; name: string; description?: string;
   return { fn, calls: () => calls };
 }
 
+function releaseEmbeddingProvider(): EmbeddingProvider {
+  return {
+    async embed({ texts }) {
+      return {
+        vectors: texts.map((text) => (text.includes("发布") ? [1, 0] : [0, 1])),
+      };
+    },
+  };
+}
+
 test("onPromptBuild returns stable rules + system-reminder-wrapped index, empty when no memory", async () => {
   const root = await tempRoot();
   try {
     const scribe = createMemScribe({ root });
     await scribe.onSessionStart("s1");
-    const ctx = await scribe.onPromptBuild("s1");
+    const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
 
     assert.equal(ctx.enabled, true);
     assert.ok(ctx.systemPrompt.includes("记忆"), "stable rules present");
@@ -95,12 +106,56 @@ test("onPromptBuild injects learned skill routing", async () => {
       },
     });
 
-    const ctx = await scribe.onPromptBuild("s1");
+    const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
     assert.match(ctx.systemPrompt, /# 技能/);
     assert.match(ctx.preludePrompt, /## 可用技能/);
     assert.match(ctx.preludePrompt, /memscribe-learned-release-review/);
     assert.match(ctx.preludePrompt, /pre-publish review/);
     assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("onPromptBuild passes query into memory index retrieval", async () => {
+  const root = await tempRoot();
+  try {
+    await mkdir(path.join(root, "workflow"), { recursive: true });
+    await mkdir(path.join(root, "preference"), { recursive: true });
+    await writeFile(
+      path.join(root, "workflow", "release.md"),
+      serializeMemoryFile({
+        type: "workflow",
+        name: "发布流程",
+        description: "pnpm build 后打 tag",
+        body: "release",
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(root, "preference", "tea.md"),
+      serializeMemoryFile({
+        type: "preference",
+        name: "饮茶偏好",
+        description: "喜欢茉莉花茶",
+        body: "tea",
+      }),
+      "utf8",
+    );
+
+    const scribe = createMemScribe({
+      root,
+      memoryIndexRetrieval: {
+        embeddingProvider: releaseEmbeddingProvider(),
+        minRecords: 1,
+        limit: 1,
+      },
+    });
+
+    const ctx = await scribe.onPromptBuild({ sessionId: "s1", query: "如何发布这个包" });
+    assert.match(ctx.preludePrompt, /## 相关记忆条目/);
+    assert.match(ctx.preludePrompt, /发布流程/);
+    assert.doesNotMatch(ctx.preludePrompt, /饮茶偏好/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -171,7 +226,7 @@ test("after-turn extraction: the agent writes a memory, it is indexed; cursor ad
     const index = await readFile(path.join(root, "MEMORY.md"), "utf8");
     assert.match(index, /favorite fruit/);
 
-    const ctx = await scribe.onPromptBuild("s1");
+    const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
     assert.match(ctx.preludePrompt, /favorite fruit/);
 
     // Cursor advanced: a second turn-end with no new content re-runs the agent

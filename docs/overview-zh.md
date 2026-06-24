@@ -37,6 +37,10 @@ pnpm workspace,5 个包,零运行时依赖(仅 TypeScript/@types/node 为 devDep
 name: 显示名
 description: 一句话描述
 type: preference        # 六类之一
+occurred_on: 2026-06-15 # 可选,事实发生/开始日期
+retrieval_terms:        # 可选旧文件,新提取/更新时要求写;只做索引召回路由
+  - 用户称呼
+  - preferred name
 created_at: 2026-06-15T...
 updated_at: 2026-06-15T...
 ```
@@ -87,7 +91,7 @@ updated_at: 2026-06-15T...
 
 ## 刻意不做的(防止重新跑偏)
 
-scope 三级作用域、BM25、实体索引、向量/embedding/top-k、独立运行时入口、frontmatter 额外字段、核心内调用 LLM、运行时 npm 依赖、由 LLM 编写 `MEMORY.md`。
+scope 三级作用域、正文级向量库/正文 chunk 检索、实体索引、独立运行时入口、开放式 frontmatter 字段、核心内调用 LLM、运行时 npm 依赖、由 LLM 编写 `MEMORY.md`。可选 embedding/BM25/RRF 只作用在 `MEMORY.md` 索引层,不作用在记忆正文层。
 
 ## 开源可移植性取舍
 

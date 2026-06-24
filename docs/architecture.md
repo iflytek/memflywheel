@@ -4,10 +4,11 @@ MemScribe is a file-backed long-term memory kernel. It has four moving parts —
 **recall**, **extraction**, and **dream** — plus cross-cutting concerns (privacy, locking,
 atomic writes, audit) that every write path shares.
 
-The core (`@memscribe/core`) is pure: it touches only the filesystem and never calls an LLM.
-The two model-driven steps (extraction, dream) are deterministic in the core and reach the
-model only through injected function contracts. Hosts wire those contracts and the turn
-lifecycle through `@memscribe/sdk` and `@memscribe/adapters`.
+The core (`@memscribe/core`) is pure filesystem logic plus injected ports. It never owns
+model transport, provider auth, or provider wire shapes. The two generative steps
+(extraction, dream) reach the model only through injected function contracts; optional
+index-layer retrieval consumes a host-supplied embedding provider. Hosts wire those
+contracts and the turn lifecycle through `@memscribe/sdk` and `@memscribe/adapters`.
 
 ## Memory root and layout
 
@@ -26,6 +27,8 @@ The store is a single directory tree. The root is resolved with this precedence:
 ├── .last-extraction     # extraction timestamp
 ├── .consolidate-lock    # dream lock
 ├── .audit.log           # append-only audit log
+├── .memscribe/
+│   └── sources/         # cleaned execution traces, addressed by memory body refs
 ├── identity/
 ├── preference/
 ├── style/
@@ -47,6 +50,10 @@ A memory file is a YAML frontmatter block followed by a free-text Markdown body:
 name: 用户称呼
 description: 用户偏好的称呼
 type: identity
+retrieval_terms:
+  - 用户称呼
+  - preferred name
+  - address user
 ---
 
 叫用户小钟。
@@ -67,8 +74,9 @@ on a `StorageContext` (`{ root, audit }`). Every write is:
 - **Audited** — appended to `.audit.log`.
 
 `scanMemoryFiles(root)` walks the tree, parses each header, sorts entries by `mtime`
-descending, and caps the result at `MAX_SCAN_ENTRIES` (200). Its output is the
-`MemoryEntry[]` that drives both the index and recall.
+descending, and caps the result at `MAX_SCAN_ENTRIES` (200) for prompt-sized manifests.
+`scanAllMemoryFiles(root)` uses the same scan without that cap for the rebuildable
+`MEMORY.md` index and index-layer retrieval corpus.
 
 ## The derived index (`MEMORY.md`)
 
@@ -86,15 +94,17 @@ aging — see [`memory-schema.md`](memory-schema.md)).
 
 ## Recall
 
-Recall is full-index injection, no retrieval. `buildContext({ root, enabled })` runs a
-deterministic pipeline — scan → sync index → read → truncate → apply aging hints — and
-returns two strings:
+Recall is progressive index injection. `buildContext({ root, enabled, query?, indexRetrieval? })`
+runs a deterministic pipeline — scan → sync index → read → truncate → apply aging hints —
+and returns two strings:
 
 - `systemPrompt`: stable memory rules (a cache-friendly prefix).
-- `preludePrompt`: the whole index wrapped in `<system-reminder>`, re-injected each turn.
+- `preludePrompt`: either the full/truncated index or a hybrid-retrieved subset of index
+  lines plus a `MEMORY.md` fallback path, wrapped in `<system-reminder>`.
 
 The main model reads the index and decides on its own whether any entry is relevant and
-whether to `Read` a body. There is no scoring, ranking, or embedding step anywhere. See
+whether to `Read` a body. Hybrid retrieval, when configured, ranks only index lines with
+embedding + BM25 + RRF; memory bodies are not embedded or searched. See
 [`recall.md`](recall.md).
 
 ## Extraction
@@ -105,8 +115,15 @@ and calls the host's injected `ExtractionAgentRunner` for the one model-driven s
 subagent calls `glob` / `grep` / `read` and then writes through
 `write` / `edit` / `bash`; those tool calls are the file changes.
 `runExtractionSession` acquires the write lock, cleans and windows the messages against a
-per-session cursor, lets the subagent drive the tools, relocates any stray root-level files
-into typed directories, re-syncs the index, and advances the cursor only on success. See
+per-session cursor, appends only the newly processed messages as cleaned JSONL under
+`.memscribe/sources/session-<hash>.jsonl`, lets the subagent drive the tools, and passes the
+resulting `sourceRef` into the memory file tools. Cursor context is still visible to the
+extraction agent, but is not persisted again. Any memory written through `write` or `edit`
+during that extraction pass gets a `## Sources` body section pointing to the JSONL line
+range. Multiple memories from the same pass therefore share the same source file and line
+range; later passes append new lines and can add more refs. The hidden source directory is
+never indexed. The pass then relocates any stray root-level files into typed directories,
+re-syncs the index, and advances the cursor only on success. See
 [`extraction.md`](extraction.md).
 
 ## Dream (consolidation)

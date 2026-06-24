@@ -139,7 +139,7 @@ export interface CreatePiHarnessPortOptions {
 
 export interface PiScribeLike {
   onSessionStart(input: { sessionId: string }): Promise<void>;
-  onPromptBuild(input: { sessionId: string }): Promise<{
+  onPromptBuild(input: { sessionId: string; query?: string }): Promise<{
     systemPrompt?: string;
     preludePrompt?: string;
     skillPreludePrompt?: string;
@@ -158,6 +158,15 @@ function readString(value: unknown, key: string): string | undefined {
   if (!isRecord(value)) return undefined;
   const out = value[key];
   return typeof out === "string" && out.trim() ? out : undefined;
+}
+
+function promptQueryFromPiEvent(event: unknown): string | undefined {
+  return (
+    readString(event, "query") ??
+    readString(event, "prompt") ??
+    readString(event, "input") ??
+    readString(event, "message")
+  );
 }
 
 function textFromPiContent(content: unknown): string | null {
@@ -429,7 +438,10 @@ export function attachPiScribe(
     detach(scribe.onSessionStart({ sessionId: resolvePiSessionId(options.sessionId, event, ctx) }));
   });
   on("context", async (event, ctx) => {
-    const result = await scribe.onPromptBuild({ sessionId: resolvePiSessionId(options.sessionId, event, ctx) });
+    const result = await scribe.onPromptBuild({
+      sessionId: resolvePiSessionId(options.sessionId, event, ctx),
+      query: promptQueryFromPiEvent(event),
+    });
     return piContextResultFromPromptBuild(result, event);
   });
   on("agent_end", (event, ctx) => {
@@ -490,7 +502,7 @@ export function createPiHarnessPort(
     onPromptBuild(handler) {
       return bindPiEvent(pi, "context", async (event, ctx) => {
         rememberContext(event, ctx);
-        const result = await handler({ sessionId: lastSessionId });
+        const result = await handler({ sessionId: lastSessionId, query: promptQueryFromPiEvent(event) });
         return piContextResultFromPromptBuild(result, event);
       });
     },

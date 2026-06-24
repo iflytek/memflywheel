@@ -7,16 +7,23 @@
  * writes files directly through ordinary file tools.
  */
 
-import { readdir, stat, mkdir, rename, copyFile, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readdir, stat, mkdir, rename, copyFile, unlink, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { RESERVED_MEMORY_FILES } from "./types.js";
 import { type StorageContext } from "./storage.js";
 import { getTypedMemoryPath, normalizeRelativePath } from "./paths.js";
 import { readMemoryFrontmatterHeader } from "./internal-frontmatter.js";
-import { scanMemoryFiles, formatManifest } from "./scan.js";
+import { scanAllMemoryFiles, scanMemoryFiles, formatManifest } from "./scan.js";
 import { syncMemoryIndex } from "./index-file.js";
-import { type FileTool, type FileToolContext, createFileTools, createMemoryFileToolContext } from "./file-tools.js";
+import {
+  type FileTool,
+  type FileToolContext,
+  type MemorySourceRef,
+  createFileTools,
+  createMemoryFileToolContext,
+} from "./file-tools.js";
 
 export const EXTRACTION_CONTEXT_WINDOW_SIZE = 6;
 export const EXTRACTION_MAX_MESSAGES = 40;
@@ -77,6 +84,7 @@ export const TOOL_OUTPUT_MAX_CHARS = 500;
  * a turn with very many tool calls cannot blow up the extraction prompt. Tunable.
  */
 export const TOOL_FOLD_WINDOW_MAX_CHARS = 4000;
+export const SOURCE_TRACE_DIR = ".memscribe/sources";
 
 function elision(omitted: number): string {
   return `…[省略 ${omitted} 字符]…`;
@@ -168,6 +176,49 @@ export function cleanMessages(messages: ExtractionMessage[]): ExtractionMessage[
   return out;
 }
 
+function sourceFileForSession(sessionId: string): string {
+  const hash = createHash("sha256").update(sessionId || "default").digest("hex").slice(0, 16);
+  return `${SOURCE_TRACE_DIR}/session-${hash}.jsonl`;
+}
+
+function sourceTraceLine(message: ExtractionMessage): string {
+  const payload: Record<string, unknown> = {
+    role: message.role,
+    text: message.text,
+  };
+  if (message.timestamp) payload.timestamp = message.timestamp;
+  if (message.toolCalls && message.toolCalls.length > 0) {
+    payload.toolCalls = message.toolCalls.map((call) => ({
+      name: call.name,
+      input: truncateHead(foldValueToText(call.input), TOOL_INPUT_MAX_CHARS),
+      output: truncateHeadTail(foldValueToText(call.output), TOOL_OUTPUT_MAX_CHARS),
+    }));
+  }
+  return JSON.stringify(payload);
+}
+
+async function appendSourceTrace(
+  root: string,
+  sessionId: string,
+  messages: ExtractionMessage[],
+): Promise<MemorySourceRef> {
+  const relativePath = sourceFileForSession(sessionId);
+  const absolutePath = path.join(root, relativePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+
+  const previous = await readFile(absolutePath, "utf8").catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw error;
+  });
+  const existingLines = previous.trimEnd() ? previous.trimEnd().split(/\r?\n/).length : 0;
+  const lines = messages.map(sourceTraceLine);
+  const startLine = existingLines + 1;
+  const endLine = existingLines + lines.length;
+  const separator = previous && !previous.endsWith("\n") ? "\n" : "";
+  await writeFile(absolutePath, `${previous}${separator}${lines.join("\n")}\n`, "utf8");
+  return { relativePath, startLine, endLine };
+}
+
 /**
  * Select the message window for extraction (cursor as an index into the array).
  * cursorIndex is the index of the last already-processed message; null = first run.
@@ -198,6 +249,23 @@ export function selectMessagesForExtraction(
   const contextMessages = messages.slice(contextStart, cursorIndex + 1);
 
   return [...contextMessages, ...newMessages];
+}
+
+function selectMessagesForSourceTrace(
+  messages: ExtractionMessage[],
+  cursorIndex: number | null,
+): ExtractionMessage[] {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+
+  if (cursorIndex === null || cursorIndex < 0 || cursorIndex >= messages.length) {
+    return messages.slice(-EXTRACTION_MAX_MESSAGES);
+  }
+
+  const newMessages = messages.slice(cursorIndex + 1);
+  if (newMessages.length === 0) return [];
+  return newMessages.length >= EXTRACTION_MAX_MESSAGES
+    ? newMessages.slice(-EXTRACTION_MAX_MESSAGES)
+    : newMessages;
 }
 
 // ---- Cursor + pending queue ----
@@ -353,7 +421,9 @@ export async function runExtractionSession(
     const before = await scanMemoryFiles(ctx.root);
     const manifest = formatManifest(before);
 
-    const toolCtx = createMemoryFileToolContext({ ctx, refuseSecrets });
+    const sourceMessages = selectMessagesForSourceTrace(cleaned, cursor);
+    const sourceRef = await appendSourceTrace(ctx.root, sessionId, sourceMessages);
+    const toolCtx = createMemoryFileToolContext({ ctx, refuseSecrets, sourceRef });
     const tools = createFileTools();
 
     try {
@@ -364,7 +434,7 @@ export async function runExtractionSession(
 
     await relocateRootFiles(ctx);
     const after = await scanMemoryFiles(ctx.root);
-    await syncMemoryIndex(ctx.root, after);
+    await syncMemoryIndex(ctx.root, await scanAllMemoryFiles(ctx.root));
 
     // Advance cursor only on success (we did not throw / fail).
     cursorStore.set(sessionId, cleaned.length - 1);

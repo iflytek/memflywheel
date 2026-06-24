@@ -60,6 +60,8 @@ async function walkMemoryFiles(
         name: meta.name,
         description: meta.description || "",
         type: meta.type,
+        occurredOn: meta.occurred_on,
+        retrievalTerms: meta.retrieval_terms,
         mtime: st.mtimeMs,
       });
     } catch {
@@ -68,11 +70,7 @@ async function walkMemoryFiles(
   }
 }
 
-/**
- * Recursive scan: skip hidden dirents, *.md only, skip reserved files, parse
- * the frontmatter header, sort by mtime DESC, cap at MAX_SCAN_ENTRIES.
- */
-export async function scanMemoryFiles(root: string): Promise<MemoryEntry[]> {
+async function scanMemoryFilesInternal(root: string): Promise<MemoryEntry[]> {
   const entries: MemoryEntry[] = [];
 
   try {
@@ -83,7 +81,24 @@ export async function scanMemoryFiles(root: string): Promise<MemoryEntry[]> {
   }
 
   entries.sort((a, b) => b.mtime - a.mtime);
+  return entries;
+}
+
+/**
+ * Recursive scan: skip hidden dirents, *.md only, skip reserved files, parse
+ * the frontmatter header, sort by mtime DESC, cap at MAX_SCAN_ENTRIES.
+ */
+export async function scanMemoryFiles(root: string): Promise<MemoryEntry[]> {
+  const entries = await scanMemoryFilesInternal(root);
   return entries.slice(0, MAX_SCAN_ENTRIES);
+}
+
+/**
+ * Complete recursive scan for rebuildable index/search corpus. Extraction and
+ * dream prompt manifests should keep using scanMemoryFiles to cap prompt size.
+ */
+export async function scanAllMemoryFiles(root: string): Promise<MemoryEntry[]> {
+  return scanMemoryFilesInternal(root);
 }
 
 /**
@@ -133,7 +148,8 @@ export function formatManifest(entries: MemoryEntry[]): string {
     .map((entry) => {
       const date = new Date(entry.mtime).toISOString().slice(0, 10);
       const entryPath = entry.relativePath || entry.filename;
-      return `- [${entry.type}] ${entryPath} (${date}): ${entry.description}`;
+      const terms = entry.retrievalTerms?.length ? `; terms: ${entry.retrievalTerms.join(", ")}` : "";
+      return `- [${entry.type}] ${entryPath} (${date}): ${entry.description}${terms}`;
     })
     .join("\n");
 }

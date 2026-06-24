@@ -72,9 +72,12 @@ const scribe = createMemScribe({ agent }); // root resolves from MEMSCRIBE_HOME 
 await scribe.onSessionStart("session-1");
 
 // At prompt assembly time — two recall segments:
-const { systemPrompt, preludePrompt } = await scribe.onPromptBuild("session-1");
+const { systemPrompt, preludePrompt } = await scribe.onPromptBuild({
+  sessionId: "session-1",
+  query: "记住：我喜欢草莓",
+});
 //  systemPrompt  → STABLE memory rules (cache-friendly prefix)
-//  preludePrompt → DYNAMIC full MEMORY.md index, wrapped in <system-reminder>
+//  preludePrompt → DYNAMIC index cues, wrapped in <system-reminder>
 
 // After each turn, hand the SDK the turn's messages; it runs extraction:
 await scribe.onTurnEnd("session-1", [
@@ -92,12 +95,12 @@ await scribe.onSessionEnd("session-1");
 | Segment | Content | Cadence |
 | --- | --- | --- |
 | `systemPrompt` | Stable memory **rules** — constant text, identical every turn | inject once / cache as a stable prefix |
-| `preludePrompt` | **Full MEMORY.md index** plus optional learned-skill routes wrapped in `<system-reminder>` | inject every turn |
+| `preludePrompt` | Full/truncated `MEMORY.md` index, or an optional index-layer hybrid retrieval subset, plus optional learned-skill routes wrapped in `<system-reminder>` | inject every turn |
 | `skillPreludePrompt` | Optional learned-skill route index | inject when `skillRecall` is configured |
 
-There is no retrieval, top-k, scoring, or embedding. The full index is injected
-and the main model self-selects whether to use the host's normal Read/file tool
-for any memory body.
+Retrieval is only over `MEMORY.md` index lines when `memoryIndexRetrieval` is configured
+and the index is large enough to need it. Memory bodies are not embedded or searched; the
+main model still self-selects whether to use the host's normal Read/file tool for any body.
 
 When `skillRecall` is configured, the SDK also injects learned-skill routing
 metadata. The host still owns actual skill loading and execution.
@@ -142,7 +145,7 @@ file, `edit` to refine a same-topic file, or `bash` to move retired files under
 | --- | --- | --- |
 | `onSessionStart(id)` | session opens | ensure memory dir, register session state |
 | `onTurnStart(id)` | new turn begins | register session state |
-| `onPromptBuild(id?)` | assembling the prompt | return the two recall segments |
+| `onPromptBuild({sessionId?, query?})` | assembling the prompt | return the two recall segments |
 | `onTurnEnd(id, msgs)` | turn finished | append turn -> run extraction; with an opt-in `learningLoop`, host/adapters can also run skill evolution and forced dream coordination |
 | `onSessionEnd(id)` | session closes | drop session state |
 | `onAgentEnd(id)` | auxiliary/agent run ends | final extraction sweep over not-yet-processed messages |
@@ -150,7 +153,7 @@ file, `edit` to refine a same-topic file, or `bash` to move retired files under
 
 ### Explicit host operations
 
-- `context()` — the full-index prelude + stable rules.
+- `context()` — the default index prelude + stable rules.
 - `save(options)` — explicit validated typed Markdown write under the lock, then
   index sync.
 - `runDream(coordination?)` — force a dream pass regardless of the gate.

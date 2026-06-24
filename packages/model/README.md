@@ -54,5 +54,26 @@ Environment variables:
 | `MEMSCRIBE_LLM_MODEL` | Model id |
 | `MEMSCRIBE_LLM_MAX_TOKENS` | Output token cap |
 
+## OpenAI-Compatible Embeddings Mapper
+
+```ts
+import { createOpenAIEmbeddingsModel } from "@memscribe/model";
+
+const embeddings = createOpenAIEmbeddingsModel({
+  endpoint: "https://api.cloudflare.com/client/v4/accounts/<account>/ai/v1",
+  model: "@cf/baai/bge-m3",
+  apiKey: process.env.MEMSCRIBE_EMBEDDING_API_KEY,
+});
+```
+
+This mapper is for optional `MEMORY.md` index-layer retrieval. It does not embed
+memory bodies and it does not make MemScribe a vector database.
+
+| Variable | Meaning |
+| --- | --- |
+| `MEMSCRIBE_EMBEDDING_ENDPOINT` / `MEMSCRIBE_EMBEDDING_BASE_URL` | Base URL without `/embeddings` |
+| `MEMSCRIBE_EMBEDDING_API_KEY` | API key, with `OPENAI_API_KEY` as fallback |
+| `MEMSCRIBE_EMBEDDING_MODEL` | Embedding model id |
+
 OpenAI-compatible HTTP is just one mapper. Native host adapters should prefer
 the host-owned model/auth/lifecycle channel.

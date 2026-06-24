@@ -8,7 +8,15 @@ import { VALID_MEMORY_TYPES, type MemoryFrontmatter, type MemoryDocument, type M
 export const FRONTMATTER_READ_BYTES = 2048;
 export const MAX_FRONTMATTER_LINES = 30;
 
-const FRONTMATTER_KEY_ORDER = ["name", "description", "type", "created_at", "updated_at", "occurred_on"] as const;
+const FRONTMATTER_KEY_ORDER = [
+  "name",
+  "description",
+  "type",
+  "created_at",
+  "updated_at",
+  "occurred_on",
+  "retrieval_terms",
+] as const;
 
 /**
  * Port of parseMemoryFrontmatter.
@@ -23,10 +31,31 @@ export function parseFrontmatter(content: string): MemoryFrontmatter | null {
   if (endIndex === -1 || endIndex > MAX_FRONTMATTER_LINES) return null;
 
   const meta: Record<string, string> = {};
+  const lists: Record<string, string[]> = {};
+  let currentListKey: string | null = null;
   for (let i = 1; i < endIndex; i++) {
-    const match = (lines[i] ?? "").match(/^(\w+):\s*(.+)$/);
-    if (match) {
-      meta[match[1] as string] = (match[2] as string).trim();
+    const line = lines[i] ?? "";
+    const listItem = line.match(/^\s*-\s+(.+)$/);
+    if (listItem && currentListKey) {
+      lists[currentListKey] ??= [];
+      lists[currentListKey].push((listItem[1] as string).trim());
+      continue;
+    }
+
+    currentListKey = null;
+    const scalar = line.match(/^(\w+):\s*(.*)$/);
+    if (!scalar) continue;
+    const key = scalar[1] as string;
+    const value = (scalar[2] as string).trim();
+    if (value === "") {
+      if (key === "retrieval_terms") {
+        currentListKey = key;
+        lists[key] ??= [];
+      } else {
+        meta[key] = "";
+      }
+    } else {
+      meta[key] = value;
     }
   }
 
@@ -41,6 +70,7 @@ export function parseFrontmatter(content: string): MemoryFrontmatter | null {
   if (meta.created_at) frontmatter.created_at = meta.created_at;
   if (meta.updated_at) frontmatter.updated_at = meta.updated_at;
   if (meta.occurred_on) frontmatter.occurred_on = meta.occurred_on;
+  if (lists.retrieval_terms?.length) frontmatter.retrieval_terms = lists.retrieval_terms;
   return frontmatter;
 }
 
@@ -71,11 +101,17 @@ export function parseDocument(content: string): MemoryDocument | null {
  * Values must be single-line (multi-line values are rejected upstream).
  */
 export function serializeDocument(doc: MemoryDocument): string {
-  const fm = doc.frontmatter as unknown as Record<string, string | undefined>;
+  const fm = doc.frontmatter as unknown as Record<string, string | string[] | undefined>;
   const out: string[] = ["---"];
   for (const key of FRONTMATTER_KEY_ORDER) {
     const value = fm[key];
     if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      out.push(`${key}:`);
+      for (const item of value) out.push(`  - ${item}`);
+      continue;
+    }
     if (key === "description" && value === "") {
       out.push("description: ");
       continue;

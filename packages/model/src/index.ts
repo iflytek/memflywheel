@@ -68,9 +68,24 @@ export interface OpenAIChatCompletionsModelConfig {
   fetchImpl?: typeof fetch;
 }
 
+export interface CanonicalEmbeddingProvider {
+  embed(req: { texts: string[]; signal?: AbortSignal }): Promise<{ vectors: number[][] }>;
+}
+
+export interface OpenAIEmbeddingsModelConfig {
+  /** Base URL without `/embeddings`. */
+  endpoint?: string;
+  /** API key. Falls back to MEMSCRIBE_EMBEDDING_API_KEY / OPENAI_API_KEY. */
+  apiKey?: string;
+  /** Embedding model id. */
+  model?: string;
+  /** Injectable fetch for tests and host-owned transports. */
+  fetchImpl?: typeof fetch;
+}
+
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-4o-mini";
-const DEFAULT_MAX_TOKENS = 1024;
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 function env(name: string): string | undefined {
   const value = process.env[name];
@@ -96,11 +111,34 @@ function resolveModel(config: OpenAIChatCompletionsModelConfig): string {
   return config.model ?? env("MEMSCRIBE_LLM_MODEL") ?? DEFAULT_MODEL;
 }
 
-function resolveMaxTokens(config: OpenAIChatCompletionsModelConfig): number {
+function resolveEmbeddingApiKey(config: OpenAIEmbeddingsModelConfig): string {
+  const key = config.apiKey ?? env("MEMSCRIBE_EMBEDDING_API_KEY") ?? env("OPENAI_API_KEY");
+  if (!key) {
+    throw new Error(
+      "MemScribe OpenAI embeddings model: no API key. Set MEMSCRIBE_EMBEDDING_API_KEY or OPENAI_API_KEY.",
+    );
+  }
+  return key;
+}
+
+function resolveEmbeddingEndpoint(config: OpenAIEmbeddingsModelConfig): string {
+  const base =
+    config.endpoint ??
+    env("MEMSCRIBE_EMBEDDING_ENDPOINT") ??
+    env("MEMSCRIBE_EMBEDDING_BASE_URL") ??
+    DEFAULT_ENDPOINT;
+  return base.replace(/\/+$/, "");
+}
+
+function resolveEmbeddingModel(config: OpenAIEmbeddingsModelConfig): string {
+  return config.model ?? env("MEMSCRIBE_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL;
+}
+
+function resolveMaxTokens(config: OpenAIChatCompletionsModelConfig): number | undefined {
   if (typeof config.maxTokens === "number") return config.maxTokens;
   const fromEnv = env("MEMSCRIBE_LLM_MAX_TOKENS");
   const parsed = fromEnv ? Number.parseInt(fromEnv, 10) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_TOKENS;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function toWireTool(tool: CanonicalToolDefinition): Record<string, unknown> {
@@ -208,15 +246,15 @@ export function createOpenAIChatCompletionsModel(
   const endpoint = resolveEndpoint(config);
   const model = resolveModel(config);
   const maxTokens = resolveMaxTokens(config);
-  const temperature = config.temperature ?? 0;
+  const temperature = typeof config.temperature === "number" ? config.temperature : undefined;
   const doFetch = config.fetchImpl ?? fetch;
 
   return {
     async complete(req: CanonicalModelRequest): Promise<CanonicalModelResponse> {
       const body = JSON.stringify({
         model,
-        max_tokens: maxTokens,
-        temperature,
+        ...(maxTokens === undefined ? {} : { max_tokens: maxTokens }),
+        ...(temperature === undefined ? {} : { temperature }),
         messages: req.messages.map(toWireMessage),
         tools: req.tools.map(toWireTool),
         tool_choice: "auto",
@@ -237,6 +275,54 @@ export function createOpenAIChatCompletionsModel(
         );
       }
       return parseResponse(await response.json());
+    },
+  };
+}
+
+function parseEmbeddingsResponse(json: unknown, expectedCount: number): { vectors: number[][] } {
+  const data = (json as { data?: unknown })?.data;
+  if (!Array.isArray(data) || data.length !== expectedCount) {
+    throw new Error("MemScribe OpenAI embeddings model: invalid embedding count.");
+  }
+  const vectors = data.map((row, index) => {
+    const embedding = (row as { embedding?: unknown })?.embedding;
+    if (
+      !Array.isArray(embedding) ||
+      embedding.length === 0 ||
+      !embedding.every((value) => typeof value === "number" && Number.isFinite(value))
+    ) {
+      throw new Error(`MemScribe OpenAI embeddings model: invalid embedding vector at ${index}.`);
+    }
+    return embedding;
+  });
+  return { vectors };
+}
+
+export function createOpenAIEmbeddingsModel(
+  config: OpenAIEmbeddingsModelConfig = {},
+): CanonicalEmbeddingProvider {
+  const endpoint = resolveEmbeddingEndpoint(config);
+  const model = resolveEmbeddingModel(config);
+  const doFetch = config.fetchImpl ?? fetch;
+
+  return {
+    async embed(req): Promise<{ vectors: number[][] }> {
+      const response = await doFetch(`${endpoint}/embeddings`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${resolveEmbeddingApiKey(config)}`,
+        },
+        body: JSON.stringify({ model, input: req.texts }),
+        signal: req.signal,
+      });
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        throw new Error(
+          `MemScribe OpenAI embeddings model: request failed (${response.status}). ${detail}`.trim(),
+        );
+      }
+      return parseEmbeddingsResponse(await response.json(), req.texts.length);
     },
   };
 }

@@ -84,6 +84,31 @@ test("serializeDocument round-trips occurred_on after the write times", () => {
   assert.equal(reparsed?.occurred_on, "2023-05-07");
 });
 
+test("serializeDocument round-trips retrieval_terms as a YAML list", () => {
+  const serialized = serializeDocument({
+    frontmatter: {
+      name: "Caroline single parent adoption plan",
+      description: "Caroline plans to adopt as a single parent",
+      type: "context",
+      occurred_on: "2023-05-25",
+      retrieval_terms: ["relationship status", "single", "single parent", "adoption"],
+    },
+    body: "Caroline plans to pursue adoption as a single parent.",
+  });
+
+  assert.match(
+    serialized,
+    /retrieval_terms:\n  - relationship status\n  - single\n  - single parent\n  - adoption/u,
+  );
+  const reparsed = parseFrontmatter(serialized);
+  assert.deepEqual(reparsed?.retrieval_terms, [
+    "relationship status",
+    "single",
+    "single parent",
+    "adoption",
+  ]);
+});
+
 test("parseFrontmatter omits occurred_on when absent", () => {
   const fm = parseFrontmatter("---\nname: a\ntype: identity\n---\nbody");
   assert.equal(fm?.occurred_on, undefined);

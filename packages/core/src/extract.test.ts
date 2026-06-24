@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import {
   selectMessagesForExtraction,
@@ -153,6 +155,143 @@ test("runExtractionSession drives the agent runner, syncs index, advances cursor
       cursorStore,
     });
     assert.equal(again, ExtractionResult.Skipped);
+  } finally {
+    await cleanup(root);
+  }
+});
+
+test("runExtractionSession appends source refs to multiple memories from the same selected trace", async () => {
+  const root = await makeRoot();
+  try {
+    const ctx = ctxFor(root);
+    const agent: ExtractionAgentRunner = async (input) => {
+      const map = fileToolMap(input.tools);
+      await map.get("write")!.handler(
+        {
+          filePath: "workflow/release.md",
+          content: serializeMemoryFile({
+            type: "workflow",
+            name: "Release flow",
+            body: "Run build before publishing.",
+          }),
+        },
+        input.toolCtx,
+      );
+      await map.get("write")!.handler(
+        {
+          filePath: "preference/tone.md",
+          content: serializeMemoryFile({
+            type: "preference",
+            name: "Tone",
+            body: "Prefers direct answers.",
+          }),
+        },
+        input.toolCtx,
+      );
+      return { changed: ["workflow/release.md", "preference/tone.md"] };
+    };
+
+    const result = await runExtractionSession({
+      ctx,
+      agent,
+      messages: [
+        { role: "user", text: "发布前先跑 build", timestamp: "2026-06-23" },
+        {
+          role: "assistant",
+          text: "好的",
+          toolCalls: [{ name: "Bash", input: { command: "pnpm build" }, output: "done" }],
+        },
+      ],
+      sessionId: "session-with-two-memories",
+      cursorStore: createMemoryCursorStore(),
+    });
+
+    assert.equal(result, ExtractionResult.Completed);
+    const release = await readFile(path.join(root, "workflow", "release.md"), "utf8");
+    const tone = await readFile(path.join(root, "preference", "tone.md"), "utf8");
+    const sourceRef = release.match(/- (?<ref>\.memscribe\/sources\/[^#]+\.jsonl#L\d+-L\d+)/)?.groups?.ref;
+    assert.ok(sourceRef);
+    assert.ok(tone.includes(sourceRef));
+
+    const sourcePath = sourceRef.split("#")[0]!;
+    const source = await readFile(path.join(root, sourcePath), "utf8");
+    const lines = source.trimEnd().split("\n");
+    assert.equal(lines.length, 2);
+    assert.match(lines[0]!, /发布前先跑 build/);
+    assert.match(lines[1]!, /"toolCalls"/);
+    assert.match(lines[1]!, /pnpm build/);
+
+    const index = await readFile(path.join(root, "MEMORY.md"), "utf8");
+    assert.doesNotMatch(index, /\.memscribe\/sources/);
+  } finally {
+    await cleanup(root);
+  }
+});
+
+test("runExtractionSession writes only new messages to source traces, not cursor context", async () => {
+  const root = await makeRoot();
+  try {
+    const ctx = ctxFor(root);
+    const cursorStore = createMemoryCursorStore();
+    let calls = 0;
+    const agent: ExtractionAgentRunner = async (input) => {
+      calls += 1;
+      const map = fileToolMap(input.tools);
+      const name = calls === 1 ? "First fact" : "Second fact";
+      const filePath = calls === 1 ? "workflow/first.md" : "workflow/second.md";
+      await map.get("write")!.handler(
+        {
+          filePath,
+          content: serializeMemoryFile({
+            type: "workflow",
+            name,
+            body: `${name} body.`,
+          }),
+        },
+        input.toolCtx,
+      );
+      if (calls === 2) {
+        assert.equal(input.messages.length, 4, "the extraction agent still sees cursor context");
+      }
+      return { changed: [filePath] };
+    };
+
+    const allMessages: ExtractionMessage[] = [
+      { role: "user", text: "first remembered fact" },
+      { role: "assistant", text: "ack one" },
+      { role: "user", text: "second remembered fact" },
+      { role: "assistant", text: "ack two" },
+    ];
+
+    assert.equal(
+      await runExtractionSession({
+        ctx,
+        agent,
+        messages: allMessages.slice(0, 2),
+        sessionId: "repeat-source-session",
+        cursorStore,
+      }),
+      ExtractionResult.Completed,
+    );
+    assert.equal(
+      await runExtractionSession({
+        ctx,
+        agent,
+        messages: allMessages,
+        sessionId: "repeat-source-session",
+        cursorStore,
+      }),
+      ExtractionResult.Completed,
+    );
+
+    const second = await readFile(path.join(root, "workflow", "second.md"), "utf8");
+    assert.match(second, /\.memscribe\/sources\/session-[a-f0-9]+\.jsonl#L3-L4/);
+    const sourcePath = second.match(/- (?<path>\.memscribe\/sources\/[^#]+\.jsonl)#L3-L4/)?.groups?.path;
+    assert.ok(sourcePath);
+    const lines = (await readFile(path.join(root, sourcePath), "utf8")).trimEnd().split("\n");
+    assert.equal(lines.length, 4);
+    assert.equal(lines.filter((line) => line.includes("first remembered fact")).length, 1);
+    assert.equal(lines.filter((line) => line.includes("second remembered fact")).length, 1);
   } finally {
     await cleanup(root);
   }

@@ -52,6 +52,10 @@ export const openclawAdapter: HostAdapter = makeAdapter({
     "Phase-1 recall path: OpenClaw hooks can inject memory, but native extraction/skill loops wait for an OpenClaw llm-runtime HostHarnessPort.",
   translators: {
     sessionId: (payload) => readString(payload, "agentId") || readString(payload, "sessionId"),
+    promptQuery: (payload) =>
+      readString(payload, "prompt") ||
+      readString(payload, "query") ||
+      readString(payload, "message"),
     turnEnd: (payload) => ({
       sessionId: readString(payload, "agentId") || readString(payload, "sessionId"),
       messages: normalizeMessages((payload as { history?: unknown } | undefined)?.history),

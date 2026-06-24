@@ -42,6 +42,10 @@ export const opencodeAdapter: HostAdapter = makeAdapter({
     "Hook-native recall path only until OpenCode exposes a host-owned canonical model port. Do not claim native extraction/skill loops without llm.completeWithTools.",
   translators: {
     sessionId: (payload) => readString(payload, "sessionID") || readString(payload, "sessionId"),
+    promptQuery: (payload) =>
+      readString(payload, "prompt") ||
+      readString(payload, "query") ||
+      readString(payload, "message"),
     turnEnd: (payload) => ({
       sessionId: readString(payload, "sessionID") || readString(payload, "sessionId"),
       messages: normalizeMessages((payload as { messages?: unknown } | undefined)?.messages),

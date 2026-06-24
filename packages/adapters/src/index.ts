@@ -113,6 +113,7 @@ export {
   type MemScribeHarnessRuntimeAdapter,
   type MemScribeHarnessRuntime,
   type MemScribeLearningLoopConfig,
+  type MemoryIndexRetrievalOptions,
   type SkillPreludeBuilder,
   type SkillRecallProvider,
   type CanonicalModelCompletion,
