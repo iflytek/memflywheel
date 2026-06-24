@@ -11,7 +11,7 @@ import { completeSimple } from "@earendil-works/pi-ai";
 import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@memflywheel/adapters";
 
 /** @param {any} pi - the Pi ExtensionAPI */
-export default function memScribeExtension(pi) {
+export default function memFlywheelExtension(pi) {
   const port = createPiHarnessPort(pi, { completeSimple });
   const runtime = createMemFlywheelHarnessRuntime({ port });
 
