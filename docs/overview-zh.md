@@ -1,8 +1,8 @@
-# MemScribe 项目概览
+# MemFlywheel 项目概览
 
 ## 一句话定位
 
-MemScribe 是一个**文件型长期记忆运行层**:把一套文件型长期记忆方案做成可被其他 Agent 产品直接集成的开源库。TypeScript-first、纯 Node、零运行时依赖,通过 **SDK 生命周期 hooks + host adapters** 接入各家 Agent Harness。它**不是**托管记忆 API、向量数据库、通用 RAG 平台或独立工具产品。它自带一份高质量的**默认提取器**,宿主注入模型通道后即可开箱提取。
+MemFlywheel 是一个**文件型长期记忆运行层**:把一套文件型长期记忆方案做成可被其他 Agent 产品直接集成的开源库。TypeScript-first、纯 Node、零运行时依赖,通过 **SDK 生命周期 hooks + host adapters** 接入各家 Agent Harness。它**不是**托管记忆 API、向量数据库、通用 RAG 平台或独立工具产品。它自带一份高质量的**默认提取器**,宿主注入模型通道后即可开箱提取。
 
 ## 核心理念
 
@@ -17,17 +17,17 @@ pnpm workspace,5 个包,零运行时依赖(仅 TypeScript/@types/node 为 devDep
 
 | 包 | 职责 | 规模 |
 | --- | --- | --- |
-| `@memscribe/core` | 记忆内核:存储/索引/召回/提取/整理/隐私/锁/审计 | 36 源文件 |
-| `@memscribe/model` | provider-neutral 结构化 tool-call 模型协议与 provider mapper | 2 源文件 |
-| `@memscribe/sdk` | 宿主生命周期集成层、提取/dream runner 装配、学习闭环编排 | 10 源文件 |
-| `@memscribe/skills` | 文件型 learned skill store、staging、校验、召回索引 | 3 源文件 |
-| `@memscribe/adapters` | 各宿主生命周期映射与 HostHarnessPort 接入 | 22 源文件 |
+| `@memflywheel/core` | 记忆内核:存储/索引/召回/提取/整理/隐私/锁/审计 | 36 源文件 |
+| `@memflywheel/model` | provider-neutral 结构化 tool-call 模型协议与 provider mapper | 2 源文件 |
+| `@memflywheel/sdk` | 宿主生命周期集成层、提取/dream runner 装配、学习闭环编排 | 10 源文件 |
+| `@memflywheel/skills` | 文件型 learned skill store、staging、校验、召回索引 | 3 源文件 |
+| `@memflywheel/adapters` | 各宿主生命周期映射与 HostHarnessPort 接入 | 22 源文件 |
 
 依赖关系:`sdk → core + skills`,`model` 独立提供模型协议与 provider mapper,`adapters → sdk + model`。
 
 ### core 内部模块
 
-`paths`(根解析,`MEMSCRIBE_HOME`/OS data dir)、`frontmatter`(手写解析/序列化)、`storage`(原子写+隐私+时间戳)、`scan`(mtime 倒序、上限 200)、`index-file`(`MEMORY.md` 生成/截断/老化)、`recall`(两段注入)、`extract`(校验 + runExtraction 生命周期)、`dream`(consolidation plan/apply)、`privacy`、`lock`、`atomic`、`audit`、`health`。
+`paths`(根解析,`MEMFLYWHEEL_HOME`/OS data dir)、`frontmatter`(手写解析/序列化)、`storage`(原子写+隐私+时间戳)、`scan`(mtime 倒序、上限 200)、`index-file`(`MEMORY.md` 生成/截断/老化)、`recall`(两段注入)、`extract`(校验 + runExtraction 生命周期)、`dream`(consolidation plan/apply)、`privacy`、`lock`、`atomic`、`audit`、`health`。
 
 ## 记忆模型
 
@@ -61,7 +61,7 @@ updated_at: 2026-06-15T...
 
 ### 提取(extract)
 - 默认在 **turn end** 触发(after-turn):锁 → 游标窗口 → 跑提取子代理(子代理用写工具直接落盘)→ 索引同步 → 推进游标。
-- **核心不调 LLM**:注入点是 `ExtractionAgentRunner`;核心把记忆工具(`glob` / `grep` / `read` / `write` / `edit` / `bash`,均绑定在持有的写锁内)、对话窗口、现有记忆 manifest 交给它,子代理多轮自主调工具直接写文件,返回 `{ changed }`。可用自带默认子代理(`createExtractionAgentRunner({ model })` + `@memscribe/model` canonical model),也可宿主自供;没配就显式 recall-only 或构造失败。
+- **核心不调 LLM**:注入点是 `ExtractionAgentRunner`;核心把记忆工具(`glob` / `grep` / `read` / `write` / `edit` / `bash`,均绑定在持有的写锁内)、对话窗口、现有记忆 manifest 交给它,子代理多轮自主调工具直接写文件,返回 `{ changed }`。可用自带默认子代理(`createExtractionAgentRunner({ model })` + `@memflywheel/model` canonical model),也可宿主自供;没配就显式 recall-only 或构造失败。
 - 冲突:子代理可先 `glob` 再决定 add 还是 update;仅在用户显式纠正时 `bash` 旧记忆、写新记忆。
 
 ### 整理(dream)
@@ -78,14 +78,14 @@ updated_at: 2026-06-15T...
 
 | 入口 | 形态 | 说明 |
 | --- | --- | --- |
-| **SDK** | `createMemScribe(config)` | 生命周期 hooks:`onSessionStart` / `onPromptBuild` / `onTurnEnd` / `onSessionEnd` / `onAgentEnd` / `onIdle`;两个注入点 `agent`(ExtractionAgentRunner)、`dreamRunner`(DreamAgentRunner) |
+| **SDK** | `createMemFlywheel(config)` | 生命周期 hooks:`onSessionStart` / `onPromptBuild` / `onTurnEnd` / `onSessionEnd` / `onAgentEnd` / `onIdle`;两个注入点 `agent`(ExtractionAgentRunner)、`dreamRunner`(DreamAgentRunner) |
 | **adapters** | 宿主生命周期映射 | `hermes` / `opencode` / `openclaw` / `pi` / `codex` / `claude-code`,install 走 plan/apply + 真 round-trip verify |
 
 ## 工程现状(2026-06-15)
 
 - **5 包 build 全过,测试全绿**(core / model / sdk / skills / adapters)。
 - **零运行时依赖**。
-- 自带默认提取子代理与默认 dream 整理子代理(两者共用同一 canonical model 通道,默认系统提示在 core,工厂 `createExtractionAgentRunner` / `createDreamAgentRunner` 在 sdk,OpenAI-compatible mapper 在 `@memscribe/model`),宿主可直接注入自身模型能力。
+- 自带默认提取子代理与默认 dream 整理子代理(两者共用同一 canonical model 通道,默认系统提示在 core,工厂 `createExtractionAgentRunner` / `createDreamAgentRunner` 在 sdk,OpenAI-compatible mapper 在 `@memflywheel/model`),宿主可直接注入自身模型能力。
 - OpenClaw / Hermes / Pi 三家直接集成示例见 `examples/`。
 - 设计蓝图见 `docs/BLUEPRINT.md`。
 
@@ -95,4 +95,4 @@ scope 三级作用域、正文级向量库/正文 chunk 检索、实体索引、
 
 ## 开源可移植性取舍
 
-为开源可移植性,两处刻意选择:**索引用相对路径**(非绝对路径)、**根目录用 `MEMSCRIBE_HOME`/OS data dir**(纯 Node,不依赖任何桌面框架的 app data 路径)。
+为开源可移植性,两处刻意选择:**索引用相对路径**(非绝对路径)、**根目录用 `MEMFLYWHEEL_HOME`/OS data dir**(纯 Node,不依赖任何桌面框架的 app data 路径)。

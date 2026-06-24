@@ -7,7 +7,7 @@ drive inference itself. So:
 - **Recall + injection are first-class**: the plugin claims the memory slot via
   `registerMemoryCapability` and returns `prependContext` on prompt build.
 - **Extraction / dream / skill evolution do not run natively** until OpenClaw
-  exposes an in-process canonical model port or an explicit sidecar. MemScribe
+  exposes an in-process canonical model port or an explicit sidecar. MemFlywheel
   does not parse text as fake tool calls.
 
 ## Lifecycle mapping
@@ -22,14 +22,14 @@ drive inference itself. So:
 ## Files
 
 - `plugin.mjs` — `register(api)`: registerMemoryCapability + bind hooks +
-  `createMemScribeHarnessRuntime({ mode: "recall-only" })`.
+  `createMemFlywheelHarnessRuntime({ mode: "recall-only" })`.
 - `run.mjs` — a mock OpenClaw host driving the hooks + `connect` into
   `~/.openclaw/openclaw.json` (a temp file in the example).
 
 ## Install
 
 ```bash
-node -e "import('@memscribe/adapters').then(m => m.connect(m.openclawAdapter, { apply: true }))"
+node -e "import('@memflywheel/adapters').then(m => m.connect(m.openclawAdapter, { apply: true }))"
 ```
 
 ## Run the smoke test

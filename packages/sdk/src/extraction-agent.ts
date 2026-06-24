@@ -19,9 +19,9 @@ import {
   type ExtractionMessage,
   DEFAULT_EXTRACTION_SYSTEM_PROMPT,
   buildExtractionAgentUserMessage,
-} from "@memscribe/core";
+} from "@memflywheel/core";
 
-import type { CanonicalModelCompletion } from "@memscribe/model";
+import type { CanonicalModelCompletion } from "@memflywheel/model";
 import {
   type AgentToolCall,
   type ToolAgentResult,

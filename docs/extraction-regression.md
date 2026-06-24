@@ -1,8 +1,8 @@
 # 提取子代理真实回归报告(tool-calling 模型)
 
-本报告记录提取子代理在**真实大模型**下的真实行为。模型为一个 OpenAI-compatible tool-calling 端点,通过 `@memscribe/model` 的 `createOpenAIChatCompletionsModel` 映射为 canonical model 接入。这条路径正是 `pi` 等 adapter 在 **turn end** 触发的提取子代理 agent loop。
+本报告记录提取子代理在**真实大模型**下的真实行为。模型为一个 OpenAI-compatible tool-calling 端点,通过 `@memflywheel/model` 的 `createOpenAIChatCompletionsModel` 映射为 canonical model 接入。这条路径正是 `pi` 等 adapter 在 **turn end** 触发的提取子代理 agent loop。
 
-> 复现:`MEMSCRIBE_LLM_PROVIDER=openai MEMSCRIBE_LLM_ENDPOINT=<your endpoint> MEMSCRIBE_LLM_MODEL=<model> MEMSCRIBE_LLM_API_KEY=<key> node examples/extraction-regression.mjs`
+> 复现:`MEMFLYWHEEL_LLM_PROVIDER=openai MEMFLYWHEEL_LLM_ENDPOINT=<your endpoint> MEMFLYWHEEL_LLM_MODEL=<model> MEMFLYWHEEL_LLM_API_KEY=<key> node examples/extraction-regression.mjs`
 
 ## 子代理可用的工具(与目标行为等价)
 

@@ -1,8 +1,8 @@
-# @memscribe/adapters
+# @memflywheel/adapters
 
-Host lifecycle mappings for MemScribe. Each adapter translates a host's lifecycle
+Host lifecycle mappings for MemFlywheel. Each adapter translates a host's lifecycle
 events — session start, prompt assembly, turn end, idle/scheduled — onto a
-`MemScribe`'s hooks. Adapters contain **no memory logic**: they are pure event
+`MemFlywheel`'s hooks. Adapters contain **no memory logic**: they are pure event
 translation plus a real, round-trippable install of the host-side wiring.
 
 Zero runtime dependencies (Node stdlib + TypeScript only).
@@ -47,7 +47,7 @@ interface HostAdapter {
   readonly name: string;
   readonly lifecycle: LifecycleMap;        // host event → scribe hook, per hook
 
-  attach(scribe: MemScribe, host: HostRuntime): () => void;   // wire events, returns disposer
+  attach(scribe: MemFlywheel, host: HostRuntime): () => void;   // wire events, returns disposer
   install(target: InstallTarget, opts?: { apply?: boolean }): Promise<InstallPlan | InstallResult>;
   verify(target: InstallTarget): Promise<VerifyResult>;      // real round-trip from disk
   doctor(target: InstallTarget): Promise<DoctorFinding[]>;
@@ -57,12 +57,12 @@ interface HostAdapter {
 ### attach — pure event translation
 
 `attach` binds each host event to the matching scribe hook and returns a disposer
-that removes every listener. The `MemScribe` interface here is structurally
-identical to `@memscribe/sdk`'s — any object with the lifecycle hooks satisfies
-it, including a real `createMemScribe(...)`.
+that removes every listener. The `MemFlywheel` interface here is structurally
+identical to `@memflywheel/sdk`'s — any object with the lifecycle hooks satisfies
+it, including a real `createMemFlywheel(...)`.
 
 ```ts
-import { piAdapter } from "@memscribe/adapters";
+import { piAdapter } from "@memflywheel/adapters";
 
 const dispose = piAdapter.attach(scribe, host);
 // ... later
@@ -73,7 +73,7 @@ dispose();
   into the host's stream.
 - `onPromptBuild` returns the two recall segments (`systemPrompt`,
   `preludePrompt`). Hosts that need the result attach a `respond` callback to the
-  emitted payload; the adapter delivers the `Promise<MemScribeContext>` to it.
+  emitted payload; the adapter delivers the `Promise<MemFlywheelContext>` to it.
 
 ### install — plan / apply (never "write and hope")
 
@@ -117,7 +117,7 @@ for (const f of await piAdapter.doctor({ configPath })) {
 Build one from a lifecycle map + payload translators with `makeAdapter`:
 
 ```ts
-import { makeAdapter, normalizeMessages, readString } from "@memscribe/adapters";
+import { makeAdapter, normalizeMessages, readString } from "@memflywheel/adapters";
 
 export const myAdapter = makeAdapter({
   id: "my-host",
@@ -140,46 +140,46 @@ export const myAdapter = makeAdapter({
 
 Install/verify/doctor come for free.
 
-## Direct integration: `createMemScribeHarnessRuntime`
+## Direct integration: `createMemFlywheelHarnessRuntime`
 
 An adapter contains no memory or provider-specific LLM logic. To make a host
 work out of the box, expose a host-owned `CanonicalModelCompletion` or a
-`HostHarnessPort` and pass it to `createMemScribeHarnessRuntime`. That builds
+`HostHarnessPort` and pass it to `createMemFlywheelHarnessRuntime`. That builds
 the SDK default extraction AND dream consolidation subagents (default prompts +
 ordinary file tools) on top of the single canonical model channel, assembles a real
-`createMemScribe`, and returns an adapter-ready `MemScribe` plus the underlying
+`createMemFlywheel`, and returns an adapter-ready `MemFlywheel` plus the underlying
 SDK scribe for explicit ops. One channel drives both subagents:
 
 ```ts
-import { createMemScribeHarnessRuntime, hermesAdapter } from "@memscribe/adapters";
+import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@memflywheel/adapters";
 
 // Host-owned model channel. The host owns auth, transport, policy, and lifecycle.
 const model = {
   complete: (req) => ctx.llm.completeWithTools(req),
 };
 
-const { scribe, sdk } = createMemScribeHarnessRuntime({ model });
+const { scribe, sdk } = createMemFlywheelHarnessRuntime({ model });
 const dispose = hermesAdapter.attach(scribe, host);   // session/prompt/turn-end/idle
 ```
 
 Pi phase-1 native integration uses a host port:
 
 ```ts
-import { createMemScribeHarnessRuntime, createPiHarnessPort, piAdapter } from "@memscribe/adapters";
+import { createMemFlywheelHarnessRuntime, createPiHarnessPort, piAdapter } from "@memflywheel/adapters";
 
 export default function memScribeExtension(pi) {
   const port = createPiHarnessPort(pi);
-  const { scribe } = createMemScribeHarnessRuntime({ port });
+  const { scribe } = createMemFlywheelHarnessRuntime({ port });
   return piAdapter.attach(scribe, pi);
 }
 ```
 
 Skill recall and learning-loop wiring are opt-in. A host can either pass custom
-SDK hooks or ask `createMemScribeHarnessRuntime` to assemble the file-native learned-skill
-store from `@memscribe/skills`:
+SDK hooks or ask `createMemFlywheelHarnessRuntime` to assemble the file-native learned-skill
+store from `@memflywheel/skills`:
 
 ```ts
-const { scribe } = createMemScribeHarnessRuntime({
+const { scribe } = createMemFlywheelHarnessRuntime({
   model,
   learnedSkills: {
     skillsRoot: "/path/to/skills",
@@ -208,10 +208,10 @@ const { scribe } = createMemScribeHarnessRuntime({
 
 Hosts with no in-process model-call API (for example a hook-only plugin surface)
 must either run recall-only or expose a real canonical model port through a
-sidecar/upstream host API. MemScribe does not parse text as fake tool calls.
+sidecar/upstream host API. MemFlywheel does not parse text as fake tool calls.
 
 ```ts
-const { scribe } = createMemScribeHarnessRuntime({ mode: "recall-only" });
+const { scribe } = createMemFlywheelHarnessRuntime({ mode: "recall-only" });
 ```
 
 ## Connect: install + round-trip verify in one call
@@ -221,14 +221,14 @@ const { scribe } = createMemScribeHarnessRuntime({ mode: "recall-only" });
 applies it and immediately re-reads from disk to verify the marker round-trips:
 
 ```ts
-import { connect, piAdapter } from "@memscribe/adapters";
+import { connect, piAdapter } from "@memflywheel/adapters";
 
 const plan = await connect(piAdapter);                 // plan only, no writes
 const res  = await connect(piAdapter, { apply: true }); // write + verify
 if (!res.verify!.ok) console.error(res.verify!.problems);
 ```
 
-Runnable minimal integrations live under [`examples/`](https://github.com/iflytek/memscribe/tree/main/examples),
+Runnable minimal integrations live under [`examples/`](https://github.com/iflytek/memflywheel/tree/main/examples),
 one per targeted host (Pi, Hermes, OpenClaw): expose a canonical model or an
-explicit recall-only mode, build the scribe with `createMemScribeHarnessRuntime`,
+explicit recall-only mode, build the scribe with `createMemFlywheelHarnessRuntime`,
 mount the lifecycle, and `connect` (install + verify) the wiring.

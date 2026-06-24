@@ -4,7 +4,7 @@ import type {
   CanonicalModelRequest,
   CanonicalModelResponse,
   CanonicalToolDefinition,
-} from "@memscribe/model";
+} from "@memflywheel/model";
 
 import {
   createCapabilitySet,
@@ -13,7 +13,7 @@ import {
   type HostHarnessPort,
   type HostPromptBuildResult,
 } from "./harness-port.js";
-import type { MemScribeMessage } from "./adapter.js";
+import type { MemFlywheelMessage } from "./adapter.js";
 
 type PiDispose = Dispose | void;
 
@@ -126,9 +126,9 @@ export interface CreatePiHarnessPortOptions {
   model?: CanonicalModelCompletion;
   /** Use Pi's native completeSimple(model, context, options) function. */
   completeSimple?: PiCompleteSimple;
-  /** Explicit Pi model for background MemScribe loops. Defaults to ctx.model. */
+  /** Explicit Pi model for background MemFlywheel loops. Defaults to ctx.model. */
   piModel?: unknown;
-  /** Resolve the MemScribe session id from Pi event/context. Defaults to Pi session id, else "pi". */
+  /** Resolve the MemFlywheel session id from Pi event/context. Defaults to Pi session id, else "pi". */
   sessionId?: PiSessionIdResolver;
   /**
    * Optional idle polling. Pi exposes ctx.isIdle(), not an idle event; enabling
@@ -145,7 +145,7 @@ export interface PiScribeLike {
     skillPreludePrompt?: string;
     enabled?: boolean;
   }>;
-  onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<unknown>;
+  onTurnEnd(input: { sessionId: string; messages: MemFlywheelMessage[] }): Promise<unknown>;
   onSessionEnd(input: { sessionId: string }): Promise<void>;
   onIdle?(input?: { force?: boolean }): Promise<void>;
 }
@@ -325,7 +325,7 @@ export function canonicalMessagesFromPi(messages: unknown): CanonicalModelMessag
   return out;
 }
 
-export function memScribeMessagesFromPi(messages: unknown): MemScribeMessage[] {
+export function memScribeMessagesFromPi(messages: unknown): MemFlywheelMessage[] {
   const canonical = canonicalMessagesFromPi(messages);
   const outputs = new Map<string, string | null | undefined>();
   for (const message of canonical) {
@@ -334,7 +334,7 @@ export function memScribeMessagesFromPi(messages: unknown): MemScribeMessage[] {
     }
   }
 
-  const out: MemScribeMessage[] = [];
+  const out: MemFlywheelMessage[] = [];
   for (const message of canonical) {
     if (message.role !== "user" && message.role !== "assistant") continue;
     const text = typeof message.content === "string" ? message.content.trim() : "";
@@ -355,13 +355,13 @@ export function memScribeMessagesFromPi(messages: unknown): MemScribeMessage[] {
 export function buildPiPromptInjection(result: HostPromptBuildResult): string {
   const sections: string[] = [];
   if (result.systemPrompt?.trim()) {
-    sections.push(`# MemScribe rules\n${result.systemPrompt.trim()}`);
+    sections.push(`# MemFlywheel rules\n${result.systemPrompt.trim()}`);
   }
   if (result.preludePrompt?.trim()) {
-    sections.push(`# MemScribe memory index\n${result.preludePrompt.trim()}`);
+    sections.push(`# MemFlywheel memory index\n${result.preludePrompt.trim()}`);
   }
   if (result.skillPreludePrompt?.trim()) {
-    sections.push(`# MemScribe learned skills\n${result.skillPreludePrompt.trim()}`);
+    sections.push(`# MemFlywheel learned skills\n${result.skillPreludePrompt.trim()}`);
   }
   return sections.join("\n\n").trim();
 }

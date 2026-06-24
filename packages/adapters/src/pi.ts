@@ -24,12 +24,12 @@ const lifecycle: LifecycleMap = {
   onSessionStart: {
     hook: "onSessionStart",
     hostEvent: "session_start",
-    note: "Pi session_start: initialize the MemScribe session state.",
+    note: "Pi session_start: initialize the MemFlywheel session state.",
   },
   onPromptBuild: {
     hook: "onPromptBuild",
     hostEvent: "context",
-    note: "Pi context hook: prepend MemScribe recall as a returned context message.",
+    note: "Pi context hook: prepend MemFlywheel recall as a returned context message.",
   },
   onTurnEnd: {
     hook: "onTurnEnd",
@@ -49,7 +49,7 @@ const basePiAdapter = makeAdapter({
   lifecycle,
   defaultConfigRelPath: ".pi/agent/settings.json",
   integrationNote:
-    "Native integration: a Pi extension builds `createPiHarnessPort(pi, { completeSimple })` and passes it to `createMemScribeHarnessRuntime`; settings.json carries the wiring marker.",
+    "Native integration: a Pi extension builds `createPiHarnessPort(pi, { completeSimple })` and passes it to `createMemFlywheelHarnessRuntime`; settings.json carries the wiring marker.",
   translators: {
     sessionId: (payload) => readString(payload, "sessionId"),
     turnEnd: (payload) => ({

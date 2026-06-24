@@ -46,7 +46,7 @@ test("parseMemoryIndexRecords uses stable path identity and embeds name descript
 test("buildMemoryIndexSearchCache reuses vectors by path when line ids shift", async () => {
   const root = await makeRoot();
   try {
-    const cacheDir = path.join(root, ".memscribe", "index");
+    const cacheDir = path.join(root, ".memflywheel", "index");
     await mkdir(cacheDir, { recursive: true });
     await writeFile(
       path.join(cacheDir, "memory-index.json"),

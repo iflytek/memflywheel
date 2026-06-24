@@ -5,7 +5,7 @@
  * Both memory subagents are tool-calling loops: the SDK ships
  * `createExtractionAgentRunner({ model })` and `createDreamAgentRunner({ model })`,
  * loops that call core's memory-write tools to write files directly. The only
- * model contract here is @memscribe/model's canonical protocol; provider wire
+ * model contract here is @memflywheel/model's canonical protocol; provider wire
  * shapes and host runtimes are mapped before they enter this file.
  *
  * Nothing here owns provider auth or performs model transport by itself. The
@@ -16,8 +16,8 @@ import {
   type DreamAgentRunner,
   type ExtractionAgentRunner,
   type ExtractionMessage,
-  type MemScribe as SdkMemScribe,
-  type MemScribeLearningLoopConfig,
+  type MemFlywheel as SdkMemFlywheel,
+  type MemFlywheelLearningLoopConfig,
   type MemoryIndexRetrievalOptions,
   type SessionState,
   type SkillPreludeBuilder,
@@ -25,36 +25,36 @@ import {
   type TurnEndResult,
   createDreamAgentRunner,
   createExtractionAgentRunner,
-  createMemScribe,
+  createMemFlywheel,
   runSkillEvolutionAgent,
-} from "@memscribe/sdk";
+} from "@memflywheel/sdk";
 import {
   type LearnedSkillStoreCheckpoint,
   createLearnedSkillRecallProvider,
   createLearnedSkillStore,
-} from "@memscribe/skills";
-import type { CanonicalModelCompletion } from "@memscribe/model";
+} from "@memflywheel/skills";
+import type { CanonicalModelCompletion } from "@memflywheel/model";
 
-import type { MemScribe, MemScribeContext, MemScribeMessage } from "./adapter.js";
+import type { MemFlywheel, MemFlywheelContext, MemFlywheelMessage } from "./adapter.js";
 import {
   classifyHostCapabilities,
   requireHostCapabilities,
   type HostHarnessPort,
   type HostIntegrationMode,
 } from "./harness-port.js";
-import type { CanonicalModelMessage } from "@memscribe/model";
+import type { CanonicalModelMessage } from "@memflywheel/model";
 
 /**
- * Re-exported SDK contracts so hosts/adapters depend only on `@memscribe/adapters`.
+ * Re-exported SDK contracts so hosts/adapters depend only on `@memflywheel/adapters`.
  */
 export type {
-  MemScribeLearningLoopConfig,
+  MemFlywheelLearningLoopConfig,
   MemoryIndexRetrievalOptions,
   SessionState,
   SkillPreludeBuilder,
   SkillRecallProvider,
-} from "@memscribe/sdk";
-export type { CanonicalModelCompletion } from "@memscribe/model";
+} from "@memflywheel/sdk";
+export type { CanonicalModelCompletion } from "@memflywheel/model";
 
 export interface HostLearnedSkillEvolutionInput {
   sessionId: string;
@@ -85,10 +85,10 @@ export interface HostLearnedSkillsOptions {
   qualitySignals?: (input: HostLearnedSkillEvolutionInput) => unknown;
 }
 
-export type MemScribeHarnessMode = "native" | "recall-only";
+export type MemFlywheelHarnessMode = "native" | "recall-only";
 
-/** Options for {@link createMemScribeHarnessRuntime}. */
-export interface MemScribeHarnessRuntimeOptions {
+/** Options for {@link createMemFlywheelHarnessRuntime}. */
+export interface MemFlywheelHarnessRuntimeOptions {
   /**
    * Optional host port. Phase 1 uses the port's canonical model; lifecycle
    * binding remains explicit so existing adapter attach tests stay focused.
@@ -100,8 +100,8 @@ export interface MemScribeHarnessRuntimeOptions {
    */
   model?: CanonicalModelCompletion;
   /** Explicit runtime mode. No implicit recall-only fallback. */
-  mode?: MemScribeHarnessMode;
-  /** Memory root override. Falls back to MEMSCRIBE_HOME / OS data dir. */
+  mode?: MemFlywheelHarnessMode;
+  /** Memory root override. Falls back to MEMFLYWHEEL_HOME / OS data dir. */
   root?: string;
   /** Master switch. When false, every hook becomes a no-op. */
   enabled?: boolean;
@@ -126,7 +126,7 @@ export interface MemScribeHarnessRuntimeOptions {
   /** Optional renderer for learned-skill recall packets. Defaults to the SDK renderer. */
   skillPreludeBuilder?: SkillPreludeBuilder;
   /** Optional turn-end learning loop. When set, onTurnEnd runs extraction -> skill -> dream. */
-  learningLoop?: MemScribeLearningLoopConfig;
+  learningLoop?: MemFlywheelLearningLoopConfig;
   /** Optional MEMORY.md index-layer hybrid retrieval. Host owns embedding/auth. */
   memoryIndexRetrieval?: MemoryIndexRetrievalOptions;
   /**
@@ -139,27 +139,27 @@ export interface MemScribeHarnessRuntimeOptions {
 }
 
 /**
- * Adapter-ready scribe returned by {@link createMemScribeHarnessRuntime}. It
+ * Adapter-ready scribe returned by {@link createMemFlywheelHarnessRuntime}. It
  * satisfies the adapter lifecycle contract.
  */
-export interface MemScribeHarnessRuntimeAdapter extends MemScribe {
-  onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<TurnEndResult>;
+export interface MemFlywheelHarnessRuntimeAdapter extends MemFlywheel {
+  onTurnEnd(input: { sessionId: string; messages: MemFlywheelMessage[] }): Promise<TurnEndResult>;
 }
 
-/** The result of {@link createMemScribeHarnessRuntime}. */
-export interface MemScribeHarnessRuntime {
+/** The result of {@link createMemFlywheelHarnessRuntime}. */
+export interface MemFlywheelHarnessRuntime {
   /** The adapter-facing scribe — pass straight to `adapter.attach(scribe, host)`. */
-  scribe: MemScribeHarnessRuntimeAdapter;
+  scribe: MemFlywheelHarnessRuntimeAdapter;
   /** The underlying SDK scribe, for explicit ops (context/save/runDream). */
-  sdk: SdkMemScribe;
+  sdk: SdkMemFlywheel;
   /** Runtime mode after capability/options resolution. */
-  mode: HostIntegrationMode | MemScribeHarnessMode;
+  mode: HostIntegrationMode | MemFlywheelHarnessMode;
   /** Detach host lifecycle listeners created from `port`, when any. */
   dispose: () => void;
 }
 
 /** A turn message in either the adapter or core shape. */
-type AnyTurnMessage = MemScribeMessage | ExtractionMessage;
+type AnyTurnMessage = MemFlywheelMessage | ExtractionMessage;
 
 function toExtractionMessages(messages: AnyTurnMessage[]): ExtractionMessage[] {
   const out: ExtractionMessage[] = [];
@@ -179,9 +179,9 @@ function toExtractionMessages(messages: AnyTurnMessage[]): ExtractionMessage[] {
   return out;
 }
 
-export function canonicalMessagesToMemScribeMessages(
+export function canonicalMessagesToMemFlywheelMessages(
   messages: readonly CanonicalModelMessage[],
-): MemScribeMessage[] {
+): MemFlywheelMessage[] {
   const outputs = new Map<string, string | null | undefined>();
   for (const message of messages) {
     if (message.role === "tool" && message.toolCallId) {
@@ -189,7 +189,7 @@ export function canonicalMessagesToMemScribeMessages(
     }
   }
 
-  const out: MemScribeMessage[] = [];
+  const out: MemFlywheelMessage[] = [];
   for (const message of messages) {
     if (message.role !== "user" && message.role !== "assistant") continue;
     const text = typeof message.content === "string" ? message.content.trim() : "";
@@ -207,8 +207,8 @@ export function canonicalMessagesToMemScribeMessages(
   return out;
 }
 
-export function attachMemScribeToHostPort(
-  scribe: MemScribeHarnessRuntimeAdapter,
+export function attachMemFlywheelToHostPort(
+  scribe: MemFlywheelHarnessRuntimeAdapter,
   port: HostHarnessPort,
 ): () => void {
   const disposers: Array<() => void> = [];
@@ -226,7 +226,7 @@ export function attachMemScribeToHostPort(
     port.lifecycle.onTurnEnd(async (event) => {
       await scribe.onTurnEnd({
         sessionId: event.sessionId,
-        messages: canonicalMessagesToMemScribeMessages(event.messages),
+        messages: canonicalMessagesToMemFlywheelMessages(event.messages),
       });
     }),
   );
@@ -294,19 +294,19 @@ function defaultQualitySignals(input: HostLearnedSkillEvolutionInput): unknown {
 }
 
 /**
- * Adapt an SDK `MemScribe` (hooks take positional args, onPromptBuild returns a
- * BuildContextResult) to the adapter-facing `MemScribe` (hooks take a single
+ * Adapt an SDK `MemFlywheel` (hooks take positional args, onPromptBuild returns a
+ * BuildContextResult) to the adapter-facing `MemFlywheel` (hooks take a single
  * payload object). The two recall segments are structurally identical, so the
- * `MemScribeContext` passes through unchanged. `onAgentEnd` is folded into
+ * `MemFlywheelContext` passes through unchanged. `onAgentEnd` is folded into
  * `onSessionEnd` so the adapter lifecycle's session-end runs a final sweep over
  * any not-yet-extracted messages before dropping the session.
  */
-export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribeHarnessRuntimeAdapter {
+export function adaptSdkMemFlywheel(sdk: SdkMemFlywheel): MemFlywheelHarnessRuntimeAdapter {
   return {
     async onSessionStart(input: { sessionId: string }): Promise<void> {
       await sdk.onSessionStart(input.sessionId);
     },
-    async onPromptBuild(input: { sessionId: string; query?: string }): Promise<MemScribeContext> {
+    async onPromptBuild(input: { sessionId: string; query?: string }): Promise<MemFlywheelContext> {
       const ctx = await sdk.onPromptBuild({ sessionId: input.sessionId, query: input.query });
       return {
         systemPrompt: ctx.systemPrompt,
@@ -315,7 +315,7 @@ export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribeHarnessRuntimeAda
         enabled: ctx.enabled,
       };
     },
-    async onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<TurnEndResult> {
+    async onTurnEnd(input: { sessionId: string; messages: MemFlywheelMessage[] }): Promise<TurnEndResult> {
       return sdk.onTurnEnd(input.sessionId, toExtractionMessages(input.messages));
     },
     async onSessionEnd(input: { sessionId: string }): Promise<void> {
@@ -337,9 +337,9 @@ export function adaptSdkMemScribe(sdk: SdkMemScribe): MemScribeHarnessRuntimeAda
  * - Without `model` and without an explicit `agent`: pass `mode:"recall-only"`
  *   explicitly, or construction fails.
  */
-export function createMemScribeHarnessRuntime(
-  options: MemScribeHarnessRuntimeOptions = {},
-): MemScribeHarnessRuntime {
+export function createMemFlywheelHarnessRuntime(
+  options: MemFlywheelHarnessRuntimeOptions = {},
+): MemFlywheelHarnessRuntime {
   const {
     root,
     enabled,
@@ -355,7 +355,7 @@ export function createMemScribeHarnessRuntime(
 
   if (requestedMode !== "recall-only" && !model && !options.agent) {
     throw new Error(
-      'createMemScribeHarnessRuntime requires a canonical model or explicit extraction agent; pass mode:"recall-only" to disable extraction.',
+      'createMemFlywheelHarnessRuntime requires a canonical model or explicit extraction agent; pass mode:"recall-only" to disable extraction.',
     );
   }
   if (options.port && requestedMode !== "recall-only") {
@@ -425,7 +425,7 @@ export function createMemScribeHarnessRuntime(
     };
   }
 
-  const sdk = createMemScribe({
+  const sdk = createMemFlywheel({
     root,
     enabled,
     agent,
@@ -436,8 +436,8 @@ export function createMemScribeHarnessRuntime(
     learningLoop: sdkLearningLoop,
     memoryIndexRetrieval,
   });
-  const scribe = adaptSdkMemScribe(sdk);
-  const dispose = options.port ? attachMemScribeToHostPort(scribe, options.port) : () => undefined;
+  const scribe = adaptSdkMemFlywheel(sdk);
+  const dispose = options.port ? attachMemFlywheelToHostPort(scribe, options.port) : () => undefined;
   return {
     scribe,
     sdk,

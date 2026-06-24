@@ -1,8 +1,8 @@
 /**
- * @memscribe/sdk — host lifecycle integration layer.
+ * @memflywheel/sdk — host lifecycle integration layer.
  *
  * This is the thin orchestration seam between a host runtime (Pi / Claude Code /
- * OpenCode / …) and @memscribe/core. It owns:
+ * OpenCode / …) and @memflywheel/core. It owns:
  *
  *   - a single per-root StorageContext + audit logger,
  *   - the per-session extraction cursor store,
@@ -53,7 +53,7 @@ import {
   archiveMemoryDocument,
   syncMemoryIndex,
   deriveMemoryFilename,
-} from "@memscribe/core";
+} from "@memflywheel/core";
 
 import { createExtractionAgentRunner } from "./extraction-agent.js";
 import { createDreamAgentRunner } from "./dream-agent.js";
@@ -84,14 +84,14 @@ export type {
   BuildContextResult,
   EmbeddingProvider,
   MemoryIndexRetrievalOptions,
-} from "@memscribe/core";
+} from "@memflywheel/core";
 export {
   ExtractionResult,
   createFileTools,
   fileToolMap,
   DEFAULT_EXTRACTION_SYSTEM_PROMPT,
   buildExtractionAgentUserMessage,
-} from "@memscribe/core";
+} from "@memflywheel/core";
 
 // Provider-neutral model protocol plus provider mappers.
 export {
@@ -109,7 +109,7 @@ export {
   type OpenAIEmbeddingsModelConfig,
   createOpenAIChatCompletionsModel,
   createOpenAIEmbeddingsModel,
-} from "@memscribe/model";
+} from "@memflywheel/model";
 
 // Runtime assembly layer: the extraction & dream subagents over the canonical
 // model protocol (both the same tool-calling loop, seeded differently).
@@ -187,7 +187,7 @@ export type SkillRecallProvider = (input: {
 
 export type SkillPreludeBuilder = (packet: SkillRecallPacket) => string;
 
-export interface MemScribeLearningLoopConfig {
+export interface MemFlywheelLearningLoopConfig {
   enabled?: boolean;
   source?: LearningLoopSource;
   skillLearningEnabled?: boolean;
@@ -209,7 +209,7 @@ export interface MemScribeLearningLoopConfig {
   }) => Promise<SkillEvolutionLoopResult>;
 }
 
-export interface MemScribeBuildContextResult extends BuildContextResult {
+export interface MemFlywheelBuildContextResult extends BuildContextResult {
   skillPreludePrompt?: string;
 }
 
@@ -219,8 +219,8 @@ export interface PromptBuildInput {
 }
 
 /** Configuration for a memory scribe. The host supplies the LLM injection points. */
-export interface MemScribeConfig {
-  /** Override the memory root. Falls back to MEMSCRIBE_HOME / OS data dir. */
+export interface MemFlywheelConfig {
+  /** Override the memory root. Falls back to MEMFLYWHEEL_HOME / OS data dir. */
   root?: string;
   /** Master switch. When false, hooks become no-ops (no scan, no inject, no write). */
   enabled?: boolean;
@@ -252,7 +252,7 @@ export interface MemScribeConfig {
   /** Optional renderer for learned-skill recall packets. Defaults to a compact prompt prelude. */
   skillPreludeBuilder?: SkillPreludeBuilder;
   /** Optional turn-end learning loop. When set, onTurnEnd runs extraction -> skill -> dream. */
-  learningLoop?: MemScribeLearningLoopConfig;
+  learningLoop?: MemFlywheelLearningLoopConfig;
   /** Optional MEMORY.md index-layer hybrid retrieval. Host still owns the embedding provider. */
   memoryIndexRetrieval?: MemoryIndexRetrievalOptions;
 }
@@ -271,7 +271,7 @@ export interface TurnEndResult {
   result: ExtractionResult;
   /** True when the scribe is disabled or no extraction agent is configured. */
   skipped: boolean;
-  /** Present when createMemScribe owns the turn-end learning loop. */
+  /** Present when createMemFlywheel owns the turn-end learning loop. */
   learningLoop?: LearningLoopResult;
 }
 
@@ -316,7 +316,7 @@ function buildSkillInstructionPrompt(): string {
 
 - 可用技能条目只是路由线索，只有当用户请求和技能明确相关时才使用
 - 不要把技能步骤复制进普通记忆
-- 技能的加载、执行、权限和工具调用由宿主负责，MemScribe 只提供路由线索
+- 技能的加载、执行、权限和工具调用由宿主负责，MemFlywheel 只提供路由线索
 - 技能学习基于对话记录和工具调用轨迹，不要在回答里编造未执行的步骤`;
 }
 
@@ -357,7 +357,7 @@ function countToolCalls(messages: readonly ExtractionMessage[]): number {
 }
 
 /** The host-facing memory scribe. */
-export interface MemScribe {
+export interface MemFlywheel {
   readonly root: string;
   readonly enabled: boolean;
   readonly ctx: StorageContext;
@@ -373,7 +373,7 @@ export interface MemScribe {
    *  - systemPrompt: STABLE memory rules (cache-friendly prefix)
    *  - preludePrompt: DYNAMIC index cues wrapped in <system-reminder>
    */
-  onPromptBuild(input?: PromptBuildInput): Promise<MemScribeBuildContextResult>;
+  onPromptBuild(input?: PromptBuildInput): Promise<MemFlywheelBuildContextResult>;
   /**
    * A turn finished. The host passes the turn's user+assistant messages; the SDK
    * appends them to session state and runs after-turn extraction via the
@@ -397,7 +397,7 @@ export interface MemScribe {
   // ---- Explicit host operations ----
 
   /** Return the default index prelude and stable memory rules. */
-  context(): Promise<MemScribeBuildContextResult>;
+  context(): Promise<MemFlywheelBuildContextResult>;
   /** Explicit, validated memory write (under lock, syncs index). */
   save(options: SaveOptions): Promise<ExtractionResult>;
   /** Force a dream pass regardless of gate. */
@@ -415,7 +415,7 @@ export interface MemScribe {
  * Build a memory scribe. `root` is resolved once and threaded into a single
  * StorageContext; everything downstream is per-root and lock-coordinated.
  */
-export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
+export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
   const root = getMemoryRoot({ root: config.root });
   const enabled = config.enabled !== false;
   const audit = config.audit ?? createAuditLogger(root);
@@ -506,7 +506,7 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
     };
   }
 
-  async function buildPromptContext(input?: PromptBuildInput): Promise<MemScribeBuildContextResult> {
+  async function buildPromptContext(input?: PromptBuildInput): Promise<MemFlywheelBuildContextResult> {
     const memoryContext = await buildContext({
       root,
       enabled,
@@ -611,7 +611,7 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
       ensureSession(sessionId);
     },
 
-    async onPromptBuild(input?: PromptBuildInput): Promise<MemScribeBuildContextResult> {
+    async onPromptBuild(input?: PromptBuildInput): Promise<MemFlywheelBuildContextResult> {
       return buildPromptContext(input);
     },
 
@@ -647,13 +647,13 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
       return dream(opts, false);
     },
 
-    async context(): Promise<MemScribeBuildContextResult> {
+    async context(): Promise<MemFlywheelBuildContextResult> {
       return buildPromptContext();
     },
 
     async save(options: SaveOptions): Promise<ExtractionResult> {
       if (!enabled) return ExtractionResult.Skipped;
-      const { acquireLock, releaseLock } = await import("@memscribe/core");
+      const { acquireLock, releaseLock } = await import("@memflywheel/core");
       const handle = await acquireLock(root, "save");
       if (!handle.acquired) return ExtractionResult.Queued;
       try {

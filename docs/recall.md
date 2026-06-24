@@ -1,13 +1,13 @@
 # Recall
 
-Recall is how a memory store reaches the model on a given turn. MemScribe's answer is
+Recall is how a memory store reaches the model on a given turn. MemFlywheel's answer is
 deliberately narrow: **give the model index cues, never pre-load memory bodies.**
 
 ## Index-Layer Retrieval
 
 The default path is still full-index injection when the bounded `MEMORY.md` index fits the
 prompt budget. When the index is larger and the host supplies an embedding provider,
-MemScribe can run hybrid retrieval over `MEMORY.md` index lines only:
+MemFlywheel can run hybrid retrieval over `MEMORY.md` index lines only:
 
 ```
 MEMORY.md lines
@@ -26,7 +26,7 @@ retrieval_terms`; the full raw index line is kept only for prompt injection.
 There is no retrieval over memory bodies, no reranker in the default hot path, no hidden
 LLM selector, and no embedded model inside the package. `retrieval_terms` is the intended
 place for answer-bearing routing phrases that should influence pre-recall without embedding
-the body. If no provider is configured, MemScribe uses the full/truncated index path. If the
+the body. If no provider is configured, MemFlywheel uses the full/truncated index path. If the
 provider is configured as `required` but absent, setup fails fast.
 
 The index lines are *cues*, not facts — they tell the model what exists so it can decide
@@ -108,7 +108,7 @@ main agent sees matching path
                  ├─ enough detail → answer
                  │
                  └─ needs provenance / exact execution details
-                        → host Read(.memscribe/sources/session-<hash>.jsonl, line range)
+                        → host Read(.memflywheel/sources/session-<hash>.jsonl, line range)
 ```
 
 The model:
@@ -119,5 +119,5 @@ The model:
   it can answer.
 - Applies what it reads, and never tells the user that it consulted memory.
 
-All of that is the model's judgment. MemScribe's job ends at handing it bounded index cues
+All of that is the model's judgment. MemFlywheel's job ends at handing it bounded index cues
 and stable rules; the host's main agent decides whether and how to read memory bodies.

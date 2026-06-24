@@ -19,9 +19,9 @@ import {
   type TypeReviewItem,
   DEFAULT_DREAM_SYSTEM_PROMPT,
   buildDreamAgentUserMessage,
-} from "@memscribe/core";
+} from "@memflywheel/core";
 
-import type { CanonicalModelCompletion } from "@memscribe/model";
+import type { CanonicalModelCompletion } from "@memflywheel/model";
 import { type ToolAgentResult, runToolAgent } from "./tool-agent.js";
 
 /** Options for {@link runDreamAgent}. */

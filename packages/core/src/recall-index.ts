@@ -43,7 +43,7 @@ interface DiskCache {
   }>;
 }
 
-const CACHE_DIR = ".memscribe/index";
+const CACHE_DIR = ".memflywheel/index";
 const CACHE_FILE = "memory-index.json";
 const RRF_K = 60;
 

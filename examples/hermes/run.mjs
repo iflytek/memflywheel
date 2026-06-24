@@ -7,14 +7,14 @@
  * scripted canonical model (list → save → decline a high-risk secret).
  *
  *   USE_FAKE=1 node examples/hermes/run.mjs
- *   MEMSCRIBE_LLM_API_KEY=... node examples/hermes/run.mjs   # real model (tools endpoint)
+ *   MEMFLYWHEEL_LLM_API_KEY=... node examples/hermes/run.mjs   # real model (tools endpoint)
  */
 
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createMemScribeHarnessRuntime, hermesAdapter, connect } from "@memscribe/adapters";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+import { createMemFlywheelHarnessRuntime, hermesAdapter, connect } from "@memflywheel/adapters";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import { createFakeModel } from "../shared/fake-model.mjs";
 import { transcript } from "../shared/transcript.mjs";
 
@@ -34,12 +34,12 @@ function createMockHermesHost() {
 }
 
 const useFake = process.env.USE_FAKE === "1";
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-hermes-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-hermes-"));
 
 const model = useFake ? createFakeModel() : createOpenAIChatCompletionsModel();
 const { scribe } = useFake
-  ? createMemScribeHarnessRuntime({ model, root })
-  : createMemScribeHarnessRuntime({ model, root });
+  ? createMemFlywheelHarnessRuntime({ model, root })
+  : createMemFlywheelHarnessRuntime({ model, root });
 
 const host = createMockHermesHost();
 const dispose = hermesAdapter.attach(scribe, host);

@@ -1,8 +1,8 @@
 /**
- * @memscribe/adapters — host lifecycle mappings.
+ * @memflywheel/adapters — host lifecycle mappings.
  *
  * Each adapter maps a host's lifecycle events (session start, prompt build,
- * turn end, idle/scheduled) onto a MemScribe's hooks. Adapters contain NO
+ * turn end, idle/scheduled) onto a MemFlywheel's hooks. Adapters contain NO
  * memory logic — pure event translation plus a real, round-trippable install
  * of the host-side wiring.
  *
@@ -12,13 +12,13 @@
 
 // Framework: contracts, install/verify/doctor, lifecycle binding.
 export {
-  // Adapter-facing contract (structural mirror of @memscribe/sdk MemScribe)
-  type MemScribeMessage,
-  type MemScribeContext,
-  type MemScribe,
+  // Adapter-facing contract (structural mirror of @memflywheel/sdk MemFlywheel)
+  type MemFlywheelMessage,
+  type MemFlywheelContext,
+  type MemFlywheel,
   type HostRuntime,
   // Lifecycle mapping
-  type MemScribeHook,
+  type MemFlywheelHook,
   type LifecycleMapping,
   type LifecycleMap,
   type HookTranslators,
@@ -108,20 +108,20 @@ export {
 export {
   type HostLearnedSkillEvolutionInput,
   type HostLearnedSkillsOptions,
-  type MemScribeHarnessMode,
-  type MemScribeHarnessRuntimeOptions,
-  type MemScribeHarnessRuntimeAdapter,
-  type MemScribeHarnessRuntime,
-  type MemScribeLearningLoopConfig,
+  type MemFlywheelHarnessMode,
+  type MemFlywheelHarnessRuntimeOptions,
+  type MemFlywheelHarnessRuntimeAdapter,
+  type MemFlywheelHarnessRuntime,
+  type MemFlywheelLearningLoopConfig,
   type MemoryIndexRetrievalOptions,
   type SkillPreludeBuilder,
   type SkillRecallProvider,
   type CanonicalModelCompletion,
-  canonicalMessagesToMemScribeMessages,
-  attachMemScribeToHostPort,
-  createMemScribeHarnessRuntime,
-  adaptSdkMemScribe,
-} from "./host-memscribe.js";
+  canonicalMessagesToMemFlywheelMessages,
+  attachMemFlywheelToHostPort,
+  createMemFlywheelHarnessRuntime,
+  adaptSdkMemFlywheel,
+} from "./host-memflywheel.js";
 
 // Built-in host adapters.
 export { piAdapter } from "./pi.js";

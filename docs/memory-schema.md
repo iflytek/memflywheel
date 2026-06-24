@@ -33,7 +33,7 @@ The persisted frontmatter carries **only** these fields:
 | `created_at` | no | Minimal timestamp metadata. |
 | `updated_at` | no | Minimal timestamp metadata. |
 
-There are no other fields. MemScribe deliberately does not carry `scope`, `origin`,
+There are no other fields. MemFlywheel deliberately does not carry `scope`, `origin`,
 `source_ref`, `confidence`, `status`, `agent`, `project`, or `session`.
 
 `retrieval_terms` is a YAML list of short index-routing phrases:
@@ -57,10 +57,10 @@ loop, the file-tool executor appends a body section like this:
 ```markdown
 ## Sources
 
-- .memscribe/sources/session-<hash>.jsonl#L10-L18
+- .memflywheel/sources/session-<hash>.jsonl#L10-L18
 ```
 
-Those references point to cleaned execution-trace JSONL written under `.memscribe/sources/`.
+Those references point to cleaned execution-trace JSONL written under `.memflywheel/sources/`.
 Multiple memory files produced from the same extraction pass can point to the same source
 file and line range. Cursor context is visible to the extraction agent but is not written
 again to the source trace; only the newly processed messages for that pass are appended. A

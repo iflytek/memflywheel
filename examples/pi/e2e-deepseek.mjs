@@ -1,5 +1,5 @@
 /**
- * MemScribe × Pi — comprehensive, boundary-focused end-to-end test (real model: DeepSeek).
+ * MemFlywheel × Pi — comprehensive, boundary-focused end-to-end test (real model: DeepSeek).
  *
  * Written to be RUN (e.g. by Codex), read, and iterated on. Scenarios are grouped:
  *   A · 记忆闭环 (memory loop)      — needs a real model
@@ -14,9 +14,9 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * SECURITY: never hardcode a key. Read it from the env.
  *
- *   export MEMSCRIBE_LLM_API_KEY=sk-...                 # your DeepSeek key
- *   export MEMSCRIBE_LLM_ENDPOINT=https://api.deepseek.com/v1
- *   export MEMSCRIBE_LLM_MODEL=deepseek-v4-flash
+ *   export MEMFLYWHEEL_LLM_API_KEY=sk-...                 # your DeepSeek key
+ *   export MEMFLYWHEEL_LLM_ENDPOINT=https://api.deepseek.com/v1
+ *   export MEMFLYWHEEL_LLM_MODEL=deepseek-v4-flash
  *
  *   node examples/pi/e2e-deepseek.mjs                   # A+B (if key) + C (always)
  *   PI_REAL=1 node examples/pi/e2e-deepseek.mjs         # also boot real Pi (D)
@@ -30,29 +30,29 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
-  createMemScribeHarnessRuntime,
+  createMemFlywheelHarnessRuntime,
   createPiHarnessPort,
   classifyHostCapabilities,
   requireHostCapabilities,
   createCapabilitySet,
-} from "@memscribe/adapters";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+} from "@memflywheel/adapters";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import {
   validateLearnedSkillPackage,
   LearnedSkillValidationError,
   createLearnedSkillStore,
   createLearnedSkillRecallProvider,
   buildLearnedSkillPrelude,
-} from "@memscribe/skills";
+} from "@memflywheel/skills";
 
 // ───────────────────────────── config ──────────────────────────────────────
 
 const ENDPOINT =
-  process.env.MEMSCRIBE_LLM_ENDPOINT ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
-const MODEL = process.env.MEMSCRIBE_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-const API_KEY = process.env.MEMSCRIBE_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
+  process.env.MEMFLYWHEEL_LLM_ENDPOINT ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
+const MODEL = process.env.MEMFLYWHEEL_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
+const API_KEY = process.env.MEMFLYWHEEL_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
 const HAVE_KEY = Boolean(API_KEY);
-const CAPTURE_PROXY = HAVE_KEY && process.env.MEMSCRIBE_CAPTURE_PROXY !== "0";
+const CAPTURE_PROXY = HAVE_KEY && process.env.MEMFLYWHEEL_CAPTURE_PROXY !== "0";
 let ACTIVE_ENDPOINT = ENDPOINT;
 let ACTIVE_API_KEY = API_KEY;
 const proxyLog = [];
@@ -149,7 +149,7 @@ async function startCaptureProxy() {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   ACTIVE_ENDPOINT = `http://127.0.0.1:${address.port}/v1`;
-  ACTIVE_API_KEY = "memscribe-local-proxy-token";
+  ACTIVE_API_KEY = "memflywheel-local-proxy-token";
   return {
     url: ACTIVE_ENDPOINT,
     close: () => new Promise((resolve) => server.close(resolve)),
@@ -219,7 +219,7 @@ async function dumpRoot(label, root) {
 function validSkillMd(slug, displayName, description) {
   return [
     "---",
-    `name: memscribe-learned-${slug}`,
+    `name: memflywheel-learned-${slug}`,
     `display_name: ${displayName}`,
     `description: ${description}`,
     "---",
@@ -245,21 +245,21 @@ const factsTranscript = [
   {
     role: "user",
     text:
-      "记一下我的偏好：我叫 Kai，主力项目是 MemScribe。我喝咖啡只喝美式不加糖。" +
+      "记一下我的偏好：我叫 Kai，主力项目是 MemFlywheel。我喝咖啡只喝美式不加糖。" +
       "回复我语气要简洁直接、不要寒暄。常用部署区域是 ap-singapore。",
   },
   { role: "assistant", text: "明白，已记住。" },
 ];
 
 const procedureTranscript = [
-  { role: "user", text: "把 MemScribe 的发布流程完整跑一遍。这是我的长期发布约定，必须沉淀成以后可复用的发布 skill。" },
+  { role: "user", text: "把 MemFlywheel 的发布流程完整跑一遍。这是我的长期发布约定，必须沉淀成以后可复用的发布 skill。" },
   {
     role: "assistant",
     text: "执行发布流程。",
     toolCalls: [
       { name: "bash", input: { command: "pnpm -r build" }, output: "build ok" },
       { name: "bash", input: { command: "pnpm -r test" }, output: "242 passed" },
-      { name: "bash", input: { command: "npm publish --access public" }, output: "+ memscribe@0.1.0" },
+      { name: "bash", input: { command: "npm publish --access public" }, output: "+ memflywheel@0.1.0" },
     ],
   },
   {
@@ -313,7 +313,7 @@ async function groupA() {
 
   banner("A1 · recall-only 模式：能召回、不抽取（无需模型）");
   {
-    const { scribe, mode } = createMemScribeHarnessRuntime({ root, mode: "recall-only" });
+    const { scribe, mode } = createMemFlywheelHarnessRuntime({ root, mode: "recall-only" });
     check("A1 mode is recall-only", mode === "recall-only", `mode=${mode}`);
     await scribe.onSessionStart({ sessionId });
     const ctx = await scribe.onPromptBuild({ sessionId });
@@ -328,7 +328,7 @@ async function groupA() {
     return root;
   }
 
-  const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: buildModel(), root });
   await scribe.onSessionStart({ sessionId });
 
   banner("A2 · turn-end 抽取写出真实 memory 文件");
@@ -346,7 +346,7 @@ async function groupA() {
     /preference|偏好|coffee|咖啡|美式/i,
     /style|风格|tone|语气|简洁/i,
     /identity|身份|name|Kai/i,
-    /context|项目|MemScribe|deployment|ap-singapore|singapore/i,
+    /context|项目|MemFlywheel|deployment|ap-singapore|singapore/i,
   ].filter((re) => re.test(recall)).length;
   check("A3 prior memory recalled", /可用记忆条目|Available memories/i.test(recall) && recalledSignals >= 2);
 
@@ -384,7 +384,7 @@ async function groupB() {
   const checkpointRoot = await mkdtemp(path.join(tmpdir(), "ms-B-checkpoints-"));
   await mkdir(skillsRoot, { recursive: true });
 
-  const { scribe } = createMemScribeHarnessRuntime({
+  const { scribe } = createMemFlywheelHarnessRuntime({
     model: buildModel(),
     root,
     learnedSkills: {
@@ -398,9 +398,9 @@ async function groupB() {
             ? "Update the existing release skill with an auth-token preflight learned from the failing trajectory."
             : "Create a reusable release runbook learned skill from this successful release trajectory.",
           requiredDecision: failure ? "update" : "create",
-          targetSkill: "memscribe-learned-release-runbook",
+          targetSkill: "memflywheel-learned-release-runbook",
           requiredFiles: [
-            "memscribe-learned-release-runbook/SKILL.md",
+            "memflywheel-learned-release-runbook/SKILL.md",
           ],
           lastExtraction: {
             result: input.lastExtraction.result,
@@ -470,7 +470,7 @@ async function groupB() {
 // ══════════════════ GROUP C · 边界 (deterministic, no key) ═════════════════════
 
 async function groupC() {
-  banner("C1 · 技能不执行：MemScribe 只 store/validate/evolve，无 execute/run/spawn");
+  banner("C1 · 技能不执行：MemFlywheel 只 store/validate/evolve，无 execute/run/spawn");
   {
     const root = await mkdtemp(path.join(tmpdir(), "ms-C1-"));
     const store = createLearnedSkillStore({
@@ -480,7 +480,7 @@ async function groupC() {
     const forbidden = ["execute", "run", "spawn", "load", "invoke", "exec"];
     const storeClean = forbidden.every((m) => typeof store[m] !== "function");
     check("C1 store exposes no execution method", storeClean, `store keys: ${Object.keys(store).join(",")}`);
-    const { scribe } = createMemScribeHarnessRuntime({ root, mode: "recall-only" });
+    const { scribe } = createMemFlywheelHarnessRuntime({ root, mode: "recall-only" });
     const scribeClean = forbidden.every((m) => typeof scribe[m] !== "function");
     check("C1 scribe exposes no execution method", scribeClean);
   }
@@ -507,9 +507,9 @@ async function groupC() {
   {
     const root = await mkdtemp(path.join(tmpdir(), "ms-C3-"));
     expectThrows("C3 no model & not recall-only → throws",
-      () => createMemScribeHarnessRuntime({ root }), /canonical model/i);
+      () => createMemFlywheelHarnessRuntime({ root }), /canonical model/i);
     let ok = true;
-    try { createMemScribeHarnessRuntime({ root, mode: "recall-only" }); } catch { ok = false; }
+    try { createMemFlywheelHarnessRuntime({ root, mode: "recall-only" }); } catch { ok = false; }
     check("C3 recall-only constructs without a model", ok);
     expectThrows("C3 requireHostCapabilities throws on missing cap",
       () => requireHostCapabilities("test", createCapabilitySet(["prompt-build"]), ["prompt-build", "turn-end"]),
@@ -520,12 +520,12 @@ async function groupC() {
   {
     const valid = {
       slug: "release-runbook",
-      files: { "SKILL.md": validSkillMd("release-runbook", "Release Runbook", "Use when publishing MemScribe to npm.") },
+      files: { "SKILL.md": validSkillMd("release-runbook", "Release Runbook", "Use when publishing MemFlywheel to npm.") },
     };
     let okValid = true;
     try {
       const v = validateLearnedSkillPackage(valid);
-      okValid = v.skillName === "memscribe-learned-release-runbook";
+      okValid = v.skillName === "memflywheel-learned-release-runbook";
     } catch (e) {
       okValid = false;
       console.log("  unexpected:", e?.message);
@@ -538,7 +538,7 @@ async function groupC() {
     expectThrows("C4 missing required section → rejected",
       () => validateLearnedSkillPackage({
         slug: "x",
-        files: { "SKILL.md": "---\nname: memscribe-learned-x\ndisplay_name: X\ndescription: d\n---\n\n## Use Cases\n- a\n" },
+        files: { "SKILL.md": "---\nname: memflywheel-learned-x\ndisplay_name: X\ndescription: d\n---\n\n## Use Cases\n- a\n" },
       }));
     expectThrows("C4 forbidden public name → rejected",
       () => validateLearnedSkillPackage({
@@ -553,7 +553,7 @@ async function groupC() {
   {
     const root = await mkdtemp(path.join(tmpdir(), "ms-C6-"));
     const skillsRoot = path.join(root, "skills");
-    const dir = path.join(skillsRoot, "memscribe-learned-demo-skill");
+    const dir = path.join(skillsRoot, "memflywheel-learned-demo-skill");
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "SKILL.md"), validSkillMd("demo-skill", "Demo Skill", "Use when running the demo."));
     const recall = createLearnedSkillRecallProvider({ skillsRoot });
@@ -573,7 +573,7 @@ async function groupC() {
 // ═══════════════════ GROUP D · 真实 Pi 接入 (PI_REAL=1) ════════════════════════
 
 async function groupD() {
-  banner("D · 真实 Pi AgentSession（DeepSeek 当 Pi 主模型）+ MemScribe 扩展");
+  banner("D · 真实 Pi AgentSession（DeepSeek 当 Pi 主模型）+ MemFlywheel 扩展");
   if (!HAVE_KEY) {
     record("D real Pi", "skip", "no key");
     return;
@@ -624,7 +624,7 @@ async function groupD() {
       return originalOn(event, wrapped);
     };
     const port = createPiHarnessPort(pi, { completeSimple });
-    const runtime = createMemScribeHarnessRuntime({ port, root });
+    const runtime = createMemFlywheelHarnessRuntime({ port, root });
     pi.on("tool_call", async () => { toolEvents += 1; });
     pi.on("tool_result", async () => { toolEvents += 1; });
     return runtime.dispose;
@@ -645,7 +645,7 @@ async function groupD() {
   try {
     await session.prompt(
       "先使用 Pi 原生 bash 工具执行 `pwd`；" +
-      "然后记住：我叫 Kai，做 MemScribe，喝美式不加糖。最后用一句话给我今天的建议。",
+      "然后记住：我叫 Kai，做 MemFlywheel，喝美式不加糖。最后用一句话给我今天的建议。",
     );
   } catch (err) {
     record("D real turn completed", "fail", `session.prompt threw: ${err?.message ?? err}`);
@@ -688,7 +688,7 @@ async function main() {
   if (CAPTURE_PROXY) {
     proxy = await startCaptureProxy();
   }
-  console.log(`MemScribe × Pi E2E — model=${MODEL} endpoint=${ACTIVE_ENDPOINT} key=${HAVE_KEY ? "yes" : "NO (only group C runs)"}`);
+  console.log(`MemFlywheel × Pi E2E — model=${MODEL} endpoint=${ACTIVE_ENDPOINT} key=${HAVE_KEY ? "yes" : "NO (only group C runs)"}`);
   if (proxy) console.log(`Proxy capture enabled: ${proxy.url} -> ${ENDPOINT}`);
 
   try {

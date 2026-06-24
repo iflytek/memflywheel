@@ -1,5 +1,5 @@
 /**
- * Domain types and constants for the MemScribe memory kernel.
+ * Domain types and constants for the MemFlywheel memory kernel.
  *
  * The persisted frontmatter carries `name` / `description` / `type`, optional
  * retrieval routing terms, and minimal write/event timestamps. The six memory

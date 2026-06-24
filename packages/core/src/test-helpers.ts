@@ -11,7 +11,7 @@ import { serializeDocument } from "./frontmatter.js";
 import { type MemoryType } from "./types.js";
 
 export async function makeRoot(): Promise<string> {
-  return mkdtemp(path.join(tmpdir(), "memscribe-test-"));
+  return mkdtemp(path.join(tmpdir(), "memflywheel-test-"));
 }
 
 export async function cleanup(root: string): Promise<void> {

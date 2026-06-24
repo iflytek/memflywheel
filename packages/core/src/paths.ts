@@ -5,7 +5,7 @@
  * threaded explicitly (no module singleton) so the kernel is testable and embeddable.
  *
  * Root resolution avoids host-specific Electron `app.getPath('appData')`
- * coupling with a pure-Node strategy: MEMSCRIBE_HOME env
+ * coupling with a pure-Node strategy: MEMFLYWHEEL_HOME env
  * wins, else an OS data dir.
  */
 
@@ -28,13 +28,13 @@ function osDataDir(): string {
 
 /**
  * Resolve the memory root directory.
- * Precedence: opts.root → MEMSCRIBE_HOME env → <os-data-dir>/memscribe/memory.
+ * Precedence: opts.root → MEMFLYWHEEL_HOME env → <os-data-dir>/memflywheel/memory.
  */
 export function getMemoryRoot(opts?: { root?: string }): string {
   if (opts?.root) return path.resolve(opts.root);
-  const fromEnv = process.env.MEMSCRIBE_HOME;
+  const fromEnv = process.env.MEMFLYWHEEL_HOME;
   if (fromEnv && fromEnv.trim()) return path.resolve(fromEnv.trim());
-  return path.join(osDataDir(), "memscribe", "memory");
+  return path.join(osDataDir(), "memflywheel", "memory");
 }
 
 export async function ensureMemoryDir(root: string): Promise<void> {

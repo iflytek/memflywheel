@@ -11,7 +11,7 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createMemScribeHarnessRuntime, openclawAdapter, connect } from "@memscribe/adapters";
+import { createMemFlywheelHarnessRuntime, openclawAdapter, connect } from "@memflywheel/adapters";
 import { transcript } from "../shared/transcript.mjs";
 
 function createMockOpenClawHost() {
@@ -29,9 +29,9 @@ function createMockOpenClawHost() {
   };
 }
 
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-openclaw-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-openclaw-"));
 
-const { scribe } = createMemScribeHarnessRuntime({ mode: "recall-only", root });
+const { scribe } = createMemFlywheelHarnessRuntime({ mode: "recall-only", root });
 
 const host = createMockOpenClawHost();
 const dispose = openclawAdapter.attach(scribe, host);

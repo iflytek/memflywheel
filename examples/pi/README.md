@@ -2,7 +2,7 @@
 
 Real integration: a Pi `.js`/`.mjs` extension wraps Pi's per-session auxiliary
 tool-calling completion into `createPiHarnessPort(pi)`, builds the scribe with
-`createMemScribeHarnessRuntime({ port })`, and attaches the `pi` adapter so the
+`createMemFlywheelHarnessRuntime({ port })`, and attaches the `pi` adapter so the
 lifecycle fires on Pi's events. Extraction is a tool-calling subagent loop that
 writes memory files directly.
 
@@ -15,11 +15,11 @@ writes memory files directly.
 
 ## Install into a real Pi
 
-1. Copy `extension.mjs` to `~/.pi/agent/extensions/memscribe/index.mjs`.
+1. Copy `extension.mjs` to `~/.pi/agent/extensions/memflywheel/index.mjs`.
 2. Add it to `~/.pi/agent/settings.json`:
 
    ```bash
-   node -e "import('@memscribe/adapters').then(m => m.connect(m.piAdapter, { apply: true }))"
+   node -e "import('@memflywheel/adapters').then(m => m.connect(m.piAdapter, { apply: true }))"
    ```
 
    This writes the wiring marker into `~/.pi/agent/settings.json` and verifies it
@@ -33,5 +33,5 @@ USE_FAKE=1 node examples/pi/run.mjs
 ```
 
 Real model: a real Pi process should expose `completeSimple` (or equivalent) to
-`createPiHarnessPort(pi)`. The standalone smoke can use `MEMSCRIBE_LLM_*` through
+`createPiHarnessPort(pi)`. The standalone smoke can use `MEMFLYWHEEL_LLM_*` through
 the OpenAI-compatible mapper when Pi's own process is not in scope.

@@ -14,7 +14,7 @@ import type {
   CanonicalModelMessage,
   CanonicalToolDefinition,
   JsonSchemaObject,
-} from "@memscribe/model";
+} from "@memflywheel/model";
 
 const DEFAULT_MAX_STEPS = 12;
 const MAX_TOOL_RESULT_CHARS = 4000;
@@ -28,7 +28,7 @@ Review the supplied packet, learned skill index, tool trajectory, artifact paths
 # How to act (just edit files)
 
 - Use only the provided file tools: read, write, edit, bash, glob, grep.
-- EVERY path is RELATIVE to your sandboxed working directory. Use relative paths like "memscribe-learned-<slug>/SKILL.md". NEVER use an absolute filesystem path (do not write to any path that starts with "/").
+- EVERY path is RELATIVE to your sandboxed working directory. Use relative paths like "memflywheel-learned-<slug>/SKILL.md". NEVER use an absolute filesystem path (do not write to any path that starts with "/").
 - To CREATE or UPDATE: call the WRITE tool with a relative path "<skill-dir>/SKILL.md" and the full file contents. Do NOT use bash to create or write skill files. Updating an existing skill edits that skill's existing directory; creating uses a new directory.
 - To MERGE duplicates: write the consolidated SKILL.md into the surviving skill directory (write tool), then delete each redundant skill directory with bash using a RELATIVE path (e.g. "rm -rf <dup-dir>"). Read each source in full before consolidating.
 - If there is NO durable reusable method, change no files and stop. That is a valid no-op — do not invent a skill.
@@ -36,8 +36,8 @@ Review the supplied packet, learned skill index, tool trajectory, artifact paths
 
 # Skill directory + SKILL.md rules
 
-- Every skill directory must be named memscribe-learned-<slug> (lowercase slug). If the method's natural name is "release-runbook", use directory "memscribe-learned-release-runbook".
-- "<skill-dir>/SKILL.md" must start with strict YAML frontmatter containing EXACTLY: name, display_name, description. The name value must equal the directory name (memscribe-learned-<slug>).
+- Every skill directory must be named memflywheel-learned-<slug> (lowercase slug). If the method's natural name is "release-runbook", use directory "memflywheel-learned-release-runbook".
+- "<skill-dir>/SKILL.md" must start with strict YAML frontmatter containing EXACTLY: name, display_name, description. The name value must equal the directory name (memflywheel-learned-<slug>).
 - SKILL.md must include the sections "## Use Cases", "## Procedure", and "## Guardrails". Procedure steps must be numbered "1.", "2.", ... contiguously, not bullets.
 - Optional supporting files may live under references/, scripts/, templates/, or assets/. They never replace SKILL.md.
 - Keep names generic; never leak host project names or secrets into a learned skill.
@@ -45,7 +45,7 @@ Review the supplied packet, learned skill index, tool trajectory, artifact paths
 # Valid SKILL.md shape
 
 ---
-name: memscribe-learned-release-runbook
+name: memflywheel-learned-release-runbook
 display_name: Release Runbook
 description: Reusable procedure for safely running a release.
 ---
@@ -70,7 +70,7 @@ description: Reusable procedure for safely running a release.
 When your file edits are complete, stop calling tools. You do not need to emit any JSON, summary, or skill coordination.`;
 
 export const LEARNED_SKILL_MD_TEMPLATE = `---
-name: memscribe-learned-release-runbook
+name: memflywheel-learned-release-runbook
 display_name: Release Runbook
 description: Reusable procedure for safely running a release.
 ---
@@ -406,7 +406,7 @@ function buildSkillEvolutionUserMessage(input: {
   ].join("\n");
 }
 
-/** The skill name == its directory name (memscribe-learned-<slug>). */
+/** The skill name == its directory name (memflywheel-learned-<slug>). */
 function skillDirOf(relativePath: string): string {
   return relativePath.split("/")[0] ?? "";
 }
@@ -439,7 +439,7 @@ const NOOP_COORDINATION: SkillEvolutionCoordination = {
 
 /** A human-readable topic derived from a skill directory name, for memory compression. */
 function humanizeSkillSlug(skillName: string): string {
-  const slug = skillName.replace(/^memscribe-learned-/, "").replace(/[-_]+/g, " ").trim();
+  const slug = skillName.replace(/^memflywheel-learned-/, "").replace(/[-_]+/g, " ").trim();
   return slug || skillName;
 }
 

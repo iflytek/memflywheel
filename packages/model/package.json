@@ -1,7 +1,7 @@
 {
-  "name": "@memscribe/model",
+  "name": "@memflywheel/model",
   "version": "0.1.0",
-  "description": "Provider-neutral tool-calling model protocol for MemScribe.",
+  "description": "Provider-neutral tool-calling model protocol for MemFlywheel.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,13 +20,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iflytek/memscribe.git",
+    "url": "git+https://github.com/iflytek/memflywheel.git",
     "directory": "packages/model"
   },
   "bugs": {
-    "url": "https://github.com/iflytek/memscribe/issues"
+    "url": "https://github.com/iflytek/memflywheel/issues"
   },
-  "homepage": "https://github.com/iflytek/memscribe#readme",
+  "homepage": "https://github.com/iflytek/memflywheel#readme",
   "keywords": [
     "agent-memory",
     "llm",

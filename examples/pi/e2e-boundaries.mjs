@@ -1,5 +1,5 @@
 /**
- * MemScribe × Pi — 10 boundary E2E scenarios (real model) + request/response capture proxy.
+ * MemFlywheel × Pi — 10 boundary E2E scenarios (real model) + request/response capture proxy.
  *
  * Hard pass/fail only (no warn). A reverse proxy in front of the model captures BOTH the
  * raw request and the raw response for every upstream call, classifies it (extraction /
@@ -8,9 +8,9 @@
  *
  * SECURITY: key from env only; never hardcoded; redacted out of the capture transcript.
  *
- *   export MEMSCRIBE_LLM_API_KEY=sk-...
- *   export MEMSCRIBE_LLM_ENDPOINT=https://api.deepseek.com/v1
- *   export MEMSCRIBE_LLM_MODEL=deepseek-v4-flash
+ *   export MEMFLYWHEEL_LLM_API_KEY=sk-...
+ *   export MEMFLYWHEEL_LLM_ENDPOINT=https://api.deepseek.com/v1
+ *   export MEMFLYWHEEL_LLM_MODEL=deepseek-v4-flash
  *   node examples/pi/e2e-boundaries.mjs
  */
 
@@ -21,18 +21,18 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
-  createMemScribeHarnessRuntime,
+  createMemFlywheelHarnessRuntime,
   createPiHarnessPort,
   classifyHostCapabilities,
-} from "@memscribe/adapters";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
-import { validateLearnedSkillPackage, createLearnedSkillStore } from "@memscribe/skills";
+} from "@memflywheel/adapters";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
+import { validateLearnedSkillPackage, createLearnedSkillStore } from "@memflywheel/skills";
 
 // ───────────────────────────── config ──────────────────────────────────────
 
-const ENDPOINT = process.env.MEMSCRIBE_LLM_ENDPOINT ?? "https://api.deepseek.com/v1";
-const MODEL = process.env.MEMSCRIBE_LLM_MODEL ?? "deepseek-v4-flash";
-const API_KEY = process.env.MEMSCRIBE_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
+const ENDPOINT = process.env.MEMFLYWHEEL_LLM_ENDPOINT ?? "https://api.deepseek.com/v1";
+const MODEL = process.env.MEMFLYWHEEL_LLM_MODEL ?? "deepseek-v4-flash";
+const API_KEY = process.env.MEMFLYWHEEL_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
 const HAVE_KEY = Boolean(API_KEY);
 let ACTIVE_ENDPOINT = ENDPOINT;
 let ACTIVE_API_KEY = API_KEY;
@@ -138,7 +138,7 @@ async function startProxy() {
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   ACTIVE_ENDPOINT = `http://127.0.0.1:${server.address().port}/v1`;
-  ACTIVE_API_KEY = "memscribe-local-proxy-token";
+  ACTIVE_API_KEY = "memflywheel-local-proxy-token";
   return server;
 }
 
@@ -189,7 +189,7 @@ const releaseProcedure = [
 ];
 
 function skillRuntime(root, skillsRoot, ckptRoot, gate) {
-  return createMemScribeHarnessRuntime({
+  return createMemFlywheelHarnessRuntime({
     model: buildModel(), root,
     learnedSkills: { skillsRoot, checkpointRoot: ckptRoot },
     learningLoop: { gate },
@@ -201,7 +201,7 @@ function skillRuntime(root, skillsRoot, ckptRoot, gate) {
 async function b1_recallOnly() {
   banner("B1 · recall-only 模式:能召回、不需要模型、不抽取");
   const root = await tmp("ms-b1-");
-  const { scribe, mode } = createMemScribeHarnessRuntime({ root, mode: "recall-only" });
+  const { scribe, mode } = createMemFlywheelHarnessRuntime({ root, mode: "recall-only" });
   check("B1 mode === recall-only", mode === "recall-only", `mode=${mode}`);
   await scribe.onSessionStart({ sessionId: "b1" });
   const ctx = await scribe.onPromptBuild({ sessionId: "b1" });
@@ -212,7 +212,7 @@ async function b2_failFast() {
   banner("B2 · fail-fast:无 model 且非 recall-only → 抛错,不静默降级");
   const root = await tmp("ms-b2-");
   let threw = false;
-  try { createMemScribeHarnessRuntime({ root }); } catch (e) { threw = /canonical model|extraction agent/i.test(e?.message ?? ""); }
+  try { createMemFlywheelHarnessRuntime({ root }); } catch (e) { threw = /canonical model|extraction agent/i.test(e?.message ?? ""); }
   check("B2 throws without a model", threw);
 }
 
@@ -228,7 +228,7 @@ async function b3_capability() {
 async function b4_extraction() {
   banner("B4 · turn-end 抽取:写出 typed 文件 + 合法 frontmatter.type + MEMORY.md 同步");
   const root = await tmp("ms-b4-");
-  const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: buildModel(), root });
   await scribe.onSessionStart({ sessionId: "b4" });
   const turn = await scribe.onTurnEnd({ sessionId: "b4", messages: facts });
   check("B4 extraction completed", turn?.result === "completed", `result=${turn?.result}`);
@@ -248,7 +248,7 @@ async function b4_extraction() {
 
 async function b5_recall(root) {
   banner("B5 · 跨轮召回:上轮记忆作为索引注入下轮 prompt(不是正文)");
-  const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: buildModel(), root });
   const ctx = await scribe.onPromptBuild({ sessionId: "b4" });
   const text = `${ctx.systemPrompt ?? ""}\n${ctx.preludePrompt ?? ""}`;
   const signals = [/美式|coffee|偏好/i, /简洁|style|风格/i, /Kai|身份/i, /singapore|部署/i].filter((re) => re.test(text)).length;
@@ -259,7 +259,7 @@ async function b5_recall(root) {
 async function b6_privacy() {
   banner("B6 · 隐私:transcript 里的 secret 永不落盘");
   const root = await tmp("ms-b6-");
-  const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: buildModel(), root });
   await scribe.onSessionStart({ sessionId: "b6" });
   await scribe.onTurnEnd({ sessionId: "b6", messages: secret });
   const dump = await dumpRoot(root);
@@ -270,7 +270,7 @@ async function b6_privacy() {
 async function b7_dream() {
   banner("B7 · idle → dream:运行、索引仍可用、记忆未丢");
   const root = await tmp("ms-b7-");
-  const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: buildModel(), root });
   await scribe.onSessionStart({ sessionId: "b7" });
   await scribe.onTurnEnd({ sessionId: "b7", messages: facts });
   const before = (await dumpRoot(root)).files.filter((f) => f.name.endsWith(".md") && f.name !== "MEMORY.md").length;
@@ -304,7 +304,7 @@ async function b8_skillCreate() {
   const files = {};
   for (const f of await readdir(path.join(ok.skillsRoot, ok.slug))) files[f] = await readSafe(path.join(ok.skillsRoot, ok.slug, f));
   let valid = false, ve = "";
-  try { validateLearnedSkillPackage({ slug: ok.slug.replace(/^memscribe-learned-/, ""), files }); valid = true; } catch (e) { ve = e?.message ?? String(e); }
+  try { validateLearnedSkillPackage({ slug: ok.slug.replace(/^memflywheel-learned-/, ""), files }); valid = true; } catch (e) { ve = e?.message ?? String(e); }
   check("B8 valid package (validateLearnedSkillPackage)", valid, ve);
   const sp = (await ok.scribe.onPromptBuild({ sessionId: "b8" })).skillPreludePrompt ?? "";
   check("B8 recalled in skillPrelude (name + path)", sp.includes(ok.slug) && /path:/i.test(sp));
@@ -319,7 +319,7 @@ async function b9_gateBlocks() {
   {
     const root = await tmp("ms-b9a-"), skillsRoot = await tmp("ms-b9a-s-"), ckpt = await tmp("ms-b9a-c-");
     await mkdir(skillsRoot, { recursive: true });
-    const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root, learnedSkills: { skillsRoot, checkpointRoot: ckpt } });
+    const { scribe } = createMemFlywheelHarnessRuntime({ model: buildModel(), root, learnedSkills: { skillsRoot, checkpointRoot: ckpt } });
     await scribe.onSessionStart({ sessionId: "b9a" });
     const t = await scribe.onTurnEnd({ sessionId: "b9a", messages: chitchat });
     const reason = t?.learningLoop?.skillEvolution?.reason;
@@ -329,7 +329,7 @@ async function b9_gateBlocks() {
   {
     const root = await tmp("ms-b9b-"), skillsRoot = await tmp("ms-b9b-s-"), ckpt = await tmp("ms-b9b-c-");
     await mkdir(skillsRoot, { recursive: true });
-    const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root, learnedSkills: { skillsRoot, checkpointRoot: ckpt } });
+    const { scribe } = createMemFlywheelHarnessRuntime({ model: buildModel(), root, learnedSkills: { skillsRoot, checkpointRoot: ckpt } });
     await scribe.onSessionStart({ sessionId: "b9b" });
     const t = await scribe.onTurnEnd({ sessionId: "b9b", messages: facts });
     const reason = t?.learningLoop?.skillEvolution?.reason;
@@ -347,7 +347,7 @@ async function b10_sandbox() {
   const bash = store.createFileTools(checkpoint).find((t) => t.name === "bash");
   const abs = await bash.handler({ command: `cat > ${root}/skills/x/SKILL.md << 'EOF'\nhi\nEOF` });
   check("B10 bash rejects an absolute path", abs.ok === false && /relative paths only|absolute/i.test(abs.text), abs.text?.slice(0, 80));
-  const rel = await bash.handler({ command: "mkdir -p memscribe-learned-x" });
+  const rel = await bash.handler({ command: "mkdir -p memflywheel-learned-x" });
   check("B10 bash allows a relative path", rel.ok === true, rel.text?.slice(0, 80));
 }
 
@@ -374,7 +374,7 @@ async function dumpCapture() {
 // ──────────────────────────────── main ─────────────────────────────────────
 
 async function main() {
-  console.log(`MemScribe × Pi — 10 BOUNDARY E2E — model=${MODEL} endpoint=${ENDPOINT} key=${HAVE_KEY ? "YES" : "NO"}`);
+  console.log(`MemFlywheel × Pi — 10 BOUNDARY E2E — model=${MODEL} endpoint=${ENDPOINT} key=${HAVE_KEY ? "YES" : "NO"}`);
   let proxy = null;
   if (HAVE_KEY) proxy = await startProxy();
   try {
@@ -383,7 +383,7 @@ async function main() {
     await b3_capability();
     await b10_sandbox();
     if (!HAVE_KEY) {
-      for (const n of ["B4 extraction", "B5 recall", "B6 privacy", "B7 dream", "B8 skill", "B9 gate"]) record(n, false, "no key (set MEMSCRIBE_LLM_API_KEY)");
+      for (const n of ["B4 extraction", "B5 recall", "B6 privacy", "B7 dream", "B8 skill", "B9 gate"]) record(n, false, "no key (set MEMFLYWHEEL_LLM_API_KEY)");
     } else {
       const root = await b4_extraction();
       await b5_recall(root);

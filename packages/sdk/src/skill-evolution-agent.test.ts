@@ -14,7 +14,7 @@ import type {
   CanonicalModelCompletion,
   CanonicalModelRequest,
   CanonicalModelResponse,
-} from "@memscribe/model";
+} from "@memflywheel/model";
 
 function scriptedModel(responses: CanonicalModelResponse[]): {
   model: CanonicalModelCompletion;
@@ -163,8 +163,8 @@ function makeStore(opts: { catalog?: string[]; finalizeResult: LearnedSkillChang
   };
 }
 
-const REVIEW = "memscribe-learned-review";
-const DEBUG = "memscribe-learned-debug";
+const REVIEW = "memflywheel-learned-review";
+const DEBUG = "memflywheel-learned-debug";
 
 function run(store: SkillEvolutionStore, model: CanonicalModelCompletion) {
   return runSkillEvolutionAgent({
@@ -291,7 +291,7 @@ test("runSkillEvolutionAgent: feeds skill tool validation errors back so the mod
   const originalWrite = writeTool.handler;
   writeTool.handler = async (args) => {
     const filePath = (args as { filePath?: string }).filePath;
-    if (filePath !== `${REVIEW}/SKILL.md`) return { ok: false, text: "filePath must be memscribe-learned-<slug>/SKILL.md" };
+    if (filePath !== `${REVIEW}/SKILL.md`) return { ok: false, text: "filePath must be memflywheel-learned-<slug>/SKILL.md" };
     return originalWrite(args);
   };
   const { model, requests } = scriptedModel([
@@ -305,7 +305,7 @@ test("runSkillEvolutionAgent: feeds skill tool validation errors back so the mod
   assert.equal(state.rolledBack, 0);
   assert.equal(result.coordination.targetSkill, REVIEW);
   // the tool error was surfaced back to the model as a tool result
-  assert.match(String(requests()[1].messages.at(-1)?.content), /memscribe-learned-<slug>\/SKILL\.md/);
+  assert.match(String(requests()[1].messages.at(-1)?.content), /memflywheel-learned-<slug>\/SKILL\.md/);
 });
 
 test("validateSkillEvolutionChangeSet: enforces noop / one-skill / merge invariants", () => {

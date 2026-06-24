@@ -46,7 +46,7 @@ test("scanMemoryFiles only scans typed memory directories", async () => {
     });
     await writeRaw(
       root,
-      "skills/memscribe-learned-release-runbook/SKILL.md",
+      "skills/memflywheel-learned-release-runbook/SKILL.md",
       [
         "---",
         "name: Release runbook",
@@ -71,7 +71,7 @@ test("scanMemoryFiles only scans typed memory directories", async () => {
 });
 
 test("scanMemoryFiles returns [] for missing root", async () => {
-  const entries = await scanMemoryFiles("/tmp/does-not-exist-memscribe-xyz");
+  const entries = await scanMemoryFiles("/tmp/does-not-exist-memflywheel-xyz");
   assert.deepEqual(entries, []);
 });
 

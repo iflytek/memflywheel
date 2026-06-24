@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import {
-  createMemScribe,
+  createMemFlywheel,
   createDreamAgentRunner,
   runExtractionAgent,
   createExtractionAgentRunner,
@@ -19,15 +19,15 @@ import {
   serializeMemoryFile,
   type MemoryType,
   type StorageContext,
-} from "@memscribe/core";
+} from "@memflywheel/core";
 import type {
   CanonicalModelCompletion,
   CanonicalModelRequest,
   CanonicalModelResponse,
-} from "@memscribe/model";
+} from "@memflywheel/model";
 
 async function tempRoot(): Promise<string> {
-  return mkdtemp(path.join(tmpdir(), "memscribe-sdk-assembly-"));
+  return mkdtemp(path.join(tmpdir(), "memflywheel-sdk-assembly-"));
 }
 
 /**
@@ -223,7 +223,7 @@ test("runExtractionAgent: retries a transient error (429) then succeeds", async 
     const model: CanonicalModelCompletion = {
       complete: async () => {
         calls += 1;
-        if (calls === 1) throw new Error("MemScribe model completion: request failed (429). rate limited");
+        if (calls === 1) throw new Error("MemFlywheel model completion: request failed (429). rate limited");
         return STOP_RESPONSE;
       },
     };
@@ -249,7 +249,7 @@ test("runExtractionAgent: a non-retryable error (401) propagates without retry",
     const model: CanonicalModelCompletion = {
       complete: async () => {
         calls += 1;
-        throw new Error("MemScribe model completion: request failed (401). invalid api key");
+        throw new Error("MemFlywheel model completion: request failed (401). invalid api key");
       },
     };
     await assert.rejects(
@@ -349,7 +349,7 @@ test("createExtractionAgentRunner: turn-end writes a memory via the agent loop",
       })),
       STOP_RESPONSE,
     ]);
-    const scribe = createMemScribe({ root, agent: createExtractionAgentRunner({ model }) });
+    const scribe = createMemFlywheel({ root, agent: createExtractionAgentRunner({ model }) });
     await scribe.onSessionStart("s1");
 
     const turn = await scribe.onTurnEnd("s1", [{ role: "user", text: "I love strawberries, remember that." }]);

@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 
 import { ADAPTERS, adapterIds, getAdapter } from "./registry.js";
 import { normalizeMessages } from "./make-adapter.js";
-import type { MemScribeHook } from "./adapter.js";
+import type { MemFlywheelHook } from "./adapter.js";
 
-const REQUIRED_HOOKS: MemScribeHook[] = ["onPromptBuild", "onTurnEnd"];
+const REQUIRED_HOOKS: MemFlywheelHook[] = ["onPromptBuild", "onTurnEnd"];
 
 test("registry contains all six built-in adapters with unique ids", () => {
   assert.deepEqual(
@@ -27,7 +27,7 @@ test("every adapter has a self-consistent lifecycle map", () => {
       const mapping = adapter.lifecycle[hook];
       assert.ok(mapping, `${adapter.id} missing ${hook}`);
     }
-    for (const hook of Object.keys(adapter.lifecycle) as MemScribeHook[]) {
+    for (const hook of Object.keys(adapter.lifecycle) as MemFlywheelHook[]) {
       const mapping = adapter.lifecycle[hook];
       assert.ok(mapping, `${adapter.id} missing ${hook}`);
       // The map key must equal the mapping's declared hook.

@@ -1,7 +1,7 @@
 {
-  "name": "@memscribe/skills",
+  "name": "@memflywheel/skills",
   "version": "0.1.0",
-  "description": "File-native learned skill layer for MemScribe agent runtimes.",
+  "description": "File-native learned skill layer for MemFlywheel agent runtimes.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,13 +20,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iflytek/memscribe.git",
+    "url": "git+https://github.com/iflytek/memflywheel.git",
     "directory": "packages/skills"
   },
   "bugs": {
-    "url": "https://github.com/iflytek/memscribe/issues"
+    "url": "https://github.com/iflytek/memflywheel/issues"
   },
-  "homepage": "https://github.com/iflytek/memscribe#readme",
+  "homepage": "https://github.com/iflytek/memflywheel#readme",
   "keywords": [
     "agent-memory",
     "learned-skills",
@@ -46,7 +46,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@memscribe/core": "workspace:*"
+    "@memflywheel/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

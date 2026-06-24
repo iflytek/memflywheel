@@ -4,7 +4,7 @@
  *
  * USE_FAKE=1 is deterministic and runs in the default example smoke suite.
  * Without USE_FAKE, the script calls a real OpenAI-compatible model through the
- * @memscribe/model mapper and fails if the model does not perform the required
+ * @memflywheel/model mapper and fails if the model does not perform the required
  * tool calls.
  */
 
@@ -13,21 +13,21 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { scanMemoryFiles, serializeMemoryFile } from "@memscribe/core";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
-import { createMemScribeHarnessRuntime } from "@memscribe/adapters";
+import { scanMemoryFiles, serializeMemoryFile } from "@memflywheel/core";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
+import { createMemFlywheelHarnessRuntime } from "@memflywheel/adapters";
 
-const TARGET_SKILL = "memscribe-learned-release-review";
+const TARGET_SKILL = "memflywheel-learned-release-review";
 const MEMORY_PATH = "workflow/release-prep-workflow.md";
 const VALID_SKILL = `---
-name: memscribe-learned-release-review
+name: memflywheel-learned-release-review
 display_name: Release Review
 description: Captures a repeatable release preparation review.
 ---
 
 ## Use Cases
 
-- Use when preparing a MemScribe package or repository release.
+- Use when preparing a MemFlywheel package or repository release.
 
 ## Procedure
 
@@ -164,7 +164,7 @@ function createFakeLearningModel() {
   };
 }
 
-const skillEvolutionSystemPrompt = `You are running a MemScribe real learned-skill regression. You must create exactly one learned skill named ${TARGET_SKILL}.
+const skillEvolutionSystemPrompt = `You are running a MemFlywheel real learned-skill regression. You must create exactly one learned skill named ${TARGET_SKILL}.
 
 # Required behavior
 
@@ -188,11 +188,11 @@ Do not write any other learned skill. Do not call noop.`;
 
 async function main() {
   const useFake = process.env.USE_FAKE === "1";
-  const endpoint = useFake ? "fake" : requireEnv("MEMSCRIBE_LLM_ENDPOINT");
-  const model = useFake ? "fake-learning-loop" : requireEnv("MEMSCRIBE_LLM_MODEL");
-  const root = process.env.MEMSCRIBE_EXAMPLE_ROOT
-    ? path.resolve(process.env.MEMSCRIBE_EXAMPLE_ROOT)
-    : await mkdtemp(path.join(tmpdir(), "memscribe-real-loop-"));
+  const endpoint = useFake ? "fake" : requireEnv("MEMFLYWHEEL_LLM_ENDPOINT");
+  const model = useFake ? "fake-learning-loop" : requireEnv("MEMFLYWHEEL_LLM_MODEL");
+  const root = process.env.MEMFLYWHEEL_EXAMPLE_ROOT
+    ? path.resolve(process.env.MEMFLYWHEEL_EXAMPLE_ROOT)
+    : await mkdtemp(path.join(tmpdir(), "memflywheel-real-loop-"));
   const memoryRoot = path.join(root, "memory");
   const skillsRoot = path.join(root, "skills");
   const checkpointRoot = path.join(root, ".skill-checkpoints");
@@ -202,12 +202,12 @@ async function main() {
     : createOpenAIChatCompletionsModel({
         endpoint,
         model,
-        maxTokens: Number.parseInt(process.env.MEMSCRIBE_LLM_MAX_TOKENS ?? "4096", 10),
+        maxTokens: Number.parseInt(process.env.MEMFLYWHEEL_LLM_MAX_TOKENS ?? "4096", 10),
       });
   const instrumentedModel = {
     async complete(req) {
       const response = await modelCompletion.complete(req);
-    if (process.env.MEMSCRIBE_DEBUG_TOOL_ARGS === "1") {
+    if (process.env.MEMFLYWHEEL_DEBUG_TOOL_ARGS === "1") {
       for (const call of response.message.toolCalls ?? []) {
         if (call.name === "write" && String(call.input?.filePath ?? "").includes(TARGET_SKILL)) {
           console.error(`[debug] skill write input: ${JSON.stringify(call.input)}`);
@@ -217,7 +217,7 @@ async function main() {
     return response;
     },
   };
-  const { scribe, sdk } = createMemScribeHarnessRuntime({
+  const { scribe, sdk } = createMemFlywheelHarnessRuntime({
     root: memoryRoot,
     model: instrumentedModel,
     learnedSkills: {

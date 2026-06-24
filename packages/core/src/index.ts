@@ -1,5 +1,5 @@
 /**
- * @memscribe/core — public surface.
+ * @memflywheel/core — public surface.
  *
  * File-backed memory kernel: storage, derived MEMORY.md index, progressive index
  * recall, extraction and dream consolidation with pluggable model injection points,

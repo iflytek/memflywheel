@@ -11,11 +11,11 @@ import {
   createFileTools,
   runExtractionAgent,
   buildExtractionAgentUserMessage,
-} from "@memscribe/sdk";
-import { createAuditLogger, createMemoryFileToolContext, formatManifest, scanMemoryFiles } from "@memscribe/core";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+} from "@memflywheel/sdk";
+import { createAuditLogger, createMemoryFileToolContext, formatManifest, scanMemoryFiles } from "@memflywheel/core";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-rr-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-rr-"));
 const toolCtx = createMemoryFileToolContext({ ctx: { root, audit: createAuditLogger(root) } });
 
 const trace = [];
@@ -29,9 +29,9 @@ const tools = createFileTools().map((t) => ({
 }));
 
 const model = createOpenAIChatCompletionsModel({
-  endpoint: process.env.MEMSCRIBE_LLM_ENDPOINT,
-  apiKey: process.env.MEMSCRIBE_LLM_API_KEY,
-  model: process.env.MEMSCRIBE_LLM_MODEL,
+  endpoint: process.env.MEMFLYWHEEL_LLM_ENDPOINT,
+  apiKey: process.env.MEMFLYWHEEL_LLM_API_KEY,
+  model: process.env.MEMFLYWHEEL_LLM_MODEL,
 });
 const highRiskCardNumber = "62" + "22 0212 3456 7890";
 

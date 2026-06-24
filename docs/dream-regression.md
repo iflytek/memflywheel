@@ -9,9 +9,9 @@ directly.
 Reproduce with `examples/dream-regression.mjs` (env-driven, no hardcoded secrets):
 
 ```
-MEMSCRIBE_LLM_ENDPOINT=<your OpenAI-compatible base> \
-MEMSCRIBE_LLM_MODEL=<model id> \
-MEMSCRIBE_LLM_API_KEY=<your key> \
+MEMFLYWHEEL_LLM_ENDPOINT=<your OpenAI-compatible base> \
+MEMFLYWHEEL_LLM_MODEL=<model id> \
+MEMFLYWHEEL_LLM_API_KEY=<your key> \
 node examples/dream-regression.mjs
 ```
 

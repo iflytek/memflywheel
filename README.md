@@ -1,13 +1,13 @@
-# MemScribe
+# MemFlywheel
 
-A clean, minimal, file-backed long-term memory subsystem for LLM agents. MemScribe packages a
+A clean, minimal, file-backed long-term memory subsystem for LLM agents. MemFlywheel packages a
 file-native long-term memory design — a single file-backed store, progressive index recall, and an
 LLM-driven extraction and consolidation flow — as a dependency-free TypeScript library with
 SDK and host adapter entry points. It ships a high-quality **default extractor** so that giving it
 one API key is enough to start writing memory, plus direct integrations for selected agent
 hosts.
 
-## What MemScribe is
+## What MemFlywheel is
 
 - **File-backed.** Each memory is a Markdown body plus a small YAML frontmatter
   (`name` / `description` / `type` / optional `occurred_on` / `retrieval_terms`).
@@ -18,7 +18,7 @@ hosts.
   `retrieval_terms` routing phrases, then inject the top paths plus a `MEMORY.md` fallback.
   Memory bodies are never embedded or searched.
 - **Progressive drill-down.** Extraction-written memories include `## Sources` body refs to
-  cleaned execution-trace JSONL under `.memscribe/sources/`, so a host agent can read exact
+  cleaned execution-trace JSONL under `.memflywheel/sources/`, so a host agent can read exact
   supporting details only after it has selected a relevant memory.
 - **Two-segment injection.** Stable memory rules go into the system prompt (cache-friendly
   prefix); the current index cues go into a `<system-reminder>` prelude that is re-injected
@@ -26,7 +26,7 @@ hosts.
 - **Six memory types.** `identity` / `preference` / `style` / `workflow` / `context` /
   `ambient`. `context` and `ambient` age after 30 days
   (a "suggest verification" hint is appended in the index); the rest are permanent.
-- **Batteries-included extraction.** MemScribe ships a high-quality default extraction prompt
+- **Batteries-included extraction.** MemFlywheel ships a high-quality default extraction prompt
   (what is worth remembering, what is forbidden, the six types, privacy redaction) plus the
   ordinary file tools (`glob` / `grep` / `read` / `write` /
   `edit` / `bash`) the
@@ -39,24 +39,24 @@ hosts.
 - **Model steps stay pluggable.** The core never owns model transport, auth, or provider
   wire shape. Extraction and dream enter through injected runners; optional index retrieval
   consumes a host-supplied embedding provider. Supply host-owned model ports, or use the
-  provider mappers in `@memscribe/model`.
-- **Host-adapter-first.** MemScribe is meant to be wired into an existing agent runtime
+  provider mappers in `@memflywheel/model`.
+- **Host-adapter-first.** MemFlywheel is meant to be wired into an existing agent runtime
   through SDK lifecycle hooks and host adapters, not to be a standalone product.
-- **Skills are host-executed.** MemScribe can store, validate, route, and evolve learned
+- **Skills are host-executed.** MemFlywheel can store, validate, route, and evolve learned
   skill packages, but the host owns skill loading, policy, and execution.
 
-## What MemScribe is not
+## What MemFlywheel is not
 
 - **Not a vector database.** Optional retrieval ranks `MEMORY.md` index lines only; memory
   bodies are not embedded, chunked, or searched.
 - **No built-in embedding model / reranker / entity graph.** Providers are host-supplied,
   and full-index injection is used when the index fits.
-- **No scope.** MemScribe is a single global store. There is no user / project / workspace
+- **No scope.** MemFlywheel is a single global store. There is no user / project / workspace
   tiering.
 - **Tight frontmatter.** Only `name` / `description` / `type`, optional `occurred_on`,
   `retrieval_terms`, and minimal `created_at` / `updated_at`. No `origin` / `source_ref` /
   `confidence` / `status` / `agent` / `project` / `session`.
-- **No MemScribe-specific read/search wrapper.** Recall context is delivered through the
+- **No MemFlywheel-specific read/search wrapper.** Recall context is delivered through the
   prompt; the host's own filesystem tools read any selected memory body.
 - **No standalone runtime surface.** Learned-skill recall and evolution are enabled only
   through SDK/adapters that explicitly wire the host lifecycle and model channel.
@@ -65,33 +65,33 @@ hosts.
 
 | Package | Role |
 |---|---|
-| `@memscribe/core` | Memory kernel: storage, derived index, recall, extraction, dream, privacy, locking, atomic writes, audit. No LLM, no host coupling. |
-| `@memscribe/model` | Provider-neutral tool-calling model protocol plus provider mappers, including OpenAI-compatible Chat Completions. |
-| `@memscribe/sdk` | Lifecycle hooks and wiring for the `ExtractionAgentRunner` / `DreamAgentRunner` injection points and the `createExtractionAgentRunner` / `createDreamAgentRunner` factories. |
-| `@memscribe/skills` | File-native learned skill store with staging, strict validation, prompt recall, finalize, and rollback. |
-| `@memscribe/adapters` | Host lifecycle mappings for selected agent runtimes. |
+| `@memflywheel/core` | Memory kernel: storage, derived index, recall, extraction, dream, privacy, locking, atomic writes, audit. No LLM, no host coupling. |
+| `@memflywheel/model` | Provider-neutral tool-calling model protocol plus provider mappers, including OpenAI-compatible Chat Completions. |
+| `@memflywheel/sdk` | Lifecycle hooks and wiring for the `ExtractionAgentRunner` / `DreamAgentRunner` injection points and the `createExtractionAgentRunner` / `createDreamAgentRunner` factories. |
+| `@memflywheel/skills` | File-native learned skill store with staging, strict validation, prompt recall, finalize, and rollback. |
+| `@memflywheel/adapters` | Host lifecycle mappings for selected agent runtimes. |
 
 ## Default extraction subagent (give it one API key)
 
-MemScribe does not leave the "what is worth remembering" judgment as an empty injection point.
+MemFlywheel does not leave the "what is worth remembering" judgment as an empty injection point.
 It ships that judgment as the default extraction subagent: a curated extraction system prompt
 plus the ordinary file tools the subagent calls to write files itself. The core owns both as
 pure values (a prompt string and the tool handlers) and never makes a network call. The SDK
 turns them into a running tool-calling subagent:
 
 ```ts
-import { createMemScribe } from "@memscribe/sdk";
+import { createMemFlywheel } from "@memflywheel/sdk";
 import {
   createExtractionAgentRunner,
   createDreamAgentRunner,
-} from "@memscribe/sdk";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+} from "@memflywheel/sdk";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 
-// The canonical model reads endpoint / key / model from MEMSCRIBE_LLM_* and maps
-// OpenAI-compatible /chat/completions into MemScribe's provider-neutral protocol.
+// The canonical model reads endpoint / key / model from MEMFLYWHEEL_LLM_* and maps
+// OpenAI-compatible /chat/completions into MemFlywheel's provider-neutral protocol.
 // One channel drives BOTH subagents: extraction and dream consolidation.
 const model = createOpenAIChatCompletionsModel();
-const scribe = createMemScribe({
+const scribe = createMemFlywheel({
   agent: createExtractionAgentRunner({ model }),
   dreamRunner: createDreamAgentRunner({ model }),
 });
@@ -103,9 +103,9 @@ entirely.
 
 ## Direct integrations
 
-The adapter package wires MemScribe into a host runtime: it maps the host into a
+The adapter package wires MemFlywheel into a host runtime: it maps the host into a
 `HostHarnessPort` with capabilities, lifecycle hooks, telemetry, and a canonical model
-channel. `createMemScribeHarnessRuntime({ port })` feeds that model to the default extraction,
+channel. `createMemFlywheelHarnessRuntime({ port })` feeds that model to the default extraction,
 dream, and optional skill-learning loops. Runnable minimal integrations live under
 [`examples/`](examples/).
 

@@ -20,31 +20,31 @@ importers:
 
   examples:
     dependencies:
-      '@memscribe/adapters':
+      '@memflywheel/adapters':
         specifier: workspace:*
         version: link:../packages/adapters
-      '@memscribe/core':
+      '@memflywheel/core':
         specifier: workspace:*
         version: link:../packages/core
-      '@memscribe/model':
+      '@memflywheel/model':
         specifier: workspace:*
         version: link:../packages/model
-      '@memscribe/sdk':
+      '@memflywheel/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
-      '@memscribe/skills':
+      '@memflywheel/skills':
         specifier: workspace:*
         version: link:../packages/skills
 
   packages/adapters:
     dependencies:
-      '@memscribe/model':
+      '@memflywheel/model':
         specifier: workspace:*
         version: link:../model
-      '@memscribe/sdk':
+      '@memflywheel/sdk':
         specifier: workspace:*
         version: link:../sdk
-      '@memscribe/skills':
+      '@memflywheel/skills':
         specifier: workspace:*
         version: link:../skills
     devDependencies:
@@ -75,10 +75,10 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@memscribe/core':
+      '@memflywheel/core':
         specifier: workspace:*
         version: link:../core
-      '@memscribe/model':
+      '@memflywheel/model':
         specifier: workspace:*
         version: link:../model
     devDependencies:
@@ -91,7 +91,7 @@ importers:
 
   packages/skills:
     dependencies:
-      '@memscribe/core':
+      '@memflywheel/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:

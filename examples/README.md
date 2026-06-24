@@ -1,8 +1,8 @@
-# MemScribe integration examples
+# MemFlywheel integration examples
 
 One runnable minimal integration per targeted host. Each example wraps the host's
 own tool-calling LLM channel into a canonical model or `HostHarnessPort`, builds a
-batteries-included scribe with `createMemScribeHarnessRuntime`, mounts the full
+batteries-included scribe with `createMemFlywheelHarnessRuntime`, mounts the full
 lifecycle (session start / prompt build / turn end / idle), and installs +
 round-trip-verifies the host wiring with `connect`.
 
@@ -14,7 +14,7 @@ paths:
   CI): it scripts a multi-step subagent (list -> save two memories -> decline a
   high-risk secret), and
 - the **real canonical model** (the host's model channel, or the OpenAI-compatible
-  mapper from `@memscribe/model` for standalone examples).
+  mapper from `@memflywheel/model` for standalone examples).
 
 Set `USE_FAKE=1` to force the offline path (the default in CI).
 
@@ -47,10 +47,10 @@ When not using the fake, `createOpenAIChatCompletionsModel` (an OpenAI-compatibl
 
 | Variable                       | Meaning                                   |
 | ------------------------------ | ----------------------------------------- |
-| `MEMSCRIBE_LLM_ENDPOINT`        | base URL override                         |
-| `MEMSCRIBE_LLM_API_KEY`         | key (fallback `OPENAI_API_KEY`)           |
-| `MEMSCRIBE_LLM_MODEL`           | model id                                  |
-| `MEMSCRIBE_LLM_MAX_TOKENS`      | response cap                              |
+| `MEMFLYWHEEL_LLM_ENDPOINT`        | base URL override                         |
+| `MEMFLYWHEEL_LLM_API_KEY`         | key (fallback `OPENAI_API_KEY`)           |
+| `MEMFLYWHEEL_LLM_MODEL`           | model id                                  |
+| `MEMFLYWHEEL_LLM_MAX_TOKENS`      | response cap                              |
 
 ## Running
 

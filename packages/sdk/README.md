@@ -1,15 +1,15 @@
-# @memscribe/sdk
+# @memflywheel/sdk
 
-Host lifecycle integration layer for [MemScribe](https://github.com/iflytek/memscribe#readme). The thin
+Host lifecycle integration layer for [MemFlywheel](https://github.com/iflytek/memflywheel#readme). The thin
 orchestration seam between a host runtime (Pi / Claude Code / OpenCode / …) and
-`@memscribe/core`.
+`@memflywheel/core`.
 
 The SDK owns:
 
 - a single per-root `StorageContext` + audit logger,
 - the per-session extraction cursor store,
 - the **two pluggable LLM injection points** (`agent`, `dreamRunner`),
-- the default subagent loops that consume `@memscribe/model`'s canonical model protocol,
+- the default subagent loops that consume `@memflywheel/model`'s canonical model protocol,
 - optional learned-skill prompt routing,
 - the host lifecycle hooks that decide *when* core runs.
 
@@ -34,16 +34,16 @@ and it drives both subagents:
 
 ```ts
 import {
-  createMemScribe,
+  createMemFlywheel,
   createExtractionAgentRunner,
   createDreamAgentRunner,
-} from "@memscribe/sdk";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+} from "@memflywheel/sdk";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 
-// The OpenAI-compatible mapper lives in @memscribe/model. Hosts can provide
+// The OpenAI-compatible mapper lives in @memflywheel/model. Hosts can provide
 // their own CanonicalModelCompletion instead.
 const model = createOpenAIChatCompletionsModel();
-const scribe = createMemScribe({
+const scribe = createMemFlywheel({
   agent: createExtractionAgentRunner({ model }),
   dreamRunner: createDreamAgentRunner({ model }),
 });
@@ -56,7 +56,7 @@ replace the defaults.
 ## Quick start
 
 ```ts
-import { createMemScribe, type ExtractionAgentRunner } from "@memscribe/sdk";
+import { createMemFlywheel, type ExtractionAgentRunner } from "@memflywheel/sdk";
 
 // Host wraps its own tool-calling LLM here. Core never calls a model; the
 // subagent writes memories itself via the supplied tools.
@@ -67,7 +67,7 @@ const agent: ExtractionAgentRunner = async ({ tools, toolCtx, messages, manifest
   return { changed: ["preference/favorite-fruit.md"] };
 };
 
-const scribe = createMemScribe({ agent }); // root resolves from MEMSCRIBE_HOME / OS data dir
+const scribe = createMemFlywheel({ agent }); // root resolves from MEMFLYWHEEL_HOME / OS data dir
 
 await scribe.onSessionStart("session-1");
 
@@ -158,7 +158,7 @@ file, `edit` to refine a same-topic file, or `bash` to move retired files under
   index sync.
 - `runDream(coordination?)` — force a dream pass regardless of the gate.
 
-There is deliberately **no public read/search tool** — MemScribe has no lexical retrieval,
+There is deliberately **no public read/search tool** — MemFlywheel has no lexical retrieval,
 and recall reads go through the host filesystem surface.
 These operations are for host integrations that need direct governance hooks;
 they are not a standalone runtime surface.
@@ -180,16 +180,16 @@ turn-end
 ```
 
 ```ts
-createMemScribe({
+createMemFlywheel({
   agent,
   dreamRunner,
   skillRecall: async ({ sessionId }) => ({
     entries: [
       {
-        name: "memscribe-learned-release-review",
+        name: "memflywheel-learned-release-review",
         displayName: "Release Review",
         description: "Review release readiness with a repeatable checklist.",
-        relativePath: "memscribe-learned-release-review/SKILL.md",
+        relativePath: "memflywheel-learned-release-review/SKILL.md",
         triggerHints: ["release prep"],
       },
     ],
@@ -202,15 +202,15 @@ createMemScribe({
       return {
         coordination: {
           decision: "update",
-          targetSkill: "memscribe-learned-release-review",
+          targetSkill: "memflywheel-learned-release-review",
           mergedSkills: [],
           why: "Release prep became a reusable procedure.",
           memoryAction: "compress-memory",
           memoryTopics: ["release prep"],
-          supportingFiles: ["memscribe-learned-release-review/SKILL.md"],
+          supportingFiles: ["memflywheel-learned-release-review/SKILL.md"],
         },
-        changedSkills: ["memscribe-learned-release-review"],
-        changedFiles: ["memscribe-learned-release-review/SKILL.md"],
+        changedSkills: ["memflywheel-learned-release-review"],
+        changedFiles: ["memflywheel-learned-release-review/SKILL.md"],
       };
     },
   },
@@ -245,8 +245,8 @@ same window).
 ## Configuration
 
 ```ts
-createMemScribe({
-  root?: string,            // override; else MEMSCRIBE_HOME / OS data dir
+createMemFlywheel({
+  root?: string,            // override; else MEMFLYWHEEL_HOME / OS data dir
   enabled?: boolean,        // false ⇒ all hooks are no-ops
   agent?: ExtractionAgentRunner, // injection point #1 (absent ⇒ extraction skipped)
   dreamRunner?: DreamAgentRunner, // injection point #2 (absent ⇒ deterministic pre-pass only)
@@ -255,13 +255,13 @@ createMemScribe({
   cursorStore?: CursorStore, // default: in-memory
   skillRecall?: SkillRecallProvider,
   skillPreludeBuilder?: SkillPreludeBuilder,
-  learningLoop?: MemScribeLearningLoopConfig,
+  learningLoop?: MemFlywheelLearningLoopConfig,
 });
 ```
 
 ## Build & test
 
 ```bash
-pnpm --filter @memscribe/sdk build
-pnpm --filter @memscribe/sdk test   # node:test, tsc-compiled
+pnpm --filter @memflywheel/sdk build
+pnpm --filter @memflywheel/sdk test   # node:test, tsc-compiled
 ```

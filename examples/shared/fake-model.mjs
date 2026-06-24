@@ -2,11 +2,11 @@
  * Deterministic offline canonical model for example smoke tests.
  *
  * It plays the part of the extraction subagent without network or API keys. The
- * SDK sees only @memscribe/model's canonical shape: messages, tool definitions,
+ * SDK sees only @memflywheel/model's canonical shape: messages, tool definitions,
  * and structured tool call inputs.
  */
 
-import { serializeMemoryFile } from "@memscribe/core";
+import { serializeMemoryFile } from "@memflywheel/core";
 
 function toolCall(id, name, input) {
   return { id, name, input };

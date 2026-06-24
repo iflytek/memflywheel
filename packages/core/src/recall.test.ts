@@ -42,7 +42,7 @@ test("buildMemoryInstructionPrompt is stable rules with no index", () => {
   assert.ok(rules.includes("# 记忆"));
   assert.ok(rules.includes("召回规则"));
   assert.ok(rules.includes("## Sources"));
-  assert.ok(rules.includes(".memscribe/sources"));
+  assert.ok(rules.includes(".memflywheel/sources"));
   assert.ok(!rules.includes("<system-reminder>"));
 });
 

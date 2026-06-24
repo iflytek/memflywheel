@@ -1,5 +1,5 @@
 /**
- * Root-bound file tools for MemScribe subagents.
+ * Root-bound file tools for MemFlywheel subagents.
  *
  * Tool names and parameter shapes follow the ordinary agent file-tool
  * surface: read / write / edit / bash / glob / grep. Memory-specific rules stay

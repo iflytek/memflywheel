@@ -1,7 +1,7 @@
 {
-  "name": "@memscribe/sdk",
+  "name": "@memflywheel/sdk",
   "version": "0.1.0",
-  "description": "Host lifecycle SDK for MemScribe extraction, recall, and consolidation.",
+  "description": "Host lifecycle SDK for MemFlywheel extraction, recall, and consolidation.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,13 +20,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iflytek/memscribe.git",
+    "url": "git+https://github.com/iflytek/memflywheel.git",
     "directory": "packages/sdk"
   },
   "bugs": {
-    "url": "https://github.com/iflytek/memscribe/issues"
+    "url": "https://github.com/iflytek/memflywheel/issues"
   },
-  "homepage": "https://github.com/iflytek/memscribe#readme",
+  "homepage": "https://github.com/iflytek/memflywheel#readme",
   "keywords": [
     "agent-memory",
     "llm",
@@ -46,8 +46,8 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@memscribe/core": "workspace:*",
-    "@memscribe/model": "workspace:*"
+    "@memflywheel/core": "workspace:*",
+    "@memflywheel/model": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

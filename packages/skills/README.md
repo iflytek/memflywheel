@@ -1,6 +1,6 @@
-# @memscribe/skills
+# @memflywheel/skills
 
-File-native learned skill layer for MemScribe agent runtimes.
+File-native learned skill layer for MemFlywheel agent runtimes.
 
 This package stores, validates, stages, finalizes, rolls back, and renders
 prompt-routing metadata for learned skills. It does not execute skills. Host
@@ -8,7 +8,7 @@ runtimes own skill loading, execution policy, permissions, and tool calls.
 
 ## Definition
 
-A learned skill is a directory named `memscribe-learned-<slug>` that contains:
+A learned skill is a directory named `memflywheel-learned-<slug>` that contains:
 
 - `SKILL.md`
 - optional supporting files under `references/`, `templates/`, `scripts/`, or `assets/`
@@ -17,7 +17,7 @@ A learned skill is a directory named `memscribe-learned-<slug>` that contains:
 
 ```yaml
 ---
-name: memscribe-learned-example
+name: memflywheel-learned-example
 display_name: Example
 description: Captures a durable workflow.
 ---
@@ -37,7 +37,7 @@ import {
   finalizeLearnedSkillCheckpoint,
   rollbackLearnedSkillCheckpoint,
   validateLearnedSkillPackage,
-} from "@memscribe/skills";
+} from "@memflywheel/skills";
 ```
 
 | Function | Purpose |
@@ -45,10 +45,10 @@ import {
 | `createLearnedSkillStore(input)` | Builds the high-level staged learned-skill store used by SDK skill learning. |
 | `createLearnedSkillRecallProvider(input)` | Reads learned skills and returns prompt-routing entries. |
 | `buildLearnedSkillPrelude(packet)` | Renders learned-skill routes as a compact prompt prelude. |
-| `getLearnedSkillsCatalog(input)` | Reads and validates `memscribe-learned-*` directories and returns a derived catalog. |
+| `getLearnedSkillsCatalog(input)` | Reads and validates `memflywheel-learned-*` directories and returns a derived catalog. |
 | `validateLearnedSkillPackage(input)` | Validates naming, frontmatter, sections, supporting file placement, file size, sensitive names, and configured forbidden public names. |
 | `checkpointLearnedSkill(input)` | Writes staged skill files to an external checkpoint root and snapshots the existing target skill directory. |
-| `finalizeLearnedSkillCheckpoint(checkpoint)` | Copies staged files into `skillsRoot/memscribe-learned-<slug>` only after checking that no paths were deleted and no external paths changed. |
+| `finalizeLearnedSkillCheckpoint(checkpoint)` | Copies staged files into `skillsRoot/memflywheel-learned-<slug>` only after checking that no paths were deleted and no external paths changed. |
 | `rollbackLearnedSkillCheckpoint(checkpoint)` | Restores the complete target directory snapshot captured at checkpoint time. |
 
 The high-level store uses a stronger finalized-skill flow:
@@ -76,7 +76,7 @@ createLearnedSkillRecallProvider()
 
 | Rule | Enforcement |
 | --- | --- |
-| Learned skill directory | `memscribe-learned-<slug>`, lowercase kebab-case. |
+| Learned skill directory | `memflywheel-learned-<slug>`, lowercase kebab-case. |
 | Supporting files | Only under `references/`, `templates/`, `scripts/`, or `assets/`. |
 | Supporting file size | Non-empty and at most 1 MiB. |
 | Sensitive file names | Refuses common secret, token, password, credential, private key, `.env`, and key-file names. |

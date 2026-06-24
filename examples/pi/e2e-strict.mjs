@@ -1,5 +1,5 @@
 /**
- * MemScribe × Pi — STRICT end-to-end test (real model: DeepSeek).
+ * MemFlywheel × Pi — STRICT end-to-end test (real model: DeepSeek).
  *
  * Difference from e2e-deepseek.mjs: there is NO "warn" escape hatch. Every
  * behavioral assertion is pass/fail, and the process exits non-zero on ANY fail.
@@ -19,9 +19,9 @@
  * SECURITY: the key is read ONLY from the env; never hardcoded, never written to a
  * file, never stored in the capture log (only forwarded upstream in the header).
  *
- *   export MEMSCRIBE_LLM_API_KEY=sk-...
- *   export MEMSCRIBE_LLM_ENDPOINT=https://api.deepseek.com/v1
- *   export MEMSCRIBE_LLM_MODEL=deepseek-v4-flash
+ *   export MEMFLYWHEEL_LLM_API_KEY=sk-...
+ *   export MEMFLYWHEEL_LLM_ENDPOINT=https://api.deepseek.com/v1
+ *   export MEMFLYWHEEL_LLM_MODEL=deepseek-v4-flash
  *   node examples/pi/e2e-strict.mjs
  */
 
@@ -31,20 +31,20 @@ import https from "node:https";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createMemScribeHarnessRuntime } from "@memscribe/adapters";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+import { createMemFlywheelHarnessRuntime } from "@memflywheel/adapters";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import {
   validateLearnedSkillPackage,
   LearnedSkillValidationError,
   createLearnedSkillStore,
-} from "@memscribe/skills";
+} from "@memflywheel/skills";
 
 // ───────────────────────────── config ──────────────────────────────────────
 
 const ENDPOINT =
-  process.env.MEMSCRIBE_LLM_ENDPOINT ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
-const MODEL = process.env.MEMSCRIBE_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-const API_KEY = process.env.MEMSCRIBE_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
+  process.env.MEMFLYWHEEL_LLM_ENDPOINT ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
+const MODEL = process.env.MEMFLYWHEEL_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
+const API_KEY = process.env.MEMFLYWHEEL_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
 const HAVE_KEY = Boolean(API_KEY);
 
 let ACTIVE_ENDPOINT = ENDPOINT;
@@ -145,7 +145,7 @@ async function startCaptureProxy() {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
   ACTIVE_ENDPOINT = `http://127.0.0.1:${port}/v1`;
-  ACTIVE_API_KEY = "memscribe-local-proxy-token"; // the SDK never sees the real key
+  ACTIVE_API_KEY = "memflywheel-local-proxy-token"; // the SDK never sees the real key
   return server;
 }
 
@@ -244,7 +244,7 @@ async function groupDeterministic() {
   // recall-only works without a model
   {
     const root = await mkdtemp(path.join(tmpdir(), "ms-strict-rc-"));
-    const { scribe, mode } = createMemScribeHarnessRuntime({ root, mode: "recall-only" });
+    const { scribe, mode } = createMemFlywheelHarnessRuntime({ root, mode: "recall-only" });
     check("S0.1 recall-only mode classified", mode === "recall-only", `mode=${mode}`);
     await scribe.onSessionStart({ sessionId: "s0" });
     const ctx = await scribe.onPromptBuild({ sessionId: "s0" });
@@ -256,14 +256,14 @@ async function groupDeterministic() {
     const root = await mkdtemp(path.join(tmpdir(), "ms-strict-ff-"));
     let threw = false;
     try {
-      createMemScribeHarnessRuntime({ root });
+      createMemFlywheelHarnessRuntime({ root });
     } catch (e) {
       threw = /canonical model|extraction agent/i.test(e?.message ?? "");
     }
     check("S0.2 fail-fast: no model & not recall-only → throws", threw);
   }
 
-  // store exposes NO execution method (MemScribe never runs skills)
+  // store exposes NO execution method (MemFlywheel never runs skills)
   {
     const root = await mkdtemp(path.join(tmpdir(), "ms-strict-store-"));
     const store = createLearnedSkillStore({
@@ -283,7 +283,7 @@ async function groupDeterministic() {
     let rejected = false;
     try {
       validateLearnedSkillPackage({
-        slug: "memscribe-learned-bad",
+        slug: "memflywheel-learned-bad",
         files: { "SKILL.md": "no frontmatter, no sections" },
       });
     } catch (e) {
@@ -304,7 +304,7 @@ async function groupMemory() {
   }
   const root = await mkdtemp(path.join(tmpdir(), "ms-strict-M-"));
   const sessionId = "M";
-  const { scribe } = createMemScribeHarnessRuntime({ model: buildModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: buildModel(), root });
   await scribe.onSessionStart({ sessionId });
 
   banner("M1 · turn-end 抽取真的写出 typed memory 文件 + 合法 frontmatter + MEMORY.md 同步");
@@ -368,7 +368,7 @@ async function attemptEvolution(i) {
   const skillsRoot = await mkdtemp(path.join(tmpdir(), `ms-strict-K${i}-skills-`));
   const checkpointRoot = await mkdtemp(path.join(tmpdir(), `ms-strict-K${i}-ckpt-`));
   await mkdir(skillsRoot, { recursive: true });
-  const { scribe } = createMemScribeHarnessRuntime({
+  const { scribe } = createMemFlywheelHarnessRuntime({
     model: buildModel(),
     root,
     learnedSkills: { skillsRoot, checkpointRoot }, // DEFAULT review packet — test the SHIPPED path
@@ -426,7 +426,7 @@ async function groupSkill() {
   const files = await readSkillPackage(skillsRoot, slug);
   console.log("  package files:", Object.keys(files).join(", "));
   console.log("\n  ── SKILL.md\n" + (files["SKILL.md"] ?? "").replace(/^/gm, "    ").slice(0, 900));
-  const bareSlug = slug.replace(/^memscribe-learned-/, "");
+  const bareSlug = slug.replace(/^memflywheel-learned-/, "");
   let valid = false;
   let validErr = "";
   try {
@@ -469,11 +469,11 @@ function groupProxyAssertions() {
   banner("P · 代理抓到的 DeepSeek 原始请求符合预期（断言，非打印）");
   check("P captured at least one upstream request", proxyLog.length > 0, `captured=${proxyLog.length}`);
 
-  // an extraction/skill request must carry a MemScribe system prompt
+  // an extraction/skill request must carry a MemFlywheel system prompt
   const sawMemSystem = proxyLog.some((e) =>
     /memory extraction|learned-skill|file tools|MEMORY\.md|记忆|技能/i.test(e.summary?.systemHead ?? ""),
   );
-  check("P a MemScribe system prompt reached the model", sawMemSystem);
+  check("P a MemFlywheel system prompt reached the model", sawMemSystem);
 
   // some request must expose the six file tools WITH schemas (not just names)
   const SIX = ["read", "write", "edit", "bash", "glob", "grep"];
@@ -503,7 +503,7 @@ function groupProxyAssertions() {
 
 async function main() {
   console.log(
-    `MemScribe × Pi — STRICT E2E — model=${MODEL} endpoint=${ENDPOINT} key=${HAVE_KEY ? "YES" : "NO"}`,
+    `MemFlywheel × Pi — STRICT E2E — model=${MODEL} endpoint=${ENDPOINT} key=${HAVE_KEY ? "YES" : "NO"}`,
   );
   let proxy = null;
   if (HAVE_KEY) proxy = await startCaptureProxy();

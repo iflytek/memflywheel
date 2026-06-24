@@ -1,7 +1,7 @@
 import type {
   CanonicalModelCompletion,
   CanonicalModelMessage,
-} from "@memscribe/model";
+} from "@memflywheel/model";
 
 export type HostCapability =
   | "prompt-build"

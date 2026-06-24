@@ -20,7 +20,7 @@ import {
 } from "./learned-skill.js";
 
 const validSkill = `---
-name: memscribe-learned-editor-workflow
+name: memflywheel-learned-editor-workflow
 display_name: Editor Workflow
 description: Captures durable editor workflow habits.
 ---
@@ -89,7 +89,7 @@ function toolMap(tools: LearnedSkillTool[]): Map<string, LearnedSkillTool> {
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
-test("validateLearnedSkillPackage accepts the MemScribe learned skill layout", () => {
+test("validateLearnedSkillPackage accepts the MemFlywheel learned skill layout", () => {
   const result = validateLearnedSkillPackage({ slug: "editor-workflow", files: validFiles() });
 
   assert.equal(result.skillDir, `${LEARNED_SKILL_DIR_PREFIX}editor-workflow`);
@@ -177,8 +177,8 @@ test("validateLearnedSkillPackage rejects invalid supporting files and configure
 });
 
 test("checkpointLearnedSkill stages files outside the skills root and finalize writes only the learned skill directory", async () => {
-  const skillsRoot = await makeRoot("memscribe-skills-root-");
-  const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
+  const skillsRoot = await makeRoot("memflywheel-skills-root-");
+  const checkpointRoot = await makeRoot("memflywheel-skill-checkpoints-");
   try {
     await writeRaw(skillsRoot, "unrelated.md", "original\n");
     const checkpoint = await checkpointLearnedSkill({
@@ -190,19 +190,19 @@ test("checkpointLearnedSkill stages files outside the skills root and finalize w
     });
 
     const stagedSkill = await readFile(
-      path.join(checkpointRoot, "cp-write", "staged", "memscribe-learned-editor-workflow", "SKILL.md"),
+      path.join(checkpointRoot, "cp-write", "staged", "memflywheel-learned-editor-workflow", "SKILL.md"),
       "utf8",
     );
     assert.equal(stagedSkill, validSkill);
 
     const result = await finalizeLearnedSkillCheckpoint(checkpoint);
-    assert.equal(result.skillDir, "memscribe-learned-editor-workflow");
+    assert.equal(result.skillDir, "memflywheel-learned-editor-workflow");
     assert.deepEqual(result.changedPaths.sort(), [
-      "memscribe-learned-editor-workflow/SKILL.md",
-      "memscribe-learned-editor-workflow/assets/schema.json",
-      "memscribe-learned-editor-workflow/references/source.md",
-      "memscribe-learned-editor-workflow/scripts/check.mjs",
-      "memscribe-learned-editor-workflow/templates/report.md",
+      "memflywheel-learned-editor-workflow/SKILL.md",
+      "memflywheel-learned-editor-workflow/assets/schema.json",
+      "memflywheel-learned-editor-workflow/references/source.md",
+      "memflywheel-learned-editor-workflow/scripts/check.mjs",
+      "memflywheel-learned-editor-workflow/templates/report.md",
     ]);
     assert.equal(await readFile(path.join(skillsRoot, "unrelated.md"), "utf8"), "original\n");
   } finally {
@@ -212,8 +212,8 @@ test("checkpointLearnedSkill stages files outside the skills root and finalize w
 });
 
 test("finalizeLearnedSkillCheckpoint refuses deletions and external changes after checkpoint", async () => {
-  const skillsRoot = await makeRoot("memscribe-skills-root-");
-  const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
+  const skillsRoot = await makeRoot("memflywheel-skills-root-");
+  const checkpointRoot = await makeRoot("memflywheel-skill-checkpoints-");
   try {
     await writeRaw(skillsRoot, "unrelated.md", "original\n");
     const checkpoint = await checkpointLearnedSkill({
@@ -247,10 +247,10 @@ test("finalizeLearnedSkillCheckpoint refuses deletions and external changes afte
 });
 
 test("finalizeLearnedSkillCheckpoint refuses target changes after checkpoint", async () => {
-  const skillsRoot = await makeRoot("memscribe-skills-root-");
-  const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
+  const skillsRoot = await makeRoot("memflywheel-skills-root-");
+  const checkpointRoot = await makeRoot("memflywheel-skill-checkpoints-");
   try {
-    await writeRaw(skillsRoot, "memscribe-learned-editor-workflow/SKILL.md", validSkill);
+    await writeRaw(skillsRoot, "memflywheel-learned-editor-workflow/SKILL.md", validSkill);
     const checkpoint = await checkpointLearnedSkill({
       skillsRoot,
       checkpointRoot,
@@ -259,7 +259,7 @@ test("finalizeLearnedSkillCheckpoint refuses target changes after checkpoint", a
       files: validFiles(),
     });
 
-    await writeRaw(skillsRoot, "memscribe-learned-editor-workflow/references/interloper.md", "changed after checkpoint\n");
+    await writeRaw(skillsRoot, "memflywheel-learned-editor-workflow/references/interloper.md", "changed after checkpoint\n");
     await assert.rejects(
       finalizeLearnedSkillCheckpoint(checkpoint),
       (error: unknown) =>
@@ -273,11 +273,11 @@ test("finalizeLearnedSkillCheckpoint refuses target changes after checkpoint", a
 });
 
 test("rollbackLearnedSkillCheckpoint restores a full target snapshot", async () => {
-  const skillsRoot = await makeRoot("memscribe-skills-root-");
-  const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
+  const skillsRoot = await makeRoot("memflywheel-skills-root-");
+  const checkpointRoot = await makeRoot("memflywheel-skill-checkpoints-");
   try {
-    await writeRaw(skillsRoot, "memscribe-learned-editor-workflow/SKILL.md", validSkill.replace("durable editor", "original editor"));
-    await writeRaw(skillsRoot, "memscribe-learned-editor-workflow/assets/kept.txt", "keep me\n");
+    await writeRaw(skillsRoot, "memflywheel-learned-editor-workflow/SKILL.md", validSkill.replace("durable editor", "original editor"));
+    await writeRaw(skillsRoot, "memflywheel-learned-editor-workflow/assets/kept.txt", "keep me\n");
 
     const checkpoint = await checkpointLearnedSkill({
       skillsRoot,
@@ -289,11 +289,11 @@ test("rollbackLearnedSkillCheckpoint restores a full target snapshot", async () 
     await finalizeLearnedSkillCheckpoint(checkpoint);
     await rollbackLearnedSkillCheckpoint(checkpoint);
 
-    const restoredSkill = await readFile(path.join(skillsRoot, "memscribe-learned-editor-workflow", "SKILL.md"), "utf8");
+    const restoredSkill = await readFile(path.join(skillsRoot, "memflywheel-learned-editor-workflow", "SKILL.md"), "utf8");
     assert.match(restoredSkill, /original editor/);
-    assert.equal(await readFile(path.join(skillsRoot, "memscribe-learned-editor-workflow", "assets", "kept.txt"), "utf8"), "keep me\n");
+    assert.equal(await readFile(path.join(skillsRoot, "memflywheel-learned-editor-workflow", "assets", "kept.txt"), "utf8"), "keep me\n");
     await assert.rejects(
-      readFile(path.join(skillsRoot, "memscribe-learned-editor-workflow", "templates", "report.md"), "utf8"),
+      readFile(path.join(skillsRoot, "memflywheel-learned-editor-workflow", "templates", "report.md"), "utf8"),
       (error: unknown) => error instanceof Error && "code" in error && error.code === "ENOENT",
     );
   } finally {
@@ -303,8 +303,8 @@ test("rollbackLearnedSkillCheckpoint restores a full target snapshot", async () 
 });
 
 test("createLearnedSkillStore commits staged tool writes and can rollback after finalize", async () => {
-  const skillsRoot = await makeRoot("memscribe-skills-root-");
-  const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
+  const skillsRoot = await makeRoot("memflywheel-skills-root-");
+  const checkpointRoot = await makeRoot("memflywheel-skill-checkpoints-");
   try {
     const store = createLearnedSkillStore({ skillsRoot, checkpointRoot });
     const checkpoint = await store.createSkillCheckpoint();
@@ -313,7 +313,7 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
     assert.ok(write, "write tool exists");
 
     await write.handler({
-      filePath: "memscribe-learned-editor-workflow/SKILL.md",
+      filePath: "memflywheel-learned-editor-workflow/SKILL.md",
       content: validSkill,
     });
 
@@ -321,14 +321,14 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
       checkpoint,
       sessionId: "session-1",
     });
-    assert.deepEqual(result.changedSkills, ["memscribe-learned-editor-workflow"]);
+    assert.deepEqual(result.changedSkills, ["memflywheel-learned-editor-workflow"]);
     assert.deepEqual(result.changedFiles.sort(), [
-      "memscribe-learned-editor-workflow/SKILL.md",
+      "memflywheel-learned-editor-workflow/SKILL.md",
     ]);
 
     const catalog = await store.getLearnedSkillsCatalog({ includeContent: true });
     assert.equal(catalog.learnedSkills.length, 1);
-    assert.equal(catalog.learnedSkills[0]?.name, "memscribe-learned-editor-workflow");
+    assert.equal(catalog.learnedSkills[0]?.name, "memflywheel-learned-editor-workflow");
     assert.match(catalog.learnedSkills[0]?.skillContent ?? "", /## Procedure/);
 
     await store.rollbackSkillCheckpoint(checkpoint);
@@ -341,10 +341,10 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
 });
 
 test("createLearnedSkillStore can merge by updating one skill and archiving a duplicate", async () => {
-  const skillsRoot = await makeRoot("memscribe-skills-root-");
-  const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
-  const target = "memscribe-learned-editor-workflow";
-  const duplicate = "memscribe-learned-editor-shortcuts";
+  const skillsRoot = await makeRoot("memflywheel-skills-root-");
+  const checkpointRoot = await makeRoot("memflywheel-skill-checkpoints-");
+  const target = "memflywheel-learned-editor-workflow";
+  const duplicate = "memflywheel-learned-editor-shortcuts";
   try {
     await writeRaw(skillsRoot, `${target}/SKILL.md`, skillContent(target, "Editor Workflow", "Captures durable editor workflow habits."));
     await writeRaw(skillsRoot, `${duplicate}/SKILL.md`, skillContent(duplicate, "Editor Shortcuts", "Captures duplicate editor workflow shortcuts."));
@@ -392,14 +392,14 @@ test("createLearnedSkillStore can merge by updating one skill and archiving a du
 });
 
 test("createLearnedSkillRecallProvider exposes learned skill routes for prompt build", async () => {
-  const skillsRoot = await makeRoot("memscribe-skills-root-");
-  const checkpointRoot = await makeRoot("memscribe-skill-checkpoints-");
+  const skillsRoot = await makeRoot("memflywheel-skills-root-");
+  const checkpointRoot = await makeRoot("memflywheel-skill-checkpoints-");
   try {
     const store = createLearnedSkillStore({ skillsRoot, checkpointRoot });
     const checkpoint = await store.createSkillCheckpoint();
     const tools = toolMap(store.createFileTools(checkpoint));
     await tools.get("write")!.handler({
-      filePath: "memscribe-learned-editor-workflow/SKILL.md",
+      filePath: "memflywheel-learned-editor-workflow/SKILL.md",
       content: validSkill,
     });
     await store.finalizeLearnedSkillChanges({ checkpoint, sessionId: "session-1" });
@@ -408,11 +408,11 @@ test("createLearnedSkillRecallProvider exposes learned skill routes for prompt b
     const packet = await provider({ sessionId: "session-1" });
 
     assert.equal(packet.entries.length, 1);
-    assert.equal(packet.entries[0]?.name, "memscribe-learned-editor-workflow");
+    assert.equal(packet.entries[0]?.name, "memflywheel-learned-editor-workflow");
     assert.deepEqual(packet.entries[0]?.triggerHints, ["editor workflow", "durable editor workflow"]);
     assert.match(
       buildLearnedSkillPrelude(packet),
-      /memscribe-learned-editor-workflow[\s\S]*editor workflow/,
+      /memflywheel-learned-editor-workflow[\s\S]*editor workflow/,
     );
   } finally {
     await cleanup(skillsRoot);

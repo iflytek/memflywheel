@@ -1,5 +1,5 @@
 {
-  "name": "memscribe",
+  "name": "memflywheel",
   "version": "0.1.0",
   "private": true,
   "description": "File-native long-term memory layer for AI agents.",
@@ -16,12 +16,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iflytek/memscribe.git"
+    "url": "git+https://github.com/iflytek/memflywheel.git"
   },
   "bugs": {
-    "url": "https://github.com/iflytek/memscribe/issues"
+    "url": "https://github.com/iflytek/memflywheel/issues"
   },
-  "homepage": "https://github.com/iflytek/memscribe#readme",
+  "homepage": "https://github.com/iflytek/memflywheel#readme",
   "packageManager": "pnpm@11.5.2",
   "scripts": {
     "build": "pnpm -r run build",

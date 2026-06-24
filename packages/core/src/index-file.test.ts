@@ -104,5 +104,5 @@ test("syncMemoryIndex writes MEMORY.md and readMemoryIndex reads it", async () =
 });
 
 test("readMemoryIndex returns empty for missing file", async () => {
-  assert.equal(await readMemoryIndex("/tmp/missing-memscribe-root-xyz"), "");
+  assert.equal(await readMemoryIndex("/tmp/missing-memflywheel-root-xyz"), "");
 });

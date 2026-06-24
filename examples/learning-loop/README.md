@@ -1,11 +1,11 @@
 # Learning Loop Example
 
 This example exercises the opt-in learned-skill assembly exposed by
-`createMemScribeHarnessRuntime({ model, learnedSkills })`.
+`createMemFlywheelHarnessRuntime({ model, learnedSkills })`.
 
 `USE_FAKE=1` is deterministic and runs in the default smoke suite. Without
 `USE_FAKE`, the same code path calls a real OpenAI-compatible tool-calling model
-through `MEMSCRIBE_LLM_*`.
+through `MEMFLYWHEEL_LLM_*`.
 
 ```text
 turn-end
@@ -18,10 +18,10 @@ turn-end
 Required environment:
 
 ```sh
-export MEMSCRIBE_LLM_ENDPOINT="https://example.com/api/v1"
-export MEMSCRIBE_LLM_MODEL="tool-calling-model"
-export MEMSCRIBE_LLM_API_KEY="..."
-export MEMSCRIBE_LLM_MAX_TOKENS=4096
+export MEMFLYWHEEL_LLM_ENDPOINT="https://example.com/api/v1"
+export MEMFLYWHEEL_LLM_MODEL="tool-calling-model"
+export MEMFLYWHEEL_LLM_API_KEY="..."
+export MEMFLYWHEEL_LLM_MAX_TOKENS=4096
 node examples/learning-loop/run.mjs
 ```
 

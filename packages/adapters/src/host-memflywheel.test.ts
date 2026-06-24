@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createMemScribeHarnessRuntime } from "./host-memscribe.js";
+import { createMemFlywheelHarnessRuntime } from "./host-memflywheel.js";
 import {
   type DreamAgentRunner,
   ExtractionResult,
   type ExtractionAgentRunner,
   type MemoryType,
-} from "@memscribe/sdk";
-import type { CanonicalModelCompletion, CanonicalModelResponse } from "@memscribe/model";
+} from "@memflywheel/sdk";
+import type { CanonicalModelCompletion, CanonicalModelResponse } from "@memflywheel/model";
 import { piAdapter } from "./pi.js";
 import { createFakeHost, tempDir } from "./test-helpers.js";
 
@@ -22,16 +22,16 @@ const STOP: CanonicalModelResponse = {
   finishReason: "stop",
 };
 
-const TARGET_SKILL = "memscribe-learned-release-review";
+const TARGET_SKILL = "memflywheel-learned-release-review";
 const VALID_SKILL = `---
-name: memscribe-learned-release-review
+name: memflywheel-learned-release-review
 display_name: Release Review
 description: Captures a repeatable release preparation review.
 ---
 
 ## Use Cases
 
-- Use when preparing a MemScribe package or repository release.
+- Use when preparing a MemFlywheel package or repository release.
 
 ## Procedure
 
@@ -228,9 +228,9 @@ function learnedSkillLoopModel(): CanonicalModelCompletion {
 /** A subagent that declines: it calls no tools and replies with one sentence. */
 const decliningModel: CanonicalModelCompletion = { complete: async () => STOP };
 
-test("createMemScribeHarnessRuntime with a canonical model extracts and writes a memory end-to-end", async () => {
+test("createMemFlywheelHarnessRuntime with a canonical model extracts and writes a memory end-to-end", async () => {
   const root = await tempDir();
-  const { scribe } = createMemScribeHarnessRuntime({ model: savingModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   // Await the turn-end so the full lock→agent-loop→write chain completes.
@@ -250,7 +250,7 @@ test("createMemScribeHarnessRuntime with a canonical model extracts and writes a
 
 test("attach drives a real end-to-end extraction through host events", async () => {
   const root = await tempDir();
-  const { scribe } = createMemScribeHarnessRuntime({ model: savingModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root });
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
 
@@ -278,9 +278,9 @@ test("attach drives a real end-to-end extraction through host events", async () 
   dispose();
 });
 
-test("createMemScribeHarnessRuntime prompt build returns the two recall segments", async () => {
+test("createMemFlywheelHarnessRuntime prompt build returns the two recall segments", async () => {
   const root = await tempDir();
-  const { scribe } = createMemScribeHarnessRuntime({ model: savingModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root });
 
   const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
   assert.equal(ctx.enabled, true);
@@ -288,14 +288,14 @@ test("createMemScribeHarnessRuntime prompt build returns the two recall segments
   assert.ok(typeof ctx.preludePrompt === "string");
 });
 
-test("createMemScribeHarnessRuntime wires skill recall and turn-end learning loop into the SDK", async () => {
+test("createMemFlywheelHarnessRuntime wires skill recall and turn-end learning loop into the SDK", async () => {
   const root = await tempDir();
   const events: string[] = [];
   const dreamRunner: DreamAgentRunner = async ({ coordination }) => {
     events.push(`dream:${coordination?.memoryAction}:${coordination?.targetSkill}`);
     return { changed: [] };
   };
-  const { scribe } = createMemScribeHarnessRuntime({
+  const { scribe } = createMemFlywheelHarnessRuntime({
     root,
     agent: workflowAgent(),
     dreamRunner,
@@ -303,10 +303,10 @@ test("createMemScribeHarnessRuntime wires skill recall and turn-end learning loo
       return {
         entries: [
           {
-            name: "memscribe-learned-release-review",
+            name: "memflywheel-learned-release-review",
             displayName: "Release Review",
             description: "Review release readiness with a repeatable checklist.",
-            relativePath: "memscribe-learned-release-review/SKILL.md",
+            relativePath: "memflywheel-learned-release-review/SKILL.md",
             triggerHints: ["release prep"],
           },
         ],
@@ -322,15 +322,15 @@ test("createMemScribeHarnessRuntime wires skill recall and turn-end learning loo
         return {
           coordination: {
             decision: "update",
-            targetSkill: "memscribe-learned-release-review",
+            targetSkill: "memflywheel-learned-release-review",
             mergedSkills: [],
             why: "Release prep has become reusable.",
             memoryAction: "compress-memory",
             memoryTopics: ["release prep"],
-            supportingFiles: ["memscribe-learned-release-review/SKILL.md"],
+            supportingFiles: ["memflywheel-learned-release-review/SKILL.md"],
           },
-          changedSkills: ["memscribe-learned-release-review"],
-          changedFiles: ["memscribe-learned-release-review/SKILL.md"],
+          changedSkills: ["memflywheel-learned-release-review"],
+          changedFiles: ["memflywheel-learned-release-review/SKILL.md"],
         };
       },
     },
@@ -339,7 +339,7 @@ test("createMemScribeHarnessRuntime wires skill recall and turn-end learning loo
   const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
   assert.match(ctx.systemPrompt, /# 技能/);
   assert.match(ctx.preludePrompt, /## 可用技能/);
-  assert.match(ctx.preludePrompt, /memscribe-learned-release-review/);
+  assert.match(ctx.preludePrompt, /memflywheel-learned-release-review/);
   assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
 
   const result = await scribe.onTurnEnd({
@@ -358,14 +358,14 @@ test("createMemScribeHarnessRuntime wires skill recall and turn-end learning loo
   assert.equal(result.learningLoop?.dream.ran, true);
   assert.deepEqual(events, [
     "skill:completed",
-    "dream:compress-memory:memscribe-learned-release-review",
+    "dream:compress-memory:memflywheel-learned-release-review",
   ]);
 });
 
-test("createMemScribeHarnessRuntime learnedSkills assembly runs extraction, skill evolution, dream, and recall", async () => {
+test("createMemFlywheelHarnessRuntime learnedSkills assembly runs extraction, skill evolution, dream, and recall", async () => {
   const root = await tempDir();
   const skillsRoot = path.join(root, "skills");
-  const { scribe } = createMemScribeHarnessRuntime({
+  const { scribe } = createMemFlywheelHarnessRuntime({
     root: path.join(root, "memory"),
     model: learnedSkillLoopModel(),
     learnedSkills: {
@@ -418,11 +418,11 @@ test("createMemScribeHarnessRuntime learnedSkills assembly runs extraction, skil
   assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
 });
 
-test("createMemScribeHarnessRuntime requires explicit recall-only mode when no model is present", async () => {
+test("createMemFlywheelHarnessRuntime requires explicit recall-only mode when no model is present", async () => {
   const root = await tempDir();
-  assert.throws(() => createMemScribeHarnessRuntime({ root }), /requires a canonical model/);
+  assert.throws(() => createMemFlywheelHarnessRuntime({ root }), /requires a canonical model/);
 
-  const { scribe } = createMemScribeHarnessRuntime({ root, mode: "recall-only" });
+  const { scribe } = createMemFlywheelHarnessRuntime({ root, mode: "recall-only" });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   await scribe.onTurnEnd({
@@ -440,9 +440,9 @@ test("createMemScribeHarnessRuntime requires explicit recall-only mode when no m
   assert.equal(ctx.enabled, true);
 });
 
-test("createMemScribeHarnessRuntime decline (no tool calls) writes nothing", async () => {
+test("createMemFlywheelHarnessRuntime decline (no tool calls) writes nothing", async () => {
   const root = await tempDir();
-  const { scribe } = createMemScribeHarnessRuntime({ model: decliningModel, root });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: decliningModel, root });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   await scribe.onTurnEnd({
@@ -458,7 +458,7 @@ test("createMemScribeHarnessRuntime decline (no tool calls) writes nothing", asy
 
 test("disabled scribe makes every hook a no-op", async () => {
   const root = await tempDir();
-  const { scribe } = createMemScribeHarnessRuntime({ model: savingModel(), root, enabled: false });
+  const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root, enabled: false });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   await scribe.onTurnEnd({

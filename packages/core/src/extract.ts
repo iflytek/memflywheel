@@ -40,7 +40,7 @@ export enum ExtractionResult {
  * adapter pairs a tool invocation with its result; core renders them as
  * truncated `Tool(name): input` / `Output: output` lines so durable facts that
  * only surface in tool activity (e.g. "this project uses pnpm") are not lost.
- * MemScribe cannot fork the host agent (it is an external scribe), so it cannot
+ * MemFlywheel cannot fork the host agent (it is an external scribe), so it cannot
  * share the host's structured tool blocks / prompt cache the way an in-host
  * extractor can — instead it folds tool calls into the reconstructed transcript.
  */
@@ -84,7 +84,7 @@ export const TOOL_OUTPUT_MAX_CHARS = 500;
  * a turn with very many tool calls cannot blow up the extraction prompt. Tunable.
  */
 export const TOOL_FOLD_WINDOW_MAX_CHARS = 4000;
-export const SOURCE_TRACE_DIR = ".memscribe/sources";
+export const SOURCE_TRACE_DIR = ".memflywheel/sources";
 
 function elision(omitted: number): string {
   return `…[省略 ${omitted} 字符]…`;

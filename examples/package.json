@@ -1,17 +1,17 @@
 {
-  "name": "@memscribe/examples",
+  "name": "@memflywheel/examples",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Runnable minimal host integration examples for MemScribe.",
+  "description": "Runnable minimal host integration examples for MemFlywheel.",
   "scripts": {
     "smoke": "USE_FAKE=1 node pi/run.mjs && USE_FAKE=1 node hermes/run.mjs && USE_FAKE=1 node openclaw/run.mjs && USE_FAKE=1 node learning-loop/run.mjs"
   },
   "dependencies": {
-    "@memscribe/core": "workspace:*",
-    "@memscribe/adapters": "workspace:*",
-    "@memscribe/model": "workspace:*",
-    "@memscribe/skills": "workspace:*",
-    "@memscribe/sdk": "workspace:*"
+    "@memflywheel/core": "workspace:*",
+    "@memflywheel/adapters": "workspace:*",
+    "@memflywheel/model": "workspace:*",
+    "@memflywheel/skills": "workspace:*",
+    "@memflywheel/sdk": "workspace:*"
   }
 }

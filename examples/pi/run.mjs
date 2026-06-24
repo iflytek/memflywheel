@@ -8,19 +8,19 @@
  * script exits non-zero if the expected memories are missing or the secret leaked.
  *
  *   USE_FAKE=1 node examples/pi/run.mjs      # offline, deterministic
- *   MEMSCRIBE_LLM_API_KEY=... node examples/pi/run.mjs   # real model (tools endpoint)
+ *   MEMFLYWHEEL_LLM_API_KEY=... node examples/pi/run.mjs   # real model (tools endpoint)
  */
 
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  createMemScribeHarnessRuntime,
+  createMemFlywheelHarnessRuntime,
   createPiHarnessPort,
   piAdapter,
   connect,
-} from "@memscribe/adapters";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+} from "@memflywheel/adapters";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import { createFakeModel } from "../shared/fake-model.mjs";
 import { transcript } from "../shared/transcript.mjs";
 
@@ -52,12 +52,12 @@ function piMessagesFromTranscript(messages) {
 }
 
 const useFake = process.env.USE_FAKE === "1";
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-pi-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-pi-"));
 
 const model = useFake ? createFakeModel() : createOpenAIChatCompletionsModel();
 const host = createMockPiHost();
 const port = createPiHarnessPort(host, { model });
-const { scribe, dispose } = createMemScribeHarnessRuntime({ port, root });
+const { scribe, dispose } = createMemFlywheelHarnessRuntime({ port, root });
 
 await host.emit("session_start", { sessionId: "demo" });
 

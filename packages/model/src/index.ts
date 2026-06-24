@@ -1,5 +1,5 @@
 /**
- * Provider-neutral tool-calling model protocol for MemScribe.
+ * Provider-neutral tool-calling model protocol for MemFlywheel.
  *
  * This package is the only model contract the SDK consumes. Provider wire shapes
  * such as OpenAI Chat Completions live behind mappers here; the memory, skill,
@@ -56,7 +56,7 @@ export type CanonicalModelComplete = CanonicalModelCompletion["complete"];
 export interface OpenAIChatCompletionsModelConfig {
   /** Base URL without `/chat/completions`. */
   endpoint?: string;
-  /** API key. Falls back to MEMSCRIBE_LLM_API_KEY / OPENAI_API_KEY. */
+  /** API key. Falls back to MEMFLYWHEEL_LLM_API_KEY / OPENAI_API_KEY. */
   apiKey?: string;
   /** Model id. */
   model?: string;
@@ -75,7 +75,7 @@ export interface CanonicalEmbeddingProvider {
 export interface OpenAIEmbeddingsModelConfig {
   /** Base URL without `/embeddings`. */
   endpoint?: string;
-  /** API key. Falls back to MEMSCRIBE_EMBEDDING_API_KEY / OPENAI_API_KEY. */
+  /** API key. Falls back to MEMFLYWHEEL_EMBEDDING_API_KEY / OPENAI_API_KEY. */
   apiKey?: string;
   /** Embedding model id. */
   model?: string;
@@ -93,29 +93,29 @@ function env(name: string): string | undefined {
 }
 
 function resolveApiKey(config: OpenAIChatCompletionsModelConfig): string {
-  const key = config.apiKey ?? env("MEMSCRIBE_LLM_API_KEY") ?? env("OPENAI_API_KEY");
+  const key = config.apiKey ?? env("MEMFLYWHEEL_LLM_API_KEY") ?? env("OPENAI_API_KEY");
   if (!key) {
     throw new Error(
-      "MemScribe OpenAI chat model: no API key. Set MEMSCRIBE_LLM_API_KEY or OPENAI_API_KEY.",
+      "MemFlywheel OpenAI chat model: no API key. Set MEMFLYWHEEL_LLM_API_KEY or OPENAI_API_KEY.",
     );
   }
   return key;
 }
 
 function resolveEndpoint(config: OpenAIChatCompletionsModelConfig): string {
-  const base = config.endpoint ?? env("MEMSCRIBE_LLM_ENDPOINT") ?? DEFAULT_ENDPOINT;
+  const base = config.endpoint ?? env("MEMFLYWHEEL_LLM_ENDPOINT") ?? DEFAULT_ENDPOINT;
   return base.replace(/\/+$/, "");
 }
 
 function resolveModel(config: OpenAIChatCompletionsModelConfig): string {
-  return config.model ?? env("MEMSCRIBE_LLM_MODEL") ?? DEFAULT_MODEL;
+  return config.model ?? env("MEMFLYWHEEL_LLM_MODEL") ?? DEFAULT_MODEL;
 }
 
 function resolveEmbeddingApiKey(config: OpenAIEmbeddingsModelConfig): string {
-  const key = config.apiKey ?? env("MEMSCRIBE_EMBEDDING_API_KEY") ?? env("OPENAI_API_KEY");
+  const key = config.apiKey ?? env("MEMFLYWHEEL_EMBEDDING_API_KEY") ?? env("OPENAI_API_KEY");
   if (!key) {
     throw new Error(
-      "MemScribe OpenAI embeddings model: no API key. Set MEMSCRIBE_EMBEDDING_API_KEY or OPENAI_API_KEY.",
+      "MemFlywheel OpenAI embeddings model: no API key. Set MEMFLYWHEEL_EMBEDDING_API_KEY or OPENAI_API_KEY.",
     );
   }
   return key;
@@ -124,19 +124,19 @@ function resolveEmbeddingApiKey(config: OpenAIEmbeddingsModelConfig): string {
 function resolveEmbeddingEndpoint(config: OpenAIEmbeddingsModelConfig): string {
   const base =
     config.endpoint ??
-    env("MEMSCRIBE_EMBEDDING_ENDPOINT") ??
-    env("MEMSCRIBE_EMBEDDING_BASE_URL") ??
+    env("MEMFLYWHEEL_EMBEDDING_ENDPOINT") ??
+    env("MEMFLYWHEEL_EMBEDDING_BASE_URL") ??
     DEFAULT_ENDPOINT;
   return base.replace(/\/+$/, "");
 }
 
 function resolveEmbeddingModel(config: OpenAIEmbeddingsModelConfig): string {
-  return config.model ?? env("MEMSCRIBE_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL;
+  return config.model ?? env("MEMFLYWHEEL_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL;
 }
 
 function resolveMaxTokens(config: OpenAIChatCompletionsModelConfig): number | undefined {
   if (typeof config.maxTokens === "number") return config.maxTokens;
-  const fromEnv = env("MEMSCRIBE_LLM_MAX_TOKENS");
+  const fromEnv = env("MEMFLYWHEEL_LLM_MAX_TOKENS");
   const parsed = fromEnv ? Number.parseInt(fromEnv, 10) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
@@ -158,7 +158,7 @@ function stringifyToolInput(input: unknown, toolName: string): string {
     return JSON.stringify(input ?? {});
   } catch (error) {
     throw new Error(
-      `MemScribe OpenAI chat model: canonical tool input for ${toolName} is not JSON-serializable.`,
+      `MemFlywheel OpenAI chat model: canonical tool input for ${toolName} is not JSON-serializable.`,
       { cause: error },
     );
   }
@@ -186,12 +186,12 @@ function toWireMessage(message: CanonicalModelMessage): Record<string, unknown> 
 function parseToolInput(raw: unknown, id: string): unknown {
   if (raw === undefined || raw === null || raw === "") return {};
   if (typeof raw !== "string") {
-    throw new Error(`MemScribe OpenAI chat model: tool call ${id} arguments must be a JSON string.`);
+    throw new Error(`MemFlywheel OpenAI chat model: tool call ${id} arguments must be a JSON string.`);
   }
   try {
     return JSON.parse(raw);
   } catch (error) {
-    throw new Error(`MemScribe OpenAI chat model: invalid JSON tool arguments for ${id}.`, {
+    throw new Error(`MemFlywheel OpenAI chat model: invalid JSON tool arguments for ${id}.`, {
       cause: error,
     });
   }
@@ -201,7 +201,7 @@ function parseResponse(json: unknown): CanonicalModelResponse {
   const choice = (json as { choices?: Array<{ message?: unknown; finish_reason?: unknown }> })
     ?.choices?.[0];
   if (!choice) {
-    throw new Error("MemScribe OpenAI chat model: response has no choices.");
+    throw new Error("MemFlywheel OpenAI chat model: response has no choices.");
   }
   const rawMessage = (choice.message ?? {}) as {
     content?: unknown;
@@ -216,10 +216,10 @@ function parseResponse(json: unknown): CanonicalModelResponse {
         function?: { name?: unknown; arguments?: unknown };
       };
       if (typeof call.id !== "string" || call.id.trim() === "") {
-        throw new Error("MemScribe OpenAI chat model: provider tool call missing id.");
+        throw new Error("MemFlywheel OpenAI chat model: provider tool call missing id.");
       }
       if (typeof call.function?.name !== "string" || call.function.name.trim() === "") {
-        throw new Error(`MemScribe OpenAI chat model: tool call ${call.id} missing name.`);
+        throw new Error(`MemFlywheel OpenAI chat model: tool call ${call.id} missing name.`);
       }
       toolCalls.push({
         id: call.id,
@@ -271,7 +271,7 @@ export function createOpenAIChatCompletionsModel(
       if (!response.ok) {
         const detail = await response.text().catch(() => "");
         throw new Error(
-          `MemScribe OpenAI chat model: request failed (${response.status}). ${detail}`.trim(),
+          `MemFlywheel OpenAI chat model: request failed (${response.status}). ${detail}`.trim(),
         );
       }
       return parseResponse(await response.json());
@@ -282,7 +282,7 @@ export function createOpenAIChatCompletionsModel(
 function parseEmbeddingsResponse(json: unknown, expectedCount: number): { vectors: number[][] } {
   const data = (json as { data?: unknown })?.data;
   if (!Array.isArray(data) || data.length !== expectedCount) {
-    throw new Error("MemScribe OpenAI embeddings model: invalid embedding count.");
+    throw new Error("MemFlywheel OpenAI embeddings model: invalid embedding count.");
   }
   const vectors = data.map((row, index) => {
     const embedding = (row as { embedding?: unknown })?.embedding;
@@ -291,7 +291,7 @@ function parseEmbeddingsResponse(json: unknown, expectedCount: number): { vector
       embedding.length === 0 ||
       !embedding.every((value) => typeof value === "number" && Number.isFinite(value))
     ) {
-      throw new Error(`MemScribe OpenAI embeddings model: invalid embedding vector at ${index}.`);
+      throw new Error(`MemFlywheel OpenAI embeddings model: invalid embedding vector at ${index}.`);
     }
     return embedding;
   });
@@ -319,7 +319,7 @@ export function createOpenAIEmbeddingsModel(
       if (!response.ok) {
         const detail = await response.text().catch(() => "");
         throw new Error(
-          `MemScribe OpenAI embeddings model: request failed (${response.status}). ${detail}`.trim(),
+          `MemFlywheel OpenAI embeddings model: request failed (${response.status}). ${detail}`.trim(),
         );
       }
       return parseEmbeddingsResponse(await response.json(), req.texts.length);

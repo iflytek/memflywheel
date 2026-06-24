@@ -3,7 +3,7 @@
  *
  * OpenClaw native model-loop support is not wired in phase 1. The plugin claims
  * recall/injection only; a later OpenClaw adapter must map llm-runtime into
- * HostHarnessPort before MemScribe can run extraction/dream/skill loops natively.
+ * HostHarnessPort before MemFlywheel can run extraction/dream/skill loops natively.
  *
  * `register(api)`:
  *  - claims the memory slot via registerMemoryCapability,
@@ -11,20 +11,20 @@
  *  - binds `openclawAdapter` to OpenClaw's hooks.
  */
 
-import { createMemScribeHarnessRuntime, openclawAdapter } from "@memscribe/adapters";
+import { createMemFlywheelHarnessRuntime, openclawAdapter } from "@memflywheel/adapters";
 
 const plugin = {
-  id: "memscribe",
-  name: "MemScribe",
+  id: "memflywheel",
+  name: "MemFlywheel",
 
   /** @param {any} api - the OpenClaw plugin API */
   register(api) {
-    const { scribe } = createMemScribeHarnessRuntime({ mode: "recall-only" });
+    const { scribe } = createMemFlywheelHarnessRuntime({ mode: "recall-only" });
 
     if (typeof api.registerMemoryCapability === "function") {
       api.registerMemoryCapability({
         promptBuilder: () => [
-          "Long-term memory provider: MemScribe (file-native memory).",
+          "Long-term memory provider: MemFlywheel (file-native memory).",
           "Stored memories are injected on prompt build.",
         ],
       });

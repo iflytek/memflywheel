@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest a MemScribe improvement
+about: Suggest a MemFlywheel improvement
 title: "feat: "
 labels: enhancement
 assignees: ""
@@ -18,7 +18,7 @@ assignees: ""
 |---|---|
 | Keeps Markdown/frontmatter as source of truth? | Yes / No |
 | Keeps full-index recall instead of embedding/BM25/top-k retrieval? | Yes / No |
-| Keeps `@memscribe/core` free of direct LLM calls? | Yes / No |
+| Keeps `@memflywheel/core` free of direct LLM calls? | Yes / No |
 | Fits Agent Harness lifecycle integration? | Yes / No |
 
 ## Alternatives Considered

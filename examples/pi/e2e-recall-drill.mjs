@@ -1,5 +1,5 @@
 /**
- * MemScribe × Pi — realistic recall E2E: hybrid-retrieval accuracy + latency +
+ * MemFlywheel × Pi — realistic recall E2E: hybrid-retrieval accuracy + latency +
  * 3rd-layer (raw-trace) drilling. Drives the REAL Pi lifecycle:
  *   - recall  via the Pi `context` event  → onPromptBuild (hybrid: bge-m3+BM25+RRF)
  *   - extract via scribe.onTurnEnd (the same method the Pi `agent_end` hook calls,
@@ -15,10 +15,10 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
   createPiHarnessPort,
-  createMemScribeHarnessRuntime,
-} from "@memscribe/adapters";
-import { createOpenAIChatCompletionsModel, createOpenAIEmbeddingsModel } from "@memscribe/model";
-import { createFileTools } from "@memscribe/core";
+  createMemFlywheelHarnessRuntime,
+} from "@memflywheel/adapters";
+import { createOpenAIChatCompletionsModel, createOpenAIEmbeddingsModel } from "@memflywheel/model";
+import { createFileTools } from "@memflywheel/core";
 
 const DEEPSEEK_KEY = process.env.DEEPSEEK_KEY;
 const CF_KEY = process.env.CF_KEY;
@@ -68,13 +68,13 @@ function createMockPiHost() {
   };
 }
 
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-pi-recall-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-pi-recall-"));
 const model = createOpenAIChatCompletionsModel({ endpoint: LLM_BASE, apiKey: "proxy", model: DS_MODEL, maxTokens: 2048, temperature: 0 });
 const embedding = createOpenAIEmbeddingsModel({ endpoint: EMB_BASE, apiKey: "proxy", model: EMB_MODEL });
 
 const host = createMockPiHost();
 const port = createPiHarnessPort(host, { model });
-const { scribe, dispose } = createMemScribeHarnessRuntime({
+const { scribe, dispose } = createMemFlywheelHarnessRuntime({
   port, root,
   memoryIndexRetrieval: { mode: "auto", embeddingProvider: embedding, model: EMB_MODEL, limit: 3, minRecords: 1 },
 });
@@ -86,7 +86,7 @@ await host.emit("session_start", { sessionId: "pi" });
 
 // ── PHASE 1: extraction (awaited scribe.onTurnEnd = the agent_end path) ──────
 const turns = [
-  [{ role: "user", text: "Hi, I'm Lin Wei — backend engineer at iFlytek, lead on the MemScribe project.", timestamp: "2026-06-23T09:00:00Z" }, { role: "assistant", text: "Hi Lin Wei." }],
+  [{ role: "user", text: "Hi, I'm Lin Wei — backend engineer at iFlytek, lead on the MemFlywheel project.", timestamp: "2026-06-23T09:00:00Z" }, { role: "assistant", text: "Hi Lin Wei." }],
   [{ role: "user", text: "Working preferences: always reply to me in Chinese, and keep answers short and to the point.", timestamp: "2026-06-23T09:02:00Z" }, { role: "assistant", text: "好的。" }],
   [{ role: "user", text: "Team repo rule: every change goes through a pull request reviewed by a committer; never push directly to main.", timestamp: "2026-06-23T09:04:00Z" }, { role: "assistant", text: "Understood." }],
   [{ role: "user", text: "My editor is Neovim, and I always use 2-space indentation.", timestamp: "2026-06-23T09:06:00Z" }, { role: "assistant", text: "Got it." }],
@@ -190,20 +190,20 @@ const detailQ = "我们生产 Postgres 的连接池最大是多少个连接？st
 const rc = await piRecall(detailQ);
 // the drill agent's system prompt = exactly what the Pi context event injected
 const injectedText = rc.plain;
-const hintSuffix = "\n\n如果某条记忆正文不足以回答，正文末尾的 ## Sources 指向原始对话轨迹文件（形如 .memscribe/sources/xxx.jsonl#L13-L20）。可用 read 工具按该文件与行号区间读取原始细节。";
+const hintSuffix = "\n\n如果某条记忆正文不足以回答，正文末尾的 ## Sources 指向原始对话轨迹文件（形如 .memflywheel/sources/xxx.jsonl#L13-L20）。可用 read 工具按该文件与行号区间读取原始细节。";
 
 sep("PHASE 3A — DRILL (product as-is: only what Pi injected)");
 console.log("Q:", detailQ);
 const a = await runAgent(injectedText, detailQ);
 console.log("tools:", JSON.stringify(a.trace));
-console.log("drilled into .memscribe/sources?", a.trace.some((t) => String(t.path || "").includes(".memscribe/sources")));
+console.log("drilled into .memflywheel/sources?", a.trace.some((t) => String(t.path || "").includes(".memflywheel/sources")));
 console.log("ANSWER:", a.answer);
 
 sep("PHASE 3B — DRILL (with explicit sources hint)");
 console.log("Q:", detailQ);
 const b = await runAgent(injectedText + hintSuffix, detailQ);
 console.log("tools:", JSON.stringify(b.trace));
-console.log("drilled into .memscribe/sources?", b.trace.some((t) => String(t.path || "").includes(".memscribe/sources")));
+console.log("drilled into .memflywheel/sources?", b.trace.some((t) => String(t.path || "").includes(".memflywheel/sources")));
 console.log("ANSWER:", b.answer);
 
 sep("GROUND TRUTH — postgres memory body");

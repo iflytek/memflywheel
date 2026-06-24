@@ -1,20 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import type { MemScribeContext } from "./adapter.js";
+import type { MemFlywheelContext } from "./adapter.js";
 import { piAdapter } from "./pi.js";
 import { claudeCodeAdapter } from "./claude-code.js";
 import { hermesAdapter } from "./hermes.js";
 import {
   createFakeHost,
   createOffHost,
-  createRecordingMemScribe,
+  createRecordingMemFlywheel,
 } from "./test-helpers.js";
 
 const flush = () => new Promise((r) => setImmediate(r));
 
 test("attach binds each host event to its scribe hook (pi)", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
 
@@ -44,7 +44,7 @@ test("attach binds each host event to its scribe hook (pi)", async () => {
 });
 
 test("dispose removes all listeners (on-returns-unsubscribe path)", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
   assert.equal(host.listenerCount("session_start"), 1);
@@ -57,7 +57,7 @@ test("dispose removes all listeners (on-returns-unsubscribe path)", async () => 
 });
 
 test("dispose works through host.off when on returns void", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createOffHost();
   const dispose = piAdapter.attach(scribe, host);
   assert.equal(host.listenerCount("agent_end"), 1);
@@ -66,15 +66,15 @@ test("dispose works through host.off when on returns void", async () => {
 });
 
 test("onPromptBuild result is delivered via a respond callback", async () => {
-  const scribe = createRecordingMemScribe({ systemPrompt: "RULES", preludePrompt: "PRELUDE" });
+  const scribe = createRecordingMemFlywheel({ systemPrompt: "RULES", preludePrompt: "PRELUDE" });
   const host = createFakeHost();
   claudeCodeAdapter.attach(scribe, host);
 
-  let received: MemScribeContext | undefined;
+  let received: MemFlywheelContext | undefined;
   host.emit("UserPromptSubmit", {
     session_id: "abc",
     prompt: "review this release",
-    respond: (p: Promise<MemScribeContext>) => {
+    respond: (p: Promise<MemFlywheelContext>) => {
       void p.then((ctx) => {
         received = ctx;
       });
@@ -90,7 +90,7 @@ test("onPromptBuild result is delivered via a respond callback", async () => {
 
 test("turn-end extraction is fire-and-forget — emit does not throw on scribe rejection", async () => {
   const host = createFakeHost();
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   // Replace onTurnEnd with one that rejects.
   const rejecting = {
     ...scribe,
@@ -106,7 +106,7 @@ test("turn-end extraction is fire-and-forget — emit does not throw on scribe r
 });
 
 test("claude-code maps snake_case session_id and Stop turn-end", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = claudeCodeAdapter.attach(scribe, host);
 
@@ -122,7 +122,7 @@ test("claude-code maps snake_case session_id and Stop turn-end", async () => {
 });
 
 test("hermes reads session_id and user_message/assistant_response", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = hermesAdapter.attach(scribe, host);
 
@@ -146,7 +146,7 @@ test("hermes reads session_id and user_message/assistant_response", async () => 
 });
 
 test("hermes still accepts an explicit transcript array", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = hermesAdapter.attach(scribe, host);
 

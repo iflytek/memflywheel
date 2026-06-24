@@ -24,7 +24,7 @@ context inside the held write lock) plus the windowed conversation and the exist
 manifest, and it returns the relative paths it touched. Returning `{ changed: [] }` is normal
 and means "nothing to extract this turn."
 
-You do not have to build that loop yourself. MemScribe ships a complete default agent (see
+You do not have to build that loop yourself. MemFlywheel ships a complete default agent (see
 below); the contract above is the seam that lets you replace it.
 
 ```ts
@@ -52,7 +52,7 @@ subagent can read the failure and adjust.
 
 ## The default extraction subagent (batteries included)
 
-The "what is worth remembering" judgment is shipped, not stubbed. MemScribe provides it in two
+The "what is worth remembering" judgment is shipped, not stubbed. MemFlywheel provides it in two
 layers so the core stays mechanical:
 
 - **In the core (pure values, no network).** A curated default extraction **system prompt** —
@@ -82,14 +82,14 @@ layers so the core stays mechanical:
   }
   ```
 
-  The OpenAI-compatible mapper lives in `@memscribe/model` as
+  The OpenAI-compatible mapper lives in `@memflywheel/model` as
   `createOpenAIChatCompletionsModel()`. It uses Node's global `fetch` to call a
   `/chat/completions` endpoint with a `tools` array, reading endpoint / model / API key from
-  `MEMSCRIBE_LLM_*`. Hosts can instead supply their own `CanonicalModelCompletion`.
+  `MEMFLYWHEEL_LLM_*`. Hosts can instead supply their own `CanonicalModelCompletion`.
 
   ```ts
-  import { createExtractionAgentRunner } from "@memscribe/sdk";
-  import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+  import { createExtractionAgentRunner } from "@memflywheel/sdk";
+  import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 
   const agent = createExtractionAgentRunner({
     model: createOpenAIChatCompletionsModel(),

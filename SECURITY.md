@@ -8,7 +8,7 @@ issue that says you have a security report without including exploit details.
 
 ## Memory Safety Scope
 
-MemScribe stores memory in local files. Callers are responsible for choosing the
+MemFlywheel stores memory in local files. Callers are responsible for choosing the
 memory root and controlling filesystem access to that root.
 
 | Surface | Current Behavior |

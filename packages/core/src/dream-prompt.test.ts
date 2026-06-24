@@ -28,13 +28,13 @@ test("buildDreamAgentUserMessage renders all packets and optional coordination",
       reason: "why",
       memoryAction: "compress-memory",
       topics: ["t1"],
-      targetSkill: "memscribe-learned-review",
+      targetSkill: "memflywheel-learned-review",
     },
   });
   assert.ok(out.includes("path-type-mismatch"));
   assert.ok(out.includes("a/b.md (type=context"));
   assert.ok(out.includes("memoryAction: compress-memory"));
-  assert.ok(out.includes("targetSkill: memscribe-learned-review"));
+  assert.ok(out.includes("targetSkill: memflywheel-learned-review"));
   // Reinforces read-before-edit in the seed message itself.
   assert.match(out, /read the full body/i);
 });

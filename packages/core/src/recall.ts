@@ -83,7 +83,7 @@ export function buildMemoryInstructionPrompt(): string {
 - 当用户在请求解释、写作、推荐、实现、调试、review、命名或方案推进时，应优先命中 1-2 条最相关的 style、workflow、preference、context、ambient 记忆
 - 同类型记忆有多条时，优先读取与当前问题语义最接近的那 1-2 条，不要随便读取同类型但不相关的其他记忆
 - 只对命中的具体记忆文件使用 Read，不要先 Read 整个记忆目录来确认文件列表
-- 读取具体记忆文件后，如果正文信息不足以回答、问题涉及相对时间/日期推理/多个相似事件，且文件包含 ## Sources，应继续用 Read 读取引用的 .memscribe/sources/*.jsonl 行范围；例如 #L10-L18 对应 offset=10, limit=9
+- 读取具体记忆文件后，如果正文信息不足以回答、问题涉及相对时间/日期推理/多个相似事件，且文件包含 ## Sources，应继续用 Read 读取引用的 .memflywheel/sources/*.jsonl 行范围；例如 #L10-L18 对应 offset=10, limit=9
 - 不要自己构造、猜测或补全任何记忆文件名或路径
 - 不要用 Read 读取记忆目录本身
 - 除非最新可用记忆条目末尾明确提示内容已截断，否则不要再次 Read MEMORY.md

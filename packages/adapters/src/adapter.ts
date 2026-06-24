@@ -1,14 +1,14 @@
 /**
  * Shared host-adapter framework.
  *
- * An adapter maps a host's lifecycle events onto a MemScribe's hooks. Adapters
+ * An adapter maps a host's lifecycle events onto a MemFlywheel's hooks. Adapters
  * contain NO memory logic — they are pure event translation plus a real,
  * round-trippable install of the host-side wiring.
  *
- * The scribe contract below is structurally identical to @memscribe/sdk's
- * `MemScribe`. It is declared here (not imported) so adapters build and test
+ * The scribe contract below is structurally identical to @memflywheel/sdk's
+ * `MemFlywheel`. It is declared here (not imported) so adapters build and test
  * independently of the SDK package: any object with these methods — including a
- * real `createMemScribe(...)` — satisfies `MemScribe` structurally.
+ * real `createMemFlywheel(...)` — satisfies `MemFlywheel` structurally.
  */
 
 import { readFile, writeFile, rename, mkdir, unlink } from "node:fs/promises";
@@ -17,22 +17,22 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 
 // ---------------------------------------------------------------------------
-// Adapter-facing contract (structural mirror of @memscribe/sdk MemScribe)
+// Adapter-facing contract (structural mirror of @memflywheel/sdk MemFlywheel)
 // ---------------------------------------------------------------------------
 
 /** One host tool call folded into a turn (structural mirror of core's ExtractionToolCall). */
-export interface MemScribeToolCall {
+export interface MemFlywheelToolCall {
   name: string;
   input?: unknown;
   output?: unknown;
 }
 
 /** A turn message in the shape core extraction expects. */
-export interface MemScribeMessage {
+export interface MemFlywheelMessage {
   role: "user" | "assistant";
   text: string;
   /** Host tool calls made on this turn, folded into extraction as truncated text. */
-  toolCalls?: MemScribeToolCall[];
+  toolCalls?: MemFlywheelToolCall[];
   /**
    * Absolute time anchor for this turn (e.g. "2023-05-08"), when the host knows
    * the turn's wall-clock time. Forwarded to extraction so relative dates can be
@@ -42,7 +42,7 @@ export interface MemScribeMessage {
 }
 
 /** The two recall segments core produces. */
-export interface MemScribeContext {
+export interface MemFlywheelContext {
   /** STABLE memory rules — host merges into its systemPrompt (cache-friendly). */
   systemPrompt: string;
   /** DYNAMIC index prelude, wrapped in <system-reminder>, injected per turn. */
@@ -54,12 +54,12 @@ export interface MemScribeContext {
 
 /**
  * The lifecycle surface an adapter drives. Structurally compatible with the
- * SDK's `MemScribe`; only the hooks adapters actually call are required.
+ * SDK's `MemFlywheel`; only the hooks adapters actually call are required.
  */
-export interface MemScribe {
+export interface MemFlywheel {
   onSessionStart(input: { sessionId: string }): Promise<void>;
-  onPromptBuild(input: { sessionId: string; query?: string }): Promise<MemScribeContext>;
-  onTurnEnd(input: { sessionId: string; messages: MemScribeMessage[] }): Promise<unknown>;
+  onPromptBuild(input: { sessionId: string; query?: string }): Promise<MemFlywheelContext>;
+  onTurnEnd(input: { sessionId: string; messages: MemFlywheelMessage[] }): Promise<unknown>;
   onSessionEnd(input: { sessionId: string }): Promise<void>;
   onIdle(input?: { force?: boolean }): Promise<void>;
 }
@@ -69,7 +69,7 @@ export interface MemScribe {
 // ---------------------------------------------------------------------------
 
 /** The canonical scribe hooks a host event can map to. */
-export type MemScribeHook =
+export type MemFlywheelHook =
   | "onSessionStart"
   | "onPromptBuild"
   | "onTurnEnd"
@@ -79,7 +79,7 @@ export type MemScribeHook =
 /** One host-event → scribe-hook mapping row (documentation + verification data). */
 export interface LifecycleMapping {
   /** The scribe hook this host event drives. */
-  hook: MemScribeHook;
+  hook: MemFlywheelHook;
   /** The host's native event/callback name. */
   hostEvent: string;
   /** Human description of what the adapter does at this point. */
@@ -87,7 +87,7 @@ export interface LifecycleMapping {
 }
 
 /** A host adapter's lifecycle map keyed by scribe hook. */
-export type LifecycleMap = Readonly<Partial<Record<MemScribeHook, LifecycleMapping>>>;
+export type LifecycleMap = Readonly<Partial<Record<MemFlywheelHook, LifecycleMapping>>>;
 
 // ---------------------------------------------------------------------------
 // Install: plan / apply / verify / doctor
@@ -166,7 +166,7 @@ export interface HostAdapter {
    * Wire a scribe into a live host runtime. Returns a disposer that detaches all
    * listeners. Pure event translation — no memory logic.
    */
-  attach(scribe: MemScribe, host: HostRuntime): () => void;
+  attach(scribe: MemFlywheel, host: HostRuntime): () => void;
 
   /** Compute the config changes needed to install the wiring (no writes). */
   install(target: InstallTarget, opts?: { apply?: boolean }): Promise<InstallPlan | InstallResult>;
@@ -196,14 +196,14 @@ export interface HostRuntime {
 export const WIRING_VERSION = 1;
 
 /** Key under which the wiring marker lives in a host config object. */
-export const WIRING_KEY = "memscribe";
+export const WIRING_KEY = "memflywheel";
 
 /** The marker an adapter writes into a host config to claim it is installed. */
 export interface WiringMarker {
   version: number;
   adapter: string;
   /** Ordered list of (hostEvent → hook) bindings, for verification. */
-  bindings: { hostEvent: string; hook: MemScribeHook }[];
+  bindings: { hostEvent: string; hook: MemFlywheelHook }[];
 }
 
 /** Build the wiring marker for an adapter from its lifecycle map. */
@@ -258,12 +258,12 @@ export function readWiringMarker(config: Record<string, unknown> | null): Wiring
   const obj = m as Record<string, unknown>;
   if (typeof obj.version !== "number" || typeof obj.adapter !== "string") return undefined;
   if (!Array.isArray(obj.bindings)) return undefined;
-  const bindings: { hostEvent: string; hook: MemScribeHook }[] = [];
+  const bindings: { hostEvent: string; hook: MemFlywheelHook }[] = [];
   for (const b of obj.bindings) {
     if (!b || typeof b !== "object") return undefined;
     const bb = b as Record<string, unknown>;
     if (typeof bb.hostEvent !== "string" || typeof bb.hook !== "string") return undefined;
-    bindings.push({ hostEvent: bb.hostEvent, hook: bb.hook as MemScribeHook });
+    bindings.push({ hostEvent: bb.hostEvent, hook: bb.hook as MemFlywheelHook });
   }
   return { version: obj.version, adapter: obj.adapter, bindings };
 }
@@ -307,7 +307,7 @@ export async function planInstall(adapter: HostAdapter, target: InstallTarget): 
     steps.push({
       kind: "create-config",
       configPath: target.configPath,
-      description: `create host config and add MemScribe wiring for "${adapter.id}"`,
+      description: `create host config and add MemFlywheel wiring for "${adapter.id}"`,
     });
     return { adapterId: adapter.id, configPath: target.configPath, steps, satisfied: false };
   }
@@ -316,7 +316,7 @@ export async function planInstall(adapter: HostAdapter, target: InstallTarget): 
     steps.push({
       kind: "update-wiring",
       configPath: target.configPath,
-      description: `rewrite corrupt host config and add MemScribe wiring for "${adapter.id}"`,
+      description: `rewrite corrupt host config and add MemFlywheel wiring for "${adapter.id}"`,
     });
     return { adapterId: adapter.id, configPath: target.configPath, steps, satisfied: false };
   }
@@ -335,8 +335,8 @@ export async function planInstall(adapter: HostAdapter, target: InstallTarget): 
     kind: existing ? "update-wiring" : "add-wiring",
     configPath: target.configPath,
     description: existing
-      ? `update stale MemScribe wiring for "${adapter.id}" (v${existing.version} → v${desired.version})`
-      : `add MemScribe wiring for "${adapter.id}"`,
+      ? `update stale MemFlywheel wiring for "${adapter.id}" (v${existing.version} → v${desired.version})`
+      : `add MemFlywheel wiring for "${adapter.id}"`,
   });
   return { adapterId: adapter.id, configPath: target.configPath, steps, satisfied: false };
 }
@@ -391,7 +391,7 @@ export async function verifyInstall(adapter: HostAdapter, target: InstallTarget)
   }
   const existing = readWiringMarker(config);
   if (!existing) {
-    problems.push("no MemScribe wiring marker found in host config");
+    problems.push("no MemFlywheel wiring marker found in host config");
     return { adapterId: adapter.id, ok: false, problems };
   }
   if (existing.adapter !== desired.adapter) {
@@ -469,7 +469,7 @@ export async function doctorInstall(adapter: HostAdapter, target: InstallTarget)
   }
   const existing = readWiringMarker(config);
   if (!existing) {
-    return [{ code: "not-installed", message: `MemScribe wiring not present in ${target.configPath}` }];
+    return [{ code: "not-installed", message: `MemFlywheel wiring not present in ${target.configPath}` }];
   }
   const desired = buildWiringMarker(adapter);
   if (!markersEqual(existing, desired)) {
@@ -499,7 +499,7 @@ export interface HookTranslators {
   /** Pull the current user request / task for index-layer retrieval. */
   promptQuery?(payload: unknown): string | undefined;
   /** Pull (sessionId, messages) out of a turn-end payload. */
-  turnEnd(payload: unknown): { sessionId: string; messages: MemScribeMessage[] };
+  turnEnd(payload: unknown): { sessionId: string; messages: MemFlywheelMessage[] };
   /** Pull a sessionId for session-end; defaults to `sessionId`. */
   sessionEndSessionId?(payload: unknown): string;
   /** Map an idle payload to onIdle input; defaults to `{}`. */
@@ -511,12 +511,12 @@ export interface HookTranslators {
  * translators. Returns a disposer that removes every listener. This is the only
  * place host events touch the scribe — pure translation, no memory logic.
  *
- * `onPromptBuild` returns a `MemScribeContext`; the host is expected to read it from
+ * `onPromptBuild` returns a `MemFlywheelContext`; the host is expected to read it from
  * the listener's return value (hosts that need the result pass a payload with a
  * `respond` callback — see the per-host adapters).
  */
 export function bindLifecycle(
-  scribe: MemScribe,
+  scribe: MemFlywheel,
   host: HostRuntime,
   lifecycle: LifecycleMap,
   translators: HookTranslators,
@@ -550,7 +550,7 @@ export function bindLifecycle(
       const query = translators.promptQuery?.(payload);
       const result = scribe.onPromptBuild({ sessionId, query });
       // Hosts that need the context attach a `respond` callback to the payload.
-      const respond = (payload as { respond?: (ctx: Promise<MemScribeContext>) => void } | undefined)?.respond;
+      const respond = (payload as { respond?: (ctx: Promise<MemFlywheelContext>) => void } | undefined)?.respond;
       if (typeof respond === "function") respond(result);
       else detach(result);
     });

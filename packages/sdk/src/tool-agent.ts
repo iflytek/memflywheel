@@ -18,7 +18,7 @@
  * a failed pass.
  */
 
-import { type FileTool, type FileToolContext, fileToolMap } from "@memscribe/core";
+import { type FileTool, type FileToolContext, fileToolMap } from "@memflywheel/core";
 
 import type {
   CanonicalModelCompletion,
@@ -26,7 +26,7 @@ import type {
   CanonicalModelRequest,
   CanonicalModelResponse,
   CanonicalToolDefinition,
-} from "@memscribe/model";
+} from "@memflywheel/model";
 
 const DEFAULT_MAX_STEPS = 12;
 /** Hard cap on tool-agent loop rounds. A memory subagent must never run away. */

@@ -11,18 +11,18 @@
  * the deterministic outcomes strictly and the semantic work by "no data loss".
  *
  * Run (uses YOUR key; never hardcode it):
- *   MEMSCRIBE_LLM_ENDPOINT=<your OpenAI-compatible base, e.g. https://.../api/v1> \
- *   MEMSCRIBE_LLM_MODEL=<model id> \
- *   MEMSCRIBE_LLM_API_KEY=<your key> \
+ *   MEMFLYWHEEL_LLM_ENDPOINT=<your OpenAI-compatible base, e.g. https://.../api/v1> \
+ *   MEMFLYWHEEL_LLM_MODEL=<model id> \
+ *   MEMFLYWHEEL_LLM_API_KEY=<your key> \
  *   node examples/dream-regression.mjs
  */
 import { mkdtemp, mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createMemScribe, runDreamAgent } from "@memscribe/sdk";
-import { createOpenAIChatCompletionsModel } from "@memscribe/model";
+import { createMemFlywheel, runDreamAgent } from "@memflywheel/sdk";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-dream-rr-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-dream-rr-"));
 
 async function seed(relativePath, frontmatter, body) {
   const full = path.join(root, relativePath);
@@ -73,9 +73,9 @@ await seed(
 );
 
 const model = createOpenAIChatCompletionsModel({
-  endpoint: process.env.MEMSCRIBE_LLM_ENDPOINT,
-  apiKey: process.env.MEMSCRIBE_LLM_API_KEY,
-  model: process.env.MEMSCRIBE_LLM_MODEL,
+  endpoint: process.env.MEMFLYWHEEL_LLM_ENDPOINT,
+  apiKey: process.env.MEMFLYWHEEL_LLM_API_KEY,
+  model: process.env.MEMFLYWHEEL_LLM_MODEL,
 });
 
 // A dreamRunner that wraps core's tools with a tracer, then drives the real loop.
@@ -102,7 +102,7 @@ const dreamRunner = async (input) => {
   });
 };
 
-const scribe = createMemScribe({ root, dreamRunner });
+const scribe = createMemFlywheel({ root, dreamRunner });
 
 async function listFiles() {
   const out = [];

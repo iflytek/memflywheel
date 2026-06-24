@@ -1,22 +1,22 @@
 # Architecture
 
-MemScribe is a file-backed long-term memory kernel. It has four moving parts — **storage**,
+MemFlywheel is a file-backed long-term memory kernel. It has four moving parts — **storage**,
 **recall**, **extraction**, and **dream** — plus cross-cutting concerns (privacy, locking,
 atomic writes, audit) that every write path shares.
 
-The core (`@memscribe/core`) is pure filesystem logic plus injected ports. It never owns
+The core (`@memflywheel/core`) is pure filesystem logic plus injected ports. It never owns
 model transport, provider auth, or provider wire shapes. The two generative steps
 (extraction, dream) reach the model only through injected function contracts; optional
 index-layer retrieval consumes a host-supplied embedding provider. Hosts wire those
-contracts and the turn lifecycle through `@memscribe/sdk` and `@memscribe/adapters`.
+contracts and the turn lifecycle through `@memflywheel/sdk` and `@memflywheel/adapters`.
 
 ## Memory root and layout
 
 The store is a single directory tree. The root is resolved with this precedence:
 
 1. An explicit `root` passed by the caller.
-2. The `MEMSCRIBE_HOME` environment variable.
-3. `<os-data-dir>/memscribe/memory`, where the OS data dir is `APPDATA` on Windows,
+2. The `MEMFLYWHEEL_HOME` environment variable.
+3. `<os-data-dir>/memflywheel/memory`, where the OS data dir is `APPDATA` on Windows,
    `~/Library/Application Support` on macOS, and `$XDG_DATA_HOME` (or `~/.local/share`)
    on Linux.
 
@@ -27,7 +27,7 @@ The store is a single directory tree. The root is resolved with this precedence:
 ├── .last-extraction     # extraction timestamp
 ├── .consolidate-lock    # dream lock
 ├── .audit.log           # append-only audit log
-├── .memscribe/
+├── .memflywheel/
 │   └── sources/         # cleaned execution traces, addressed by memory body refs
 ├── identity/
 ├── preference/
@@ -116,7 +116,7 @@ subagent calls `glob` / `grep` / `read` and then writes through
 `write` / `edit` / `bash`; those tool calls are the file changes.
 `runExtractionSession` acquires the write lock, cleans and windows the messages against a
 per-session cursor, appends only the newly processed messages as cleaned JSONL under
-`.memscribe/sources/session-<hash>.jsonl`, lets the subagent drive the tools, and passes the
+`.memflywheel/sources/session-<hash>.jsonl`, lets the subagent drive the tools, and passes the
 resulting `sourceRef` into the memory file tools. Cursor context is still visible to the
 extraction agent, but is not persisted again. Any memory written through `write` or `edit`
 during that extraction pass gets a `## Sources` body section pointing to the JSONL line
@@ -158,14 +158,14 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 ## Package boundaries
 
 ```
-@memscribe/core      filesystem only, no LLM, no host coupling
+@memflywheel/core      filesystem only, no LLM, no host coupling
    ▲
    │ ExtractionAgentRunner / DreamAgentRunner contracts + lifecycle calls
    │
-@memscribe/sdk       wires injection points + turn lifecycle
+@memflywheel/sdk       wires injection points + turn lifecycle
    ▲
    │
-@memscribe/adapters  per-host lifecycle mapping
+@memflywheel/adapters  per-host lifecycle mapping
 ```
 
 See [`integrations.md`](integrations.md) for the SDK and host adapter surfaces.

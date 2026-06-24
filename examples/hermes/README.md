@@ -2,7 +2,7 @@
 
 Real integration: a Hermes plugin's `register(ctx)` wraps the host LLM facade
 (`ctx.llm.completeWithTools`, with tool calling) into a canonical model, builds
-the scribe with `createMemScribeHarnessRuntime`, and binds the `hermes` adapter
+the scribe with `createMemFlywheelHarnessRuntime`, and binds the `hermes` adapter
 to Hermes' real hooks.
 
 ## Lifecycle mapping

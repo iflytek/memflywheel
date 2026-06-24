@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createFileTools as createCoreFileTools, type FileTool, type FileToolResult } from "@memscribe/core";
+import { createFileTools as createCoreFileTools, type FileTool, type FileToolResult } from "@memflywheel/core";
 
-export const LEARNED_SKILL_DIR_PREFIX = "memscribe-learned-";
+export const LEARNED_SKILL_DIR_PREFIX = "memflywheel-learned-";
 export const MAX_SUPPORTING_FILE_BYTES = 1024 * 1024;
 export const SUPPORTING_DIRS = ["references", "templates", "scripts", "assets"] as const;
 
@@ -415,7 +415,7 @@ export async function getLearnedSkillsCatalog(input: {
 export function createLearnedSkillStore(options: CreateLearnedSkillStoreOptions): LearnedSkillStore {
   const skillsRoot = path.resolve(options.skillsRoot);
   const checkpointRoot = path.resolve(
-    options.checkpointRoot ?? path.join(path.dirname(skillsRoot), ".memscribe-skill-checkpoints"),
+    options.checkpointRoot ?? path.join(path.dirname(skillsRoot), ".memflywheel-skill-checkpoints"),
   );
   const forbiddenPublicNames = options.forbiddenPublicNames ?? [];
 
@@ -568,7 +568,7 @@ function bindStageFileTool(tool: FileTool, checkpoint: LearnedSkillStoreCheckpoi
         if (commandUsesAbsolutePath(command) || workdir.startsWith("/")) {
           return {
             ok: false,
-            text: "bash in skill evolution must use RELATIVE paths only; absolute filesystem paths are not allowed. Use the write tool with a relative path like memscribe-learned-<slug>/SKILL.md.",
+            text: "bash in skill evolution must use RELATIVE paths only; absolute filesystem paths are not allowed. Use the write tool with a relative path like memflywheel-learned-<slug>/SKILL.md.",
           };
         }
       }
