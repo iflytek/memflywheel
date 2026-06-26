@@ -1,9 +1,9 @@
 /**
- * Domain types and constants for the MemScribe memory kernel.
+ * Domain types and constants for the MemFlywheel memory kernel.
  *
- * The persisted frontmatter carries only `name` / `description` / `type` (plus
- * minimal `created_at` / `updated_at`). The six memory categories are the
- * canonical VALID_MEMORY_TYPES.
+ * The persisted frontmatter carries `name` / `description` / `type`, optional
+ * retrieval routing terms, and minimal write/event timestamps. The six memory
+ * categories are the canonical VALID_MEMORY_TYPES.
  */
 
 export type MemoryType =
@@ -15,8 +15,15 @@ export type MemoryType =
   | "ambient";
 
 /**
- * Persisted YAML frontmatter. NOTHING beyond these fields.
- * (No scope / origin / source_ref / confidence / status / agent / project / session.)
+ * Persisted YAML frontmatter. Beyond the core fields only `occurred_on` and
+ * `retrieval_terms` are allowed. (No scope / origin / source_ref / confidence /
+ * status / agent / project / session.)
+ *
+ * `created_at` / `updated_at` are WRITE times (when the memory was recorded).
+ * `occurred_on` is the EVENT time — when the remembered fact actually happened —
+ * resolved to an absolute ISO date (YYYY-MM-DD). It is distinct from the write
+ * times and is only present when a fact is bound to a specific date that the
+ * extractor could resolve from an explicit time anchor; it is never guessed.
  */
 export interface MemoryFrontmatter {
   name: string;
@@ -24,6 +31,8 @@ export interface MemoryFrontmatter {
   type: MemoryType;
   created_at?: string;
   updated_at?: string;
+  occurred_on?: string;
+  retrieval_terms?: string[];
 }
 
 /** A parsed memory file (frontmatter + body). */
@@ -39,6 +48,8 @@ export interface MemoryEntry {
   name: string;
   description: string;
   type: MemoryType;
+  occurredOn?: string;
+  retrievalTerms?: string[];
   mtime: number;
 }
 

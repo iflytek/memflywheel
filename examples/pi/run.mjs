@@ -1,22 +1,27 @@
 /**
  * Runnable Pi example / smoke test.
  *
- * Drives a mock Pi host through the four lifecycle events the `pi` adapter binds
- * (session:ensure → turn:build → agent_end → learning:idle) and prints the
+ * Drives a Pi-shaped host through the real Pi lifecycle events
+ * (session_start → context → agent_end → session_shutdown) and prints the
  * resulting memory. Under USE_FAKE the extraction subagent is a scripted
- * tool-completion (list → save two memories → decline a high-risk secret); the
+ * canonical model (list → save two memories → decline a high-risk secret); the
  * script exits non-zero if the expected memories are missing or the secret leaked.
  *
  *   USE_FAKE=1 node examples/pi/run.mjs      # offline, deterministic
- *   MEMSCRIBE_LLM_API_KEY=... node examples/pi/run.mjs   # real model (tools endpoint)
+ *   MEMFLYWHEEL_LLM_API_KEY=... node examples/pi/run.mjs   # real model (tools endpoint)
  */
 
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createHostMemScribe, piAdapter, connect } from "@memscribe/adapters";
-import { defaultExtractionAgentFromEnv } from "@memscribe/sdk";
-import { createFakeToolCompletion } from "../shared/fake-tool-completion.mjs";
+import {
+  createMemFlywheelHarnessRuntime,
+  createPiHarnessPort,
+  piAdapter,
+  connect,
+} from "@memflywheel/adapters";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
+import { createFakeModel } from "../shared/fake-model.mjs";
 import { transcript } from "../shared/transcript.mjs";
 
 /** A minimal EventEmitter-ish Pi host. */
@@ -29,40 +34,40 @@ function createMockPiHost() {
       listeners.set(event, set);
       return () => set.delete(fn);
     },
-    emit(event, payload) {
-      for (const fn of listeners.get(event) ?? []) fn(payload);
+    async emit(event, payload, ctx) {
+      const results = [];
+      for (const fn of listeners.get(event) ?? []) {
+        results.push(await fn(payload, ctx));
+      }
+      return results;
     },
   };
 }
 
+function piMessagesFromTranscript(messages) {
+  return messages.map((message) => ({
+    role: message.role,
+    content: [{ type: "text", text: message.text }],
+  }));
+}
+
 const useFake = process.env.USE_FAKE === "1";
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-pi-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-pi-"));
 
-// Real path: Pi would wrap its auxiliary tool-calling completion; here we fall
-// back to the default fetch tool-completion (env-driven) when not using the
-// fake. The fake plays a multi-step subagent: list → save → decline.
-const { scribe } = useFake
-  ? createHostMemScribe({ toolCompletion: createFakeToolCompletion(), root })
-  : createHostMemScribe({ agent: defaultExtractionAgentFromEnv(), root });
-
+const model = useFake ? createFakeModel() : createOpenAIChatCompletionsModel();
 const host = createMockPiHost();
-const dispose = piAdapter.attach(scribe, host);
+const port = createPiHarnessPort(host, { model });
+const { scribe, dispose } = createMemFlywheelHarnessRuntime({ port, root });
 
-host.emit("session:ensure", { sessionId: "demo" });
+await host.emit("session_start", { sessionId: "demo" });
 
-// Prompt build: print the two recall segments. The adapter delivers a
-// Promise<MemScribeContext> through the `respond` callback; await it here.
-let ctxPromise;
-host.emit("turn:build", {
-  sessionId: "demo",
-  respond: (p) => (ctxPromise = p),
-});
-const ctx = await ctxPromise;
-console.log("[prompt-build] enabled:", ctx?.enabled);
+// Prompt build: Pi's context hook returns the transformed message list.
+const contextResults = await host.emit("context", { sessionId: "demo", messages: [] });
+console.log("[context] injected messages:", contextResults.at(-1)?.messages?.length ?? 0);
 
-// Turn end: drive extraction directly so we can await the write deterministically.
-await scribe.onTurnEnd({ sessionId: "demo", messages: transcript });
-host.emit("learning:idle", {});
+await host.emit("agent_end", { sessionId: "demo", messages: piMessagesFromTranscript(transcript) });
+await scribe.onIdle({ force: true });
+await host.emit("session_shutdown", { sessionId: "demo" });
 
 const index = await readFile(path.join(root, "MEMORY.md"), "utf8").catch(() => "");
 console.log("\n--- MEMORY.md ---\n" + (index || "(empty)"));

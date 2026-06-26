@@ -1,7 +1,7 @@
 {
-  "name": "@memscribe/adapters",
+  "name": "@memflywheel/adapters",
   "version": "0.1.0",
-  "description": "Host lifecycle adapters for wiring MemScribe into agent runtimes.",
+  "description": "Host lifecycle adapters for wiring MemFlywheel into agent runtimes.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,13 +22,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/iflytek/memscribe.git",
+    "url": "git+https://github.com/iflytek/memflywheel.git",
     "directory": "packages/adapters"
   },
   "bugs": {
-    "url": "https://github.com/iflytek/memscribe/issues"
+    "url": "https://github.com/iflytek/memflywheel/issues"
   },
-  "homepage": "https://github.com/iflytek/memscribe#readme",
+  "homepage": "https://github.com/iflytek/memflywheel#readme",
   "keywords": [
     "agent-memory",
     "adapters",
@@ -48,7 +48,9 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@memscribe/sdk": "workspace:*"
+    "@memflywheel/model": "workspace:*",
+    "@memflywheel/sdk": "workspace:*",
+    "@memflywheel/skills": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",

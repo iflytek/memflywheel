@@ -4,34 +4,34 @@
  *
  * Seeds {@link runToolAgent} with the dream system prompt + a user message
  * rendering the structural packets (index / manifest / health / type-review),
- * then drives the model to consolidate by calling the memory tools directly —
+ * then drives the model to consolidate by calling ordinary file tools directly —
  * reading full bodies before merging or compressing. `createDreamAgentRunner`
  * adapts it into core's DreamAgentRunner injection point; core calls it inside
  * the held write lock during a dream pass, after the deterministic pre-pass.
  */
 
 import {
-  type MemoryTool,
-  type MemoryToolContext,
+  type FileTool,
+  type FileToolContext,
   type DreamAgentRunner,
   type DreamCoordination,
   type HealthFinding,
   type TypeReviewItem,
   DEFAULT_DREAM_SYSTEM_PROMPT,
   buildDreamAgentUserMessage,
-} from "@memscribe/core";
+} from "@memflywheel/core";
 
-import { type ToolCompletion } from "./tool-completion.js";
+import type { CanonicalModelCompletion } from "@memflywheel/model";
 import { type ToolAgentResult, runToolAgent } from "./tool-agent.js";
 
 /** Options for {@link runDreamAgent}. */
 export interface RunDreamAgentOptions {
-  /** The tool-calling LLM channel. */
-  toolCompletion: ToolCompletion;
-  /** The memory tools (from core.createMemoryTools()), advertised + executed. */
-  tools: MemoryTool[];
+  /** The host-owned canonical model channel. */
+  model: CanonicalModelCompletion;
+  /** The file tools (from core.createFileTools()), advertised + executed. */
+  tools: FileTool[];
   /** The context the handlers write through (shares the held lock). */
-  toolCtx: MemoryToolContext;
+  toolCtx: FileToolContext;
   /** The tool-use system prompt. Defaults to DEFAULT_DREAM_SYSTEM_PROMPT. */
   systemPrompt?: string;
   /** Structural health findings packet. */
@@ -50,10 +50,10 @@ export interface RunDreamAgentOptions {
   signal?: AbortSignal;
 }
 
-/** Run the tool-calling dream loop. The subagent consolidates via the memory tools. */
+/** Run the tool-calling dream loop. The subagent consolidates via ordinary file tools. */
 export async function runDreamAgent(options: RunDreamAgentOptions): Promise<ToolAgentResult> {
   return runToolAgent({
-    toolCompletion: options.toolCompletion,
+    model: options.model,
     tools: options.tools,
     toolCtx: options.toolCtx,
     systemPrompt: options.systemPrompt ?? DEFAULT_DREAM_SYSTEM_PROMPT,
@@ -71,8 +71,8 @@ export async function runDreamAgent(options: RunDreamAgentOptions): Promise<Tool
 
 /** Options for {@link createDreamAgentRunner}. */
 export interface CreateDreamAgentRunnerOptions {
-  /** The tool-calling LLM channel. */
-  toolCompletion: ToolCompletion;
+  /** The host-owned canonical model channel. */
+  model: CanonicalModelCompletion;
   /** Override the tool-use system prompt. */
   systemPrompt?: string;
   /** Max model round-trips per dream pass. Defaults to 12, hard-capped at 20. */
@@ -89,7 +89,7 @@ export function createDreamAgentRunner(
 ): DreamAgentRunner {
   return async function dreamRunner(input) {
     const result = await runDreamAgent({
-      toolCompletion: options.toolCompletion,
+      model: options.model,
       tools: input.tools,
       toolCtx: input.toolCtx,
       systemPrompt: options.systemPrompt,

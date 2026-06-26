@@ -13,9 +13,9 @@ import {
   type InstallResult,
   type InstallTarget,
   type LifecycleMap,
-  type MemScribe,
-  type MemScribeMessage,
-  type MemScribeToolCall,
+  type MemFlywheel,
+  type MemFlywheelMessage,
+  type MemFlywheelToolCall,
   applyInstall,
   bindLifecycle,
   doctorInstall,
@@ -43,7 +43,7 @@ export function makeAdapter(spec: AdapterSpec): HostAdapter {
     defaultConfigRelPath: spec.defaultConfigRelPath,
     integrationNote: spec.integrationNote,
 
-    attach(scribe: MemScribe, host: HostRuntime): () => void {
+    attach(scribe: MemFlywheel, host: HostRuntime): () => void {
       return bindLifecycle(scribe, host, spec.lifecycle, spec.translators);
     },
 
@@ -80,9 +80,9 @@ export function readString(payload: unknown, key: string): string {
 
 type RawObj = Record<string, unknown>;
 
-/** True unless explicitly disabled via MEMSCRIBE_FOLD_TOOL_CALLS=0/false. Default on. */
+/** True unless explicitly disabled via MEMFLYWHEEL_FOLD_TOOL_CALLS=0/false. Default on. */
 function foldEnabled(): boolean {
-  const v = process.env.MEMSCRIBE_FOLD_TOOL_CALLS;
+  const v = process.env.MEMFLYWHEEL_FOLD_TOOL_CALLS;
   return v !== "0" && v !== "false";
 }
 
@@ -123,7 +123,7 @@ function resultText(content: unknown): string {
 }
 
 /**
- * Normalize an arbitrary transcript array into MemScribeMessages: keep user/assistant
+ * Normalize an arbitrary transcript array into MemFlywheelMessages: keep user/assistant
  * roles, coerce text, drop empties. When folding is enabled (default), tool calls
  * are folded into the assistant turn that made them, paired with their result —
  * supporting both the OpenAI shape (assistant `tool_calls` + `role:"tool"` replies)
@@ -131,7 +131,7 @@ function resultText(content: unknown): string {
  * tool text is later truncated by core's renderer (input 200 / output 500 head+tail
  * + window cap), so a huge tool output cannot bloat the extraction prompt.
  */
-export function normalizeMessages(raw: unknown): MemScribeMessage[] {
+export function normalizeMessages(raw: unknown): MemFlywheelMessage[] {
   if (!Array.isArray(raw)) return [];
   const fold = foldEnabled();
 
@@ -161,8 +161,8 @@ export function normalizeMessages(raw: unknown): MemScribeMessage[] {
     }
   }
 
-  // Pass 2: build MemScribeMessages, folding tool_use/tool_calls into the assistant turn.
-  const out: MemScribeMessage[] = [];
+  // Pass 2: build MemFlywheelMessages, folding tool_use/tool_calls into the assistant turn.
+  const out: MemFlywheelMessage[] = [];
   for (const m of raw) {
     if (!m || typeof m !== "object") continue;
     const obj = m as RawObj;
@@ -171,9 +171,9 @@ export function normalizeMessages(raw: unknown): MemScribeMessage[] {
 
     const text = extractText(obj.content, obj.text).trim();
 
-    let toolCalls: MemScribeToolCall[] | undefined;
+    let toolCalls: MemFlywheelToolCall[] | undefined;
     if (fold && role === "assistant") {
-      const collected: MemScribeToolCall[] = [];
+      const collected: MemFlywheelToolCall[] = [];
       // OpenAI shape: top-level tool_calls.
       if (Array.isArray(obj.tool_calls)) {
         for (const c of obj.tool_calls) {

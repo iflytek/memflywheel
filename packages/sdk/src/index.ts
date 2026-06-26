@@ -1,8 +1,8 @@
 /**
- * @memscribe/sdk — host lifecycle integration layer.
+ * @memflywheel/sdk — host lifecycle integration layer.
  *
  * This is the thin orchestration seam between a host runtime (Pi / Claude Code /
- * OpenCode / …) and @memscribe/core. It owns:
+ * OpenCode / …) and @memflywheel/core. It owns:
  *
  *   - a single per-root StorageContext + audit logger,
  *   - the per-session extraction cursor store,
@@ -14,11 +14,10 @@
  * extraction subagent → relocate → after-scan → syncIndex → advance cursor on
  * success → release → drain queue); the only difference is the LLM-driven write
  * is externalized to the host-provided extraction `agent`. That agent is a
- * tool-calling loop: it calls core's memory tools, which WRITE FILES directly.
+ * tool-calling loop: it calls ordinary file tools, which WRITE FILES directly.
  * Dream consolidation is the same kind of subagent over the same channel. The
- * SDK ships batteries-included defaults (createExtractionAgentRunner /
- * createDreamAgentRunner) over a zero-dependency fetch tool-completion, so
- * configuring an API key alone yields real extraction + consolidation.
+ * SDK ships the extraction / dream / skill loops over a provider-neutral
+ * canonical model contract. Providers and host runtimes live outside the SDK.
  *
  * The host gathers the conversation turn into ExtractionMessage[] and calls the
  * hooks; core does the rest (write lock, atomic writes, index sync, cursor).
@@ -30,46 +29,51 @@ import {
   type CursorStore,
   type StorageContext,
   type AuditLogger,
-  type MemoryDocument,
   type MemoryType,
-  type MemoryToolContext,
   type DreamAgentRunner,
   type DreamCoordination,
   type BuildContextResult,
+  type MemoryIndexRetrievalOptions,
   ExtractionResult,
   getMemoryRoot,
   ensureMemoryDir,
   createAuditLogger,
   createMemoryCursorStore,
-  createMemoryTools,
-  memoryToolMap,
+  createFileTools,
+  fileToolMap,
+  createMemoryFileToolContext,
+  serializeMemoryFile,
   runExtractionSession,
   buildContext,
-  readMemoryDocument,
   runDreamSession,
   readDreamState,
   bumpDreamSessions,
   shouldRunDream,
   buildMemoryInstructionPrompt,
-} from "@memscribe/core";
+  archiveMemoryDocument,
+  syncMemoryIndex,
+  deriveMemoryFilename,
+} from "@memflywheel/core";
 
-import {
-  type ToolCompletion,
-  type ToolCompletionConfig,
-  createToolCompletion,
-} from "./tool-completion.js";
 import { createExtractionAgentRunner } from "./extraction-agent.js";
 import { createDreamAgentRunner } from "./dream-agent.js";
+import {
+  type LearningLoopResult,
+  type LearningLoopSource,
+  type SkillEvolutionLoopResult,
+  type SkillLearningGate,
+  runLearningLoop,
+} from "./learning-loop.js";
 
 // Re-export the core injection-point contracts so hosts depend only on the SDK.
 export type {
   ExtractionAgentRunner,
   ExtractionMessage,
   ExtractionToolCall,
-  MemoryTool,
-  MemoryToolContext,
-  MemoryToolResult,
-  MemoryToolName,
+  FileTool,
+  FileToolContext,
+  FileToolResult,
+  FileToolName,
   CursorStore,
   DreamAgentRunner,
   DreamSessionResult,
@@ -78,28 +82,37 @@ export type {
   MemoryEntry,
   MemoryType,
   BuildContextResult,
-} from "@memscribe/core";
+  EmbeddingProvider,
+  MemoryIndexRetrievalOptions,
+} from "@memflywheel/core";
 export {
   ExtractionResult,
-  createMemoryTools,
-  memoryToolMap,
+  createFileTools,
+  fileToolMap,
   DEFAULT_EXTRACTION_SYSTEM_PROMPT,
   buildExtractionAgentUserMessage,
-} from "@memscribe/core";
+} from "@memflywheel/core";
 
-// Runtime assembly layer: tool completion + the extraction & dream subagents
-// (both the same tool-calling loop, seeded differently).
+// Provider-neutral model protocol plus provider mappers.
 export {
-  type ToolCompletion,
-  type ToolCompletionConfig,
-  type ToolCompletionRequest,
-  type ToolCompletionResponse,
-  type ToolMessage,
-  type ToolCall,
-  type ToolSpec,
-  type ToolRole,
-  createToolCompletion,
-} from "./tool-completion.js";
+  type JsonSchemaObject,
+  type CanonicalModelRole,
+  type CanonicalToolCall,
+  type CanonicalModelMessage,
+  type CanonicalToolDefinition,
+  type CanonicalModelRequest,
+  type CanonicalModelResponse,
+  type CanonicalModelCompletion,
+  type CanonicalModelComplete,
+  type CanonicalEmbeddingProvider,
+  type OpenAIChatCompletionsModelConfig,
+  type OpenAIEmbeddingsModelConfig,
+  createOpenAIChatCompletionsModel,
+  createOpenAIEmbeddingsModel,
+} from "@memflywheel/model";
+
+// Runtime assembly layer: the extraction & dream subagents over the canonical
+// model protocol (both the same tool-calling loop, seeded differently).
 export {
   type RunToolAgentOptions,
   type ToolAgentResult,
@@ -121,29 +134,112 @@ export {
   runDreamAgent,
   createDreamAgentRunner,
 } from "./dream-agent.js";
+export {
+  type SkillEvolutionDecision,
+  type SkillEvolutionMemoryAction,
+  type SkillEvolutionCoordination,
+  type SkillEvolutionToolResult,
+  type SkillEvolutionTool,
+  type SkillCheckpoint,
+  type LearnedSkillsCatalog,
+  type LearnedSkillChangeSet,
+  type SkillEvolutionLearningSummary,
+  type SkillEvolutionStore,
+  type RunSkillEvolutionAgentOptions,
+  type SkillEvolutionAgentResult,
+  DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT,
+  validateSkillEvolutionCoordination,
+  validateSkillEvolutionChangeSet,
+  runSkillEvolutionAgent,
+} from "./skill-evolution-agent.js";
+export {
+  type LearningLoopTrigger,
+  type LearningLoopSource,
+  type SkillLearningGate,
+  type SkillLearningGateInput,
+  type SkillLearningGateReason,
+  type SkillLearningGateResult,
+  type DreamCoordinationFromSkill,
+  type SkillEvolutionLoopResult,
+  type RunLearningLoopOptions,
+  type LearningLoopStepResult,
+  type LearningLoopResult,
+  DEFAULT_SKILL_LEARNING_GATE,
+  shouldRunSkillEvolution,
+  runLearningLoop,
+} from "./learning-loop.js";
+
+export interface SkillRecallEntry {
+  name: string;
+  displayName: string;
+  description: string;
+  relativePath: string;
+  triggerHints?: string[];
+}
+
+export interface SkillRecallPacket {
+  entries: SkillRecallEntry[];
+}
+
+export type SkillRecallProvider = (input: {
+  sessionId?: string;
+}) => Promise<SkillRecallPacket>;
+
+export type SkillPreludeBuilder = (packet: SkillRecallPacket) => string;
+
+export interface MemFlywheelLearningLoopConfig {
+  enabled?: boolean;
+  source?: LearningLoopSource;
+  skillLearningEnabled?: boolean;
+  gate?: Partial<SkillLearningGate>;
+  /**
+   * Optional host override for the learning gate. When omitted, the SDK counts
+   * tool calls from the session's captured ExtractionMessage.toolCalls.
+   */
+  toolCalls?: number | (() => number);
+  /**
+   * Optional host override for the learning cooldown gate. When omitted, the SDK
+   * tracks the turn number of the previous skill-evolution pass per session.
+   */
+  turnsSinceLastSkillEvolution?: number | (() => number);
+  skillEvolution?: (input: {
+    sessionId: string;
+    lastExtraction: TurnEndResult;
+    session: SessionState;
+  }) => Promise<SkillEvolutionLoopResult>;
+}
+
+export interface MemFlywheelBuildContextResult extends BuildContextResult {
+  skillPreludePrompt?: string;
+}
+
+export interface PromptBuildInput {
+  sessionId?: string;
+  query?: string;
+}
 
 /** Configuration for a memory scribe. The host supplies the LLM injection points. */
-export interface MemScribeConfig {
-  /** Override the memory root. Falls back to MEMSCRIBE_HOME / OS data dir. */
+export interface MemFlywheelConfig {
+  /** Override the memory root. Falls back to MEMFLYWHEEL_HOME / OS data dir. */
   root?: string;
   /** Master switch. When false, hooks become no-ops (no scan, no inject, no write). */
   enabled?: boolean;
   /**
    * THE extraction injection point. The host supplies a tool-calling agent loop
-   * that calls core's memory tools to write files directly. When absent,
+   * that calls ordinary file tools to write files directly. When absent,
    * after-turn extraction is skipped (recall still works).
    */
   agent?: ExtractionAgentRunner;
   /**
    * THE dream injection point. The host supplies a tool-calling consolidation
    * subagent that reads full bodies and merges / compresses / retires memories
-   * by calling core's memory tools directly. When absent, dream runs only the
+   * by calling ordinary file tools directly. When absent, dream runs only the
    * deterministic structural pre-pass.
    */
   dreamRunner?: DreamAgentRunner;
   /**
    * Hard secret gate for the memory write tools. Default OFF — privacy leans on
-   * the prompt (matching the reference implementation). <private> redaction is
+   * the prompt (matching the default prompt-led privacy model). <private> redaction is
    * always on regardless.
    */
   refuseSecrets?: boolean;
@@ -151,6 +247,14 @@ export interface MemScribeConfig {
   audit?: AuditLogger;
   /** Custom cursor store (e.g. persisted). Defaults to an in-memory store. */
   cursorStore?: CursorStore;
+  /** Optional learned-skill recall source used during prompt build. */
+  skillRecall?: SkillRecallProvider;
+  /** Optional renderer for learned-skill recall packets. Defaults to a compact prompt prelude. */
+  skillPreludeBuilder?: SkillPreludeBuilder;
+  /** Optional turn-end learning loop. When set, onTurnEnd runs extraction -> skill -> dream. */
+  learningLoop?: MemFlywheelLearningLoopConfig;
+  /** Optional MEMORY.md index-layer hybrid retrieval. Host still owns the embedding provider. */
+  memoryIndexRetrieval?: MemoryIndexRetrievalOptions;
 }
 
 /** What a single session collects between session-start and turn-ends. */
@@ -167,6 +271,8 @@ export interface TurnEndResult {
   result: ExtractionResult;
   /** True when the scribe is disabled or no extraction agent is configured. */
   skipped: boolean;
+  /** Present when createMemFlywheel owns the turn-end learning loop. */
+  learningLoop?: LearningLoopResult;
 }
 
 /** Result of a dream pass surfaced to the host. */
@@ -180,14 +286,9 @@ export interface DreamRunResult {
   deleted?: string[];
 }
 
-/** Options for an explicit, host-triggered save (memory_save / CLI save). */
+/** Options for an explicit, host-triggered memory write. */
 export interface SaveOptions {
   type: MemoryType;
-  /**
-   * Deprecated/ignored: the file path is now derived deterministically from
-   * `name` (matching the memory_save tool). Accepted for caller compatibility.
-   */
-  filename?: string;
   name: string;
   description?: string;
   body: string;
@@ -206,8 +307,57 @@ export interface DreamGateInput {
   coordination?: DreamCoordination;
 }
 
+function buildSkillInstructionPrompt(): string {
+  return `# 技能
+
+系统可能会提供一组可用 learned skill。技能是可执行流程包，不是普通记忆。
+
+## 技能规则
+
+- 可用技能条目只是路由线索，只有当用户请求和技能明确相关时才使用
+- 不要把技能步骤复制进普通记忆
+- 技能的加载、执行、权限和工具调用由宿主负责，MemFlywheel 只提供路由线索
+- 技能学习基于对话记录和工具调用轨迹，不要在回答里编造未执行的步骤`;
+}
+
+function buildDefaultSkillPrelude(packet: SkillRecallPacket): string {
+  if (packet.entries.length === 0) return "";
+
+  const lines = ["<system-reminder>", "## 可用技能", ""];
+  if (packet.entries.length === 0) {
+    lines.push("当前没有可用 learned skill。");
+  } else {
+    for (const entry of packet.entries) {
+      lines.push(`- ${entry.name}: ${entry.displayName} — ${entry.description}`);
+      lines.push(`  path: ${entry.relativePath}`);
+      if (entry.triggerHints && entry.triggerHints.length > 0) {
+        lines.push(`  triggers: ${entry.triggerHints.join(", ")}`);
+      }
+    }
+  }
+
+  lines.push(
+    "",
+    "仅当当前请求明确命中技能时才请求宿主加载/执行技能；不要向用户暴露技能索引、路径或内部学习过程。",
+    "</system-reminder>",
+  );
+  return lines.join("\n");
+}
+
+function resolveCounter(value: number | (() => number)): number {
+  return typeof value === "function" ? value() : value;
+}
+
+function countToolCalls(messages: readonly ExtractionMessage[]): number {
+  let total = 0;
+  for (const message of messages) {
+    total += message.toolCalls?.length ?? 0;
+  }
+  return total;
+}
+
 /** The host-facing memory scribe. */
-export interface MemScribe {
+export interface MemFlywheel {
   readonly root: string;
   readonly enabled: boolean;
   readonly ctx: StorageContext;
@@ -221,9 +371,9 @@ export interface MemScribe {
   /**
    * Host is assembling the prompt. Returns the two recall segments:
    *  - systemPrompt: STABLE memory rules (cache-friendly prefix)
-   *  - preludePrompt: DYNAMIC full MEMORY.md index wrapped in <system-reminder>
+   *  - preludePrompt: DYNAMIC index cues wrapped in <system-reminder>
    */
-  onPromptBuild(sessionId?: string): Promise<BuildContextResult>;
+  onPromptBuild(input?: PromptBuildInput): Promise<MemFlywheelBuildContextResult>;
   /**
    * A turn finished. The host passes the turn's user+assistant messages; the SDK
    * appends them to session state and runs after-turn extraction via the
@@ -244,15 +394,13 @@ export interface MemScribe {
    */
   onIdle(opts?: DreamGateInput): Promise<DreamRunResult>;
 
-  // ---- Explicit operations (MCP tools / CLI) ----
+  // ---- Explicit host operations ----
 
-  /** memory_context: return the full-index prelude (and stable rules). */
-  context(): Promise<BuildContextResult>;
-  /** memory_read: read one memory document body by relativePath. */
-  read(relativePath: string): Promise<MemoryDocument | null>;
-  /** memory_save: explicit, validated, ADD-only write (under lock, syncs index). */
+  /** Return the default index prelude and stable memory rules. */
+  context(): Promise<MemFlywheelBuildContextResult>;
+  /** Explicit, validated memory write (under lock, syncs index). */
   save(options: SaveOptions): Promise<ExtractionResult>;
-  /** Force a dream pass regardless of gate (CLI `dream`). */
+  /** Force a dream pass regardless of gate. */
   runDream(coordination?: DreamCoordination): Promise<DreamRunResult>;
 
   // ---- Introspection ----
@@ -263,46 +411,11 @@ export interface MemScribe {
   getSession(sessionId: string): SessionState | undefined;
 }
 
-/** True when an API key for the default tool completion is resolvable from env. */
-function hasMemoryLlmKey(): boolean {
-  const keys = ["MEMSCRIBE_LLM_API_KEY", "OPENAI_API_KEY"];
-  return keys.some((name) => {
-    const value = process.env[name];
-    return Boolean(value && value.trim());
-  });
-}
-
-/**
- * Build the default extraction agent from env: wraps {@link createToolCompletion}
- * (OpenAI-compatible tools via MEMSCRIBE_LLM_*) into {@link createExtractionAgentRunner}.
- * The resulting agent is a tool-calling loop that writes memories itself via
- * core's memory tools. Returns undefined when no API key is resolvable, so a
- * recall-only scribe needs no key.
- */
-export function defaultExtractionAgentFromEnv(
-  config?: ToolCompletionConfig,
-): ExtractionAgentRunner | undefined {
-  if (!config?.apiKey && !hasMemoryLlmKey()) return undefined;
-  const toolCompletion: ToolCompletion = createToolCompletion(config);
-  return createExtractionAgentRunner({ toolCompletion });
-}
-
-/**
- * Build the default dream consolidation subagent from env, symmetric to
- * {@link defaultExtractionAgentFromEnv}. Both subagents share one tool-calling
- * channel. Returns undefined when no API key is resolvable.
- */
-export function defaultDreamRunnerFromEnv(config?: ToolCompletionConfig): DreamAgentRunner | undefined {
-  if (!config?.apiKey && !hasMemoryLlmKey()) return undefined;
-  const toolCompletion: ToolCompletion = createToolCompletion(config);
-  return createDreamAgentRunner({ toolCompletion });
-}
-
 /**
  * Build a memory scribe. `root` is resolved once and threaded into a single
  * StorageContext; everything downstream is per-root and lock-coordinated.
  */
-export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
+export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
   const root = getMemoryRoot({ root: config.root });
   const enabled = config.enabled !== false;
   const audit = config.audit ?? createAuditLogger(root);
@@ -311,8 +424,13 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
   const agent = config.agent;
   const dreamRunner = config.dreamRunner;
   const refuseSecrets = config.refuseSecrets;
+  const skillRecall = config.skillRecall;
+  const skillPreludeBuilder = config.skillPreludeBuilder ?? buildDefaultSkillPrelude;
+  const learningLoop = config.learningLoop;
+  const memoryIndexRetrieval = config.memoryIndexRetrieval;
 
   const sessions = new Map<string, SessionState>();
+  const lastSkillEvolutionTurn = new Map<string, number>();
 
   function ensureSession(sessionId: string): SessionState {
     let state = sessions.get(sessionId);
@@ -326,7 +444,7 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
   /**
    * The shared after-turn extraction path. Appends the turn (when given) then
    * delegates the full lifecycle to core.runExtractionSession with the injected
-   * agent (a tool-calling loop that writes files via core's memory tools). No
+   * agent (a tool-calling loop that writes files via ordinary file tools). No
    * agent / disabled ⇒ a no-op skip.
    */
   async function extract(
@@ -388,6 +506,95 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
     };
   }
 
+  async function buildPromptContext(input?: PromptBuildInput): Promise<MemFlywheelBuildContextResult> {
+    const memoryContext = await buildContext({
+      root,
+      enabled,
+      query: input?.query,
+      indexRetrieval: memoryIndexRetrieval,
+    });
+    if (!enabled || !skillRecall) return memoryContext;
+
+    const packet = await skillRecall({ sessionId: input?.sessionId });
+    const skillPreludePrompt = skillPreludeBuilder(packet);
+    if (!skillPreludePrompt) return { ...memoryContext, skillPreludePrompt: "" };
+
+    return {
+      ...memoryContext,
+      systemPrompt: [memoryContext.systemPrompt, buildSkillInstructionPrompt()].filter(Boolean).join("\n\n"),
+      preludePrompt: [memoryContext.preludePrompt, skillPreludePrompt].filter(Boolean).join("\n\n"),
+      skillPreludePrompt,
+    };
+  }
+
+  async function runTurnEndLearningLoop(
+    sessionId: string,
+    turnMessages: ExtractionMessage[],
+  ): Promise<TurnEndResult> {
+    let lastExtraction: TurnEndResult | null = null;
+    const stateBeforeTurn = ensureSession(sessionId);
+    const doneTurns = stateBeforeTurn.turns + (turnMessages.length > 0 ? 1 : 0);
+    const toolCalls =
+      learningLoop!.toolCalls !== undefined
+        ? resolveCounter(learningLoop!.toolCalls)
+        : countToolCalls([...stateBeforeTurn.messages, ...turnMessages]);
+    const turnsSinceLastSkillEvolution =
+      learningLoop!.turnsSinceLastSkillEvolution !== undefined
+        ? resolveCounter(learningLoop!.turnsSinceLastSkillEvolution)
+        : doneTurns - (lastSkillEvolutionTurn.get(sessionId) ?? 0);
+    const loop = await runLearningLoop({
+      trigger: "turn-end",
+      source: learningLoop?.source ?? "local",
+      enabled: enabled && learningLoop?.enabled !== false,
+      skillLearningEnabled: learningLoop?.skillLearningEnabled !== false,
+      doneTurns,
+      turnsSinceLastSkillEvolution,
+      toolCalls,
+      gate: learningLoop?.gate,
+      extraction: async () => {
+        lastExtraction = await extract(sessionId, turnMessages);
+        return lastExtraction;
+      },
+      skillEvolutionPrerequisite: ({ extraction }) => {
+        const extractionResult = extraction.value as TurnEndResult | undefined;
+        if (extractionResult?.result !== ExtractionResult.Completed) {
+          return { ok: false, reason: "extraction-not-completed" };
+        }
+        return { ok: true, reason: "ok" };
+      },
+      skillEvolution: learningLoop?.skillEvolution
+        ? async () => {
+            if (!lastExtraction) throw new Error("skill learning requires extraction to run first");
+            return learningLoop.skillEvolution!({
+              sessionId,
+              lastExtraction,
+              session: { ...ensureSession(sessionId), messages: [...ensureSession(sessionId).messages] },
+            });
+          }
+        : undefined,
+      dream: async (coordination) =>
+        dream({
+          coordination: {
+            reason: coordination.reason,
+            memoryAction: coordination.memoryAction,
+            topics: coordination.topics,
+            targetSkill: coordination.targetSkill,
+          },
+          force: true,
+        }, true),
+    });
+
+    if (loop.skillEvolution.ran) {
+      lastSkillEvolutionTurn.set(sessionId, ensureSession(sessionId).turns);
+    }
+
+    const extractionResult = loop.extraction.value as TurnEndResult | undefined;
+    return {
+      ...(extractionResult ?? { result: ExtractionResult.Skipped, skipped: true }),
+      learningLoop: loop,
+    };
+  }
+
   return {
     root,
     enabled,
@@ -404,19 +611,23 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
       ensureSession(sessionId);
     },
 
-    async onPromptBuild(_sessionId?: string): Promise<BuildContextResult> {
-      return buildContext({ root, enabled });
+    async onPromptBuild(input?: PromptBuildInput): Promise<MemFlywheelBuildContextResult> {
+      return buildPromptContext(input);
     },
 
     async onTurnEnd(
       sessionId: string,
       turnMessages: ExtractionMessage[],
     ): Promise<TurnEndResult> {
+      if (learningLoop) {
+        return runTurnEndLearningLoop(sessionId, turnMessages);
+      }
       return extract(sessionId, turnMessages);
     },
 
     async onSessionEnd(sessionId: string): Promise<void> {
       sessions.delete(sessionId);
+      lastSkillEvolutionTurn.delete(sessionId);
       // Count this ended session toward the dream gate's session threshold.
       if (enabled) {
         try {
@@ -436,45 +647,41 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
       return dream(opts, false);
     },
 
-    async context(): Promise<BuildContextResult> {
-      return buildContext({ root, enabled });
-    },
-
-    async read(relativePath: string): Promise<MemoryDocument | null> {
-      return readMemoryDocument(ctx, relativePath);
+    async context(): Promise<MemFlywheelBuildContextResult> {
+      return buildPromptContext();
     },
 
     async save(options: SaveOptions): Promise<ExtractionResult> {
       if (!enabled) return ExtractionResult.Skipped;
-      const { acquireLock, releaseLock } = await import("@memscribe/core");
+      const { acquireLock, releaseLock } = await import("@memflywheel/core");
       const handle = await acquireLock(root, "save");
       if (!handle.acquired) return ExtractionResult.Queued;
       try {
         await ensureMemoryDir(root);
-        // Drive the same memory tools the extraction subagent uses, under the
-        // held lock. Explicit save is ADD-only: archive corrected paths first.
-        const toolCtx: MemoryToolContext = { ctx, refuseSecrets };
-        const tools = memoryToolMap(createMemoryTools());
-        const archive = tools.get("memory_archive");
-        const save = tools.get("memory_save");
-        if (!archive || !save) return ExtractionResult.Skipped;
+        const toolCtx = createMemoryFileToolContext({ ctx, refuseSecrets });
+        const tools = fileToolMap(createFileTools());
+        const write = tools.get("write");
+        if (!write) return ExtractionResult.Skipped;
 
         const changed: string[] = [];
         for (const relativePath of options.archives ?? []) {
-          const r = await archive.handler({ relativePath }, toolCtx);
-          if (r.ok && r.changed) changed.push(...r.changed);
+          const archived = await archiveMemoryDocument(ctx, relativePath);
+          if (archived) changed.push(archived);
         }
-        const result = await save.handler(
+        const result = await write.handler(
           {
-            type: options.type,
-            name: options.name,
-            description: options.description,
-            body: options.body,
+            filePath: `${options.type}/${deriveMemoryFilename(options.name)}`,
+            content: serializeMemoryFile({
+              type: options.type,
+              name: options.name,
+              description: options.description,
+              body: options.body,
+            }),
           },
           toolCtx,
         );
         if (result.ok && result.changed) changed.push(...result.changed);
-        // Handlers already resync the index; nothing more to do.
+        await syncMemoryIndex(root);
         return changed.length > 0 ? ExtractionResult.Completed : ExtractionResult.Skipped;
       } finally {
         await releaseLock(root);
@@ -492,5 +699,6 @@ export function createMemScribe(config: MemScribeConfig = {}): MemScribe {
     getSession(sessionId: string): SessionState | undefined {
       return sessions.get(sessionId);
     },
+
   };
 }

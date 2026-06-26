@@ -4,18 +4,18 @@
  * Drives a mock Hermes host through the real hook names the `hermes` adapter
  * binds (on_session_start → pre_llm_call → post_llm_call → on_session_end) and
  * prints the resulting memory. Under USE_FAKE the extraction subagent is a
- * scripted tool-completion (list → save → decline a high-risk secret).
+ * scripted canonical model (list → save → decline a high-risk secret).
  *
  *   USE_FAKE=1 node examples/hermes/run.mjs
- *   MEMSCRIBE_LLM_API_KEY=... node examples/hermes/run.mjs   # real model (tools endpoint)
+ *   MEMFLYWHEEL_LLM_API_KEY=... node examples/hermes/run.mjs   # real model (tools endpoint)
  */
 
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createHostMemScribe, hermesAdapter, connect } from "@memscribe/adapters";
-import { defaultExtractionAgentFromEnv } from "@memscribe/sdk";
-import { createFakeToolCompletion } from "../shared/fake-tool-completion.mjs";
+import { createMemFlywheelHarnessRuntime, hermesAdapter, connect } from "@memflywheel/adapters";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
+import { createFakeModel } from "../shared/fake-model.mjs";
 import { transcript } from "../shared/transcript.mjs";
 
 function createMockHermesHost() {
@@ -34,11 +34,12 @@ function createMockHermesHost() {
 }
 
 const useFake = process.env.USE_FAKE === "1";
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-hermes-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-hermes-"));
 
+const model = useFake ? createFakeModel() : createOpenAIChatCompletionsModel();
 const { scribe } = useFake
-  ? createHostMemScribe({ toolCompletion: createFakeToolCompletion(), root })
-  : createHostMemScribe({ agent: defaultExtractionAgentFromEnv(), root });
+  ? createMemFlywheelHarnessRuntime({ model, root })
+  : createMemFlywheelHarnessRuntime({ model, root });
 
 const host = createMockHermesHost();
 const dispose = hermesAdapter.attach(scribe, host);

@@ -3,15 +3,15 @@
 A live run of the dream consolidation subagent against a real OpenAI-compatible
 tool-calling model. It confirms the two-phase design end to end: a
 deterministic, LLM-free structural pre-pass, then a tool-calling subagent that
-**reads full bodies before merging** and consolidates by calling the memory tools
+**reads full bodies before merging** and consolidates by calling the ordinary file tools
 directly.
 
 Reproduce with `examples/dream-regression.mjs` (env-driven, no hardcoded secrets):
 
 ```
-MEMSCRIBE_LLM_ENDPOINT=<your OpenAI-compatible base> \
-MEMSCRIBE_LLM_MODEL=<model id> \
-MEMSCRIBE_LLM_API_KEY=<your key> \
+MEMFLYWHEEL_LLM_ENDPOINT=<your OpenAI-compatible base> \
+MEMFLYWHEEL_LLM_MODEL=<model id> \
+MEMFLYWHEEL_LLM_API_KEY=<your key> \
 node examples/dream-regression.mjs
 ```
 
@@ -35,20 +35,20 @@ file (`style/short.md`), and relocated the misfiled `identity/editor.md` →
 `preference/editor.md`. Guaranteed, model-independent.
 
 **Phase 2 — consolidation subagent (real model, 12 tool calls).** Tool usage:
-`memory_read ×5, memory_save ×2, memory_archive ×4, memory_update ×1`.
+`read ×5, write ×2, bash ×4, edit ×1`.
 
 1. **Beverage merge — read-before-merge, no data loss.** The subagent called
-   `memory_read` on **both** `coffee.md` and `tea.md` (full bodies) *before*
-   writing, then `memory_save` one `preference/Drinks` keeping **both** items
+   `read` on **both** `coffee.md` and `tea.md` (full bodies) *before*
+   writing, then `write` one `preference/Drinks` keeping **both** items
    ("prefers green tea as their daily drink, and also enjoys an americano coffee
-   in the afternoon"), then `memory_archive` on each source. This is the core
+   in the afternoon"), then `bash` on each source. This is the core
    invariant: it never authored the merged body from a truncated excerpt — it read
    first. **Green tea + coffee both survive. ✅**
-2. **Team merge.** Same shape: read `jin.md` + `mara.md` in full → `memory_save`
+2. **Team merge.** Same shape: read `jin.md` + `mara.md` in full → `write`
    one `ambient/Team members` keeping both people → archive both sources. **Mara +
    Jin both survive. ✅**
 3. **Compression to a trigger.** Read the 9-step debugging SOP, then
-   `memory_update` to a 164-char summary with no numbered steps — keeping the
+   `edit` to a 164-char summary with no numbered steps — keeping the
    durable signal, dropping the step-by-step (complete methods belong in a skill).
 4. **Left identity alone.** `identity/role.md` was untouched — not folded into
    anything.

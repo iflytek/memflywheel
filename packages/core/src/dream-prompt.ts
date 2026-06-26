@@ -6,7 +6,7 @@
  * a builder that renders the structural packets (index / manifest / health /
  * type-review) into the seed user message. The SDK drives this through the same
  * tool-calling loop the extraction subagent uses; core never calls an LLM. The
- * consolidation subagent writes by calling the memory tools directly — there is
+ * consolidation subagent writes by calling ordinary file tools directly — there is
  * no JSON op format to parse, and "nothing to consolidate" is simply making no
  * tool calls.
  */
@@ -31,28 +31,32 @@ Extraction incrementally captures new signals from a recent conversation. Dream 
 
 # Tools (the only way to change anything)
 
-- memory_list — list memories (optionally by type). Read-only.
-- memory_search — find same-topic memories by keyword over name/description/body. Read-only.
-- memory_read — read ONE memory's full frontmatter + body by path. Read-only.
-- memory_save — create one consolidated memory (type, single-line name, optional description, 1–4 sentence body).
-- memory_update — replace an existing memory's body (and optionally name/description) by path; type is fixed by the path.
-- memory_archive — retire one memory by path.
+- glob({ pattern, path? }) — list candidate Markdown files. Read-only.
+- grep({ pattern, path?, include? }) — locate same-topic memories by searching names, descriptions, or bodies. Read-only.
+- read({ filePath, offset?, limit? }) — read one file or directory. Use it to load each memory's FULL frontmatter and body before editing.
+- write({ filePath, content }) — create or overwrite one typed memory Markdown file. filePath must be a typed path such as "workflow/release-prep.md"; content must be the full Markdown file with YAML frontmatter.
+- edit({ filePath, oldString, newString, replaceAll? }) — exact string replacement in one file. Use it for small safe updates after read.
+- bash({ command, workdir?, timeout?, description? }) — run a shell command under the memory root. Use it only to move retired files under ".archive/<type>/<file>.md".
 
 # The contract: locate → READ FULL BODIES → write
 
-You receive packets (index, manifest, health findings, per-file type review with a body EXCERPT). The excerpts are only a map. Before you merge or compress anything, memory_read each file you will touch and work from its REAL full body. Never author a merged or compressed body from an excerpt — you will silently drop whatever the excerpt cut off.
+You receive packets (index, manifest, health findings, per-file type review with a body EXCERPT). The excerpts are only a map. Before you merge or compress anything, read each file you will touch and work from its REAL full body. Never author a merged or compressed body from an excerpt — you will silently drop whatever the excerpt cut off.
 
-- To merge near-duplicates: memory_read every source in full, memory_save ONE consolidated memory that preserves every distinct fact, then memory_archive each source you folded in.
-- To fix a wrong type (invalid-frontmatter-type / path-type-mismatch): judge the true type from the full body, memory_save it under the correct type, then memory_archive the misplaced file. Do not blindly delete a misfiled memory.
-- To compress an over-long memory: memory_read it, then memory_update with a short body — keep the durable signal, drop step-by-step detail.
+- To merge near-duplicates: read every source in full, write ONE consolidated typed Markdown file that preserves every distinct fact, then bash-move each folded source under .archive/.
+- To fix a wrong type (invalid-frontmatter-type / path-type-mismatch): judge the true type from the full body, write it under the correct typed path, then bash-move the misplaced file under .archive/. Do not blindly delete a misfiled memory.
+- To compress an over-long memory: read it, then edit it with a short body — keep the durable signal, drop step-by-step detail.
+
+# Retrieval routing terms
+
+Memory frontmatter may include retrieval_terms: a YAML list of short phrases used only for index-layer recall. When you create, merge, or materially rewrite a memory, maintain retrieval_terms with 3-8 grounded routing phrases. Include concrete entities, dates, state words, and likely question wording that would help find the memory without embedding its body. Do not add vague tags, long sentences, secrets, or private/high-risk content.
 
 # Edit priority and minimal change
 
-Fix > supplement > create > delete. Always prefer updating an existing typed file over creating a near-duplicate. Make minimal changes. Frontmatter is protocol, not a summary: preserve name / description / type unless you are deliberately fixing a frontmatter error. Never mix "fix structure" and "rewrite content" in one step.
+Fix > supplement > create > delete. Always prefer updating an existing typed file over creating a near-duplicate. Make minimal changes. Frontmatter is protocol, not a summary: preserve name / description / type / occurred_on / retrieval_terms unless you are deliberately fixing a frontmatter error or the terms no longer match the body. Never mix "fix structure" and "rewrite content" in one step.
 
 # Coordination directive
 
-If a coordination directive sets memoryAction to compress-memory for a topic, the matching memory must keep only a short routing cue toward the target skill — never execution steps. Preserve its name / description / type. Never read, rewrite, or guess skill content; never write skill execution steps back into memory.
+If a coordination directive sets memoryAction to compress-memory for a topic, the matching memory must keep only a short routing cue toward the targetSkill — never execution steps. Preserve its name / description / type. Never read, rewrite, or guess skill content; never write skill execution steps back into memory. The routing cue must name targetSkill exactly when targetSkill is provided.
 
 # Per-type consolidation rules
 
@@ -101,7 +105,7 @@ export function buildDreamAgentUserMessage(input: {
   }
   lines.push("");
 
-  lines.push("# Type review (excerpts only — memory_read the full body before editing)");
+  lines.push("# Type review (excerpts only — read the full body before editing)");
   lines.push("");
   if (input.typeReview.length === 0) {
     lines.push("(none)");
@@ -118,11 +122,14 @@ export function buildDreamAgentUserMessage(input: {
     lines.push(`- reason: ${input.coordination.reason}`);
     lines.push(`- memoryAction: ${input.coordination.memoryAction}`);
     lines.push(`- topics: ${input.coordination.topics.join(", ")}`);
+    if (input.coordination.targetSkill) {
+      lines.push(`- targetSkill: ${input.coordination.targetSkill}`);
+    }
     lines.push("");
   }
 
   lines.push(
-    "Consolidate the store with the memory tools. Read full bodies before merging or compressing. Make no tool calls if the store is already healthy.",
+    "Consolidate the store with the ordinary file tools. Read full bodies before merging or compressing. Make no tool calls if the store is already healthy.",
   );
   return lines.join("\n");
 }

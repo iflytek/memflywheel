@@ -3,28 +3,28 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { HostRuntime, MemScribe, MemScribeContext, MemScribeMessage } from "./adapter.js";
+import type { HostRuntime, MemFlywheel, MemFlywheelContext, MemFlywheelMessage } from "./adapter.js";
 
 /** A scribe that records every hook call instead of touching disk. */
-export interface RecordingMemScribe extends MemScribe {
+export interface RecordingMemFlywheel extends MemFlywheel {
   readonly calls: {
     sessionStart: { sessionId: string }[];
-    promptBuild: { sessionId: string }[];
-    turnEnd: { sessionId: string; messages: MemScribeMessage[] }[];
+    promptBuild: { sessionId: string; query?: string }[];
+    turnEnd: { sessionId: string; messages: MemFlywheelMessage[] }[];
     sessionEnd: { sessionId: string }[];
     idle: ({ force?: boolean } | undefined)[];
   };
 }
 
-export function createRecordingMemScribe(context?: Partial<MemScribeContext>): RecordingMemScribe {
-  const calls: RecordingMemScribe["calls"] = {
+export function createRecordingMemFlywheel(context?: Partial<MemFlywheelContext>): RecordingMemFlywheel {
+  const calls: RecordingMemFlywheel["calls"] = {
     sessionStart: [],
     promptBuild: [],
     turnEnd: [],
     sessionEnd: [],
     idle: [],
   };
-  const ctx: MemScribeContext = {
+  const ctx: MemFlywheelContext = {
     systemPrompt: context?.systemPrompt ?? "RULES",
     preludePrompt: context?.preludePrompt ?? "<system-reminder>INDEX</system-reminder>",
     enabled: context?.enabled ?? true,
@@ -107,5 +107,5 @@ export function createOffHost(): FakeHost {
 }
 
 export async function tempDir(): Promise<string> {
-  return mkdtemp(path.join(tmpdir(), "memscribe-adapters-"));
+  return mkdtemp(path.join(tmpdir(), "memflywheel-adapters-"));
 }

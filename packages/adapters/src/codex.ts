@@ -38,9 +38,14 @@ export const codexAdapter: HostAdapter = makeAdapter({
   name: "Codex",
   lifecycle,
   defaultConfigRelPath: ".codex/config.json",
-  integrationNote: "Usable: lifecycle wiring marker; pass a host `toolCompletion` or the default fetch tool-completion to createHostMemScribe.",
+  integrationNote:
+    "Lifecycle wiring marker only until Codex exposes a host-owned canonical model port.",
   translators: {
     sessionId: (payload) => readString(payload, "taskId") || readString(payload, "sessionId"),
+    promptQuery: (payload) =>
+      readString(payload, "prompt") ||
+      readString(payload, "query") ||
+      readString(payload, "message"),
     turnEnd: (payload) => ({
       sessionId: readString(payload, "taskId") || readString(payload, "sessionId"),
       messages: normalizeMessages((payload as { messages?: unknown } | undefined)?.messages),

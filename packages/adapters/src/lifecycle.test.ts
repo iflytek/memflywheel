@@ -1,63 +1,63 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import type { MemScribeContext } from "./adapter.js";
+import type { MemFlywheelContext } from "./adapter.js";
 import { piAdapter } from "./pi.js";
 import { claudeCodeAdapter } from "./claude-code.js";
 import { hermesAdapter } from "./hermes.js";
 import {
   createFakeHost,
   createOffHost,
-  createRecordingMemScribe,
+  createRecordingMemFlywheel,
 } from "./test-helpers.js";
 
 const flush = () => new Promise((r) => setImmediate(r));
 
 test("attach binds each host event to its scribe hook (pi)", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
 
-  host.emit("session:ensure", { sessionId: "s1" });
-  host.emit("turn:build", { sessionId: "s1" });
+  host.emit("session_start", { sessionId: "s1" });
+  host.emit("context", { sessionId: "s1", prompt: "how do I release this package?", messages: [] });
   host.emit("agent_end", {
     sessionId: "s1",
     messages: [
-      { role: "user", text: "hi" },
-      { role: "assistant", text: "yo" },
+      { role: "user", content: "hi" },
+      { role: "assistant", content: [{ type: "text", text: "yo" }] },
     ],
   });
-  host.emit("learning:idle", {});
+  host.emit("session_shutdown", { sessionId: "s1" });
   await flush();
 
   assert.deepEqual(scribe.calls.sessionStart, [{ sessionId: "s1" }]);
-  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "s1" }]);
+  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "s1", query: "how do I release this package?" }]);
   assert.equal(scribe.calls.turnEnd.length, 1);
   assert.equal(scribe.calls.turnEnd[0]?.sessionId, "s1");
   assert.deepEqual(scribe.calls.turnEnd[0]?.messages, [
     { role: "user", text: "hi" },
     { role: "assistant", text: "yo" },
   ]);
-  assert.equal(scribe.calls.idle.length, 1);
+  assert.deepEqual(scribe.calls.sessionEnd, [{ sessionId: "s1" }]);
 
   dispose();
 });
 
 test("dispose removes all listeners (on-returns-unsubscribe path)", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
-  assert.equal(host.listenerCount("session:ensure"), 1);
+  assert.equal(host.listenerCount("session_start"), 1);
   dispose();
-  assert.equal(host.listenerCount("session:ensure"), 0);
+  assert.equal(host.listenerCount("session_start"), 0);
 
-  host.emit("session:ensure", { sessionId: "ghost" });
+  host.emit("session_start", { sessionId: "ghost" });
   await flush();
   assert.equal(scribe.calls.sessionStart.length, 0);
 });
 
 test("dispose works through host.off when on returns void", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createOffHost();
   const dispose = piAdapter.attach(scribe, host);
   assert.equal(host.listenerCount("agent_end"), 1);
@@ -66,14 +66,15 @@ test("dispose works through host.off when on returns void", async () => {
 });
 
 test("onPromptBuild result is delivered via a respond callback", async () => {
-  const scribe = createRecordingMemScribe({ systemPrompt: "RULES", preludePrompt: "PRELUDE" });
+  const scribe = createRecordingMemFlywheel({ systemPrompt: "RULES", preludePrompt: "PRELUDE" });
   const host = createFakeHost();
   claudeCodeAdapter.attach(scribe, host);
 
-  let received: MemScribeContext | undefined;
+  let received: MemFlywheelContext | undefined;
   host.emit("UserPromptSubmit", {
     session_id: "abc",
-    respond: (p: Promise<MemScribeContext>) => {
+    prompt: "review this release",
+    respond: (p: Promise<MemFlywheelContext>) => {
       void p.then((ctx) => {
         received = ctx;
       });
@@ -81,7 +82,7 @@ test("onPromptBuild result is delivered via a respond callback", async () => {
   });
   await flush();
 
-  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "abc" }]);
+  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "abc", query: "review this release" }]);
   assert.ok(received);
   assert.equal(received!.systemPrompt, "RULES");
   assert.equal(received!.preludePrompt, "PRELUDE");
@@ -89,7 +90,7 @@ test("onPromptBuild result is delivered via a respond callback", async () => {
 
 test("turn-end extraction is fire-and-forget — emit does not throw on scribe rejection", async () => {
   const host = createFakeHost();
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   // Replace onTurnEnd with one that rejects.
   const rejecting = {
     ...scribe,
@@ -105,7 +106,7 @@ test("turn-end extraction is fire-and-forget — emit does not throw on scribe r
 });
 
 test("claude-code maps snake_case session_id and Stop turn-end", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = claudeCodeAdapter.attach(scribe, host);
 
@@ -121,7 +122,7 @@ test("claude-code maps snake_case session_id and Stop turn-end", async () => {
 });
 
 test("hermes reads session_id and user_message/assistant_response", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = hermesAdapter.attach(scribe, host);
 
@@ -145,7 +146,7 @@ test("hermes reads session_id and user_message/assistant_response", async () => 
 });
 
 test("hermes still accepts an explicit transcript array", async () => {
-  const scribe = createRecordingMemScribe();
+  const scribe = createRecordingMemFlywheel();
   const host = createFakeHost();
   const dispose = hermesAdapter.attach(scribe, host);
 

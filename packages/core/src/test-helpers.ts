@@ -11,7 +11,7 @@ import { serializeDocument } from "./frontmatter.js";
 import { type MemoryType } from "./types.js";
 
 export async function makeRoot(): Promise<string> {
-  return mkdtemp(path.join(tmpdir(), "memscribe-test-"));
+  return mkdtemp(path.join(tmpdir(), "memflywheel-test-"));
 }
 
 export async function cleanup(root: string): Promise<void> {
@@ -22,13 +22,13 @@ export async function writeFixture(
   root: string,
   type: MemoryType,
   filename: string,
-  opts: { name: string; description?: string; body: string; mtime?: number },
+  opts: { name: string; description?: string; retrievalTerms?: string[]; body: string; mtime?: number },
 ): Promise<string> {
   const dir = path.join(root, type);
   await mkdir(dir, { recursive: true });
   const filePath = path.join(dir, filename);
   const serialized = serializeDocument({
-    frontmatter: { name: opts.name, description: opts.description ?? "", type },
+    frontmatter: { name: opts.name, description: opts.description ?? "", type, retrieval_terms: opts.retrievalTerms },
     body: opts.body,
   });
   await writeFile(filePath, serialized, "utf8");

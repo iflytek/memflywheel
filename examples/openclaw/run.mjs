@@ -1,21 +1,17 @@
 /**
- * Runnable OpenClaw example / smoke test (best-effort tier).
+ * Runnable OpenClaw example / smoke test (recall-only tier).
  *
- * OpenClaw cannot supply a host model channel, so the extraction subagent uses
- * MemScribe's default fetch tool-completion. Under USE_FAKE=1 we inject a scripted
- * fake tool-completion so the smoke test runs offline; the real path uses
- * defaultExtractionAgentFromEnv().
+ * OpenClaw support is not native-full yet. This smoke test wires explicit
+ * recall-only mode; real OpenClaw native support must later map llm-runtime
+ * into HostHarnessPort.
  *
  *   USE_FAKE=1 node examples/openclaw/run.mjs
- *   MEMSCRIBE_LLM_API_KEY=... node examples/openclaw/run.mjs   # real model (tools endpoint)
  */
 
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createHostMemScribe, openclawAdapter, connect } from "@memscribe/adapters";
-import { defaultExtractionAgentFromEnv } from "@memscribe/sdk";
-import { createFakeToolCompletion } from "../shared/fake-tool-completion.mjs";
+import { createMemFlywheelHarnessRuntime, openclawAdapter, connect } from "@memflywheel/adapters";
 import { transcript } from "../shared/transcript.mjs";
 
 function createMockOpenClawHost() {
@@ -33,14 +29,9 @@ function createMockOpenClawHost() {
   };
 }
 
-const useFake = process.env.USE_FAKE === "1";
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-openclaw-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-openclaw-"));
 
-// Best-effort: the extraction subagent runs on the default fetch tool-completion
-// (or a scripted fake offline).
-const { scribe } = useFake
-  ? createHostMemScribe({ toolCompletion: createFakeToolCompletion(), root })
-  : createHostMemScribe({ agent: defaultExtractionAgentFromEnv(), root });
+const { scribe } = createMemFlywheelHarnessRuntime({ mode: "recall-only", root });
 
 const host = createMockOpenClawHost();
 const dispose = openclawAdapter.attach(scribe, host);
@@ -55,7 +46,8 @@ host.emit("context:inject", {
 const ctx = await ctxPromise;
 console.log("[prompt-build] prependContext present:", Boolean(ctx?.preludePrompt));
 
-await scribe.onTurnEnd({ sessionId: "demo", messages: transcript });
+const turn = await scribe.onTurnEnd({ sessionId: "demo", messages: transcript });
+console.log("[turn-end] result:", turn.result, "skipped:", turn.skipped);
 host.emit("idle:watch", {});
 
 const index = await readFile(path.join(root, "MEMORY.md"), "utf8").catch(() => "");
@@ -67,18 +59,16 @@ console.log("\n[connect] verify ok:", res.verify?.ok, res.verify?.problems ?? []
 
 dispose();
 
-if (useFake) {
-  if (!/green tea|Preferred drink/.test(index)) {
-    console.error("SMOKE FAIL: expected a preference memory to be written");
-    process.exit(1);
-  }
-  if (!/Reply tone/.test(index)) {
-    console.error("SMOKE FAIL: expected the subagent's second memory to be written");
-    process.exit(1);
-  }
-  if (new RegExp("sk" + "-ABCDEFabcdef").test(index)) {
-    console.error("SMOKE FAIL: a high-risk secret was persisted");
-    process.exit(1);
-  }
+if (!turn.skipped) {
+  console.error("SMOKE FAIL: OpenClaw recall-only mode must skip extraction");
+  process.exit(1);
+}
+if (/green tea|Preferred drink|Reply tone/.test(index)) {
+  console.error("SMOKE FAIL: recall-only mode must not write extracted memories");
+  process.exit(1);
+}
+if (new RegExp("sk" + "-ABCDEFabcdef").test(index)) {
+  console.error("SMOKE FAIL: a high-risk secret was persisted");
+  process.exit(1);
 }
 console.log("\nOK");

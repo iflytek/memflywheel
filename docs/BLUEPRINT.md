@@ -1,4 +1,4 @@
-# MemScribe Implementation Blueprint
+# MemFlywheel Implementation Blueprint
 
 > A minimal, open-source implementation of a file-native long-term memory subsystem.
 > This document is a **design blueprint** — no implementation code, only structure, contracts, and signatures.
@@ -8,9 +8,9 @@
 ## 0. Guiding Constraints (non-negotiable)
 
 - **Zero runtime dependencies.** Node stdlib + TypeScript only. No npm runtime deps, ever. Frontmatter parsing, atomic writes, locking — all hand-rolled on `node:fs/promises`, `node:path`, `node:crypto`.
-- **Core never calls an LLM.** Extraction and dream LLM steps are **pluggable injection points** (function contracts) supplied by the host/SDK. Core owns timing, locking, atomic writes, index sync, cursor/relocation, audit.
-- **File-backed storage.** Each memory = Markdown body + YAML frontmatter (`name` / `description` / `type`). Markdown is the source of truth; `MEMORY.md` is a rebuildable derived index.
-- **Full-index recall, no retrieval.** The whole index is injected each turn; the main model self-selects and decides whether to `Read` a body. No top-k, no scoring, no BM25, no entity index, no embeddings, no vectors.
+- **Core never owns model/auth.** Extraction and dream LLM steps are **pluggable injection points** (function contracts) supplied by the host/SDK. Optional index retrieval consumes a host-supplied embedding provider. Core owns timing, locking, atomic writes, index sync, cursor/relocation, audit.
+- **File-backed storage.** Each memory = Markdown body + tight YAML frontmatter (`name` / `description` / `type` / optional `occurred_on` / `retrieval_terms`). Markdown is the source of truth; `MEMORY.md` is a rebuildable derived index.
+- **Progressive index recall.** Small stores inject the whole index. Large stores may use host-supplied embedding + BM25 + RRF over `MEMORY.md` index lines only, then inject top index cues plus a `MEMORY.md` fallback. Memory bodies are not embedded or searched.
 - **No scope.** A single global store only — no per-user/project/workspace memory directory (see §13).
 - **Style:** double quotes, 2-space indent, named exports only, `async/await`, `node:fs/promises`. No AI/assistant attribution anywhere.
 - **Tests:** `node:test` + `node:assert`, compiled by `tsc` then run via `node --test`.
@@ -20,7 +20,7 @@
 ## 1. Monorepo Structure
 
 ```
-MemScribe/
+MemFlywheel/
 ├── package.json                 # root, private, workspace scripts
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json           # shared strict NodeNext config
@@ -28,18 +28,18 @@ MemScribe/
 ├── LICENSE                      # (present)
 ├── .gitignore                   # (present)
 └── packages/
-    ├── core/                    # @memscribe/core   — memory kernel (no LLM, no host)
-    ├── sdk/                     # @memscribe/sdk    — lifecycle hooks + extraction-subagent injection
-    ├── cli/                     # @memscribe/cli    — doctor/dream/rebuild/context/...
-    ├── mcp-server/              # @memscribe/mcp-server — context/read/save tools
-    └── adapters/                # @memscribe/adapters  — host lifecycle mappings
+    ├── core/                    # @memflywheel/core   — memory kernel (no LLM, no host)
+    ├── model/                   # @memflywheel/model  — provider-neutral canonical model protocol
+    ├── sdk/                     # @memflywheel/sdk    — lifecycle hooks + extraction/dream/skill orchestration
+    ├── skills/                  # @memflywheel/skills — learned skill store + validation
+    └── adapters/                # @memflywheel/adapters  — host lifecycle mappings
 ```
 
 ### Root `package.json` (shape, not literal)
 
 ```
 {
-  "name": "memscribe",
+  "name": "memflywheel",
   "private": true,
   "type": "module",
   "scripts": {
@@ -92,13 +92,13 @@ Each package `package.json` scripts:
 
 Dependency edges (workspace-internal only, via `workspace:*`):
 - `sdk` → `core`
-- `cli` → `core`, `sdk`
-- `mcp-server` → `core`, `sdk`
-- `adapters` → `sdk`
+- `model` → no workspace package
+- `skills` → no workspace package
+- `adapters` → `sdk`, `model`
 
 ---
 
-## 2. Frontmatter & Domain Types (`@memscribe/core`)
+## 2. Frontmatter & Domain Types (`@memflywheel/core`)
 
 Only the **minimal** fields. `name` + `type` are required by the parser; `description` is optional (defaults to `""`). `created_at` / `updated_at` are the minimal-necessary additions.
 
@@ -118,6 +118,8 @@ export interface MemoryFrontmatter {
   name: string;          // required, unique display name
   description: string;   // optional in file; normalized to "" when absent
   type: MemoryType;      // required, must be one of the six
+  occurred_on?: string;  // optional event date, YYYY-MM-DD
+  retrieval_terms?: string[]; // optional old files; required for new/updated extraction writes
   created_at?: string;   // ISO 8601, minimal-necessary
   updated_at?: string;   // ISO 8601, minimal-necessary
 }
@@ -146,7 +148,7 @@ export const RESERVED_MEMORY_FILES: ReadonlySet<string>;
 
 ---
 
-## 3. `@memscribe/core` — Module Map
+## 3. `@memflywheel/core` — Module Map
 
 ```
 core/src/
@@ -155,17 +157,17 @@ core/src/
 ├── paths.ts            # root resolution, typed dirs, filename validation
 ├── frontmatter.ts      # parse / serialize YAML frontmatter (no deps)
 ├── storage.ts          # read/write/delete a single memory doc (atomic)
-├── scan.ts             # scanMemoryFiles, readAllMemoryContents, formatManifest
+├── scan.ts             # scanMemoryFiles, scanAllMemoryFiles, readAllMemoryContents, formatManifest
 ├── index-file.ts       # MEMORY.md: build / truncate / aging / sync
-├── recall.ts           # buildContext: stable rules + full-index prelude
+├── recall.ts           # buildContext: stable rules + full/retrieved index prelude
 ├── privacy.ts          # <private> redaction + secret scanning
 ├── lock.ts             # per-root write lock (stale detection)
 ├── atomic.ts           # temp-file + rename atomic write
 ├── audit.ts            # append-only audit log
 ├── extract.ts          # runExtractionSession lifecycle + ExtractionAgentRunner contract
-├── memory-tools.ts     # memory_list / memory_search / memory_read / memory_save / memory_update / memory_archive
+├── file-tools.ts     # glob / grep / read / write / edit / bash
 ├── dream.ts            # deterministic pre-pass + runDreamSession + DreamAgentRunner contract
-└── health.ts           # structural findings (used by dream + CLI doctor)
+└── health.ts           # structural findings (used by dream + host diagnostics)
 ```
 
 Each module's job + key signatures below. All async I/O is `node:fs/promises`.
@@ -178,7 +180,7 @@ Root resolution and filename validation, minus workspace scoping.
 
 ```ts
 // Root: env override → OS default. NO Electron app.getPath; pure Node.
-//   MEMSCRIBE_HOME env wins; else <os-data-dir>/memscribe/memory.
+//   MEMFLYWHEEL_HOME env wins; else <os-data-dir>/memflywheel/memory.
 export function getMemoryRoot(opts?: { root?: string }): string;
 export function ensureMemoryDir(root: string): Promise<void>;
 
@@ -197,7 +199,7 @@ export function isValidMemoryFilename(root: string, filename: string): boolean;
 export function normalizeRelativePath(p: string): string; // "\\" → "/"
 ```
 
-> **Design note:** `root` is threaded explicitly (not a module singleton) so the kernel is testable and embeddable. CLI/SDK resolve it once via `getMemoryRoot()` and pass it down.
+> **Design note:** `root` is threaded explicitly (not a module singleton) so the kernel is testable and embeddable. The SDK/adapters resolve it once via `getMemoryRoot()` and pass it down.
 
 ---
 
@@ -250,7 +252,7 @@ export function writeMemoryDocument(
   input: { type: MemoryType; filename: string; doc: MemoryDocument }
 ): Promise<string>;
 
-// Delete a doc (used by dream apply / CLI). Append audit.
+// Delete a doc (used by dream apply). Append audit.
 export function deleteMemoryDocument(ctx: StorageContext, relativePath: string): Promise<boolean>;
 ```
 
@@ -315,13 +317,13 @@ export function readMemoryIndex(root: string): Promise<string>;
 
 ### 3.6 `recall.ts` — `buildContext` (the two-segment injection)
 
-This is MemScribe's recall path: a knowledge-layer build that assembles the two injection segments. **Full-index, no retrieval.**
+This is MemFlywheel's recall path: a knowledge-layer build that assembles the two injection segments. Small indexes are injected whole; larger indexes can use optional index-layer hybrid retrieval.
 
 ```ts
 export interface BuildContextResult {
   // Segment 1: STABLE memory rules → host puts in systemPrompt (cache-friendly prefix).
   systemPrompt: string;
-  // Segment 2: DYNAMIC prelude = full MEMORY.md index, wrapped in <system-reminder>.
+  // Segment 2: DYNAMIC prelude = full or retrieved MEMORY.md index cues, wrapped in <system-reminder>.
   // Host injects this immediately before the user message, every turn.
   preludePrompt: string;
   enabled: boolean;
@@ -429,7 +431,7 @@ export function createAuditLogger(root: string): AuditLogger;
 
 ### 3.11 `extract.ts` — extraction kernel + **pluggable agent-runner contract**
 
-Core owns the full `runExtractionSession` lifecycle **except the LLM call**, which is injected. Extraction is a tool-calling subagent that **writes the memory files itself** through core's write tools — there are no candidates for core to validate. Core also ships the default extraction system prompt and the write tools (`memory-tools.ts`) as **pure values** (no network call); the SDK assembles them into a running subagent loop (§4.3).
+Core owns the full `runExtractionSession` lifecycle **except the LLM call**, which is injected. Extraction is a tool-calling subagent that **writes the memory files itself** through core's write tools — there are no candidates for core to validate. Core also ships the default extraction system prompt and the write tools (`file-tools.ts`) as **pure values** (no network call); the SDK assembles them into a running subagent loop (§4.3).
 
 #### The injection point (the contract host/SDK implements)
 
@@ -442,8 +444,8 @@ export interface ExtractionMessage { role: "user" | "assistant"; text: string; }
 // the supplied tools (bound to the same context, so they share the lock). Core
 // never calls an LLM — it calls this.
 export type ExtractionAgentRunner = (input: {
-  toolCtx: MemoryToolContext;      // bound to the held write lock
-  tools: MemoryTool[];             // from createMemoryTools()
+  toolCtx: FileToolContext;      // bound to the held write lock
+  tools: FileTool[];             // from createFileTools()
   messages: ExtractionMessage[];   // selected window (see selection below)
   manifest: string;                // formatManifest(existing entries)
   root: string;
@@ -459,7 +461,7 @@ export type ExtractionAgentRunner = (input: {
 // private content that must never be extracted (national IDs, bank-card numbers,
 // tokens/keys, medical details, income, third-party private data); the six types
 // with definitions; positive/negative examples; the instruction to WRITE with the
-// tools (memory_list → memory_save / memory_update / memory_archive), not return JSON.
+// tools (glob → write / edit / bash), not return JSON.
 export const DEFAULT_EXTRACTION_SYSTEM_PROMPT: string;
 
 // Render the seed user message for one turn (manifest + conversation window).
@@ -470,11 +472,11 @@ export function buildExtractionAgentUserMessage(input: {
 
 // The memory write tools the subagent drives. Each tool is JSON-schema-described
 // with a handler that does path-safety validation + atomic write + audit append +
-// index resync. memory_list is read-only.
-export function createMemoryTools(): MemoryTool[];   // memory-tools.ts
+// index resync. glob is read-only.
+export function createFileTools(): FileTool[];   // file-tools.ts
 ```
 
-> Core holds the prompt string, the seed-message builder, and the write tools only — it never makes an LLM call. The SDK's `createExtractionAgentRunner({ toolCompletion })` drives a tool-calling loop over them into a full `ExtractionAgentRunner` (§4.3).
+> Core holds the prompt string, the seed-message builder, and the write tools only — it never makes an LLM call. The SDK's `createExtractionAgentRunner({ model })` drives a tool-calling loop over them into a full `ExtractionAgentRunner` (§4.3).
 
 #### Selection / message-window helpers
 
@@ -496,15 +498,15 @@ export function stripSystemReminderBlocks(text: string): string;
 #### Write tools + run
 
 ```ts
-// Each write tool routes through the storage layer (memory-tools.ts), which
+// Each write tool routes through the storage layer (file-tools.ts), which
 // enforces: valid type, safe flat filename, single-line frontmatter values,
 // body non-empty, privacy (always redact <private>; optionally refuse hard
 // secrets via the refuseSecrets gate), atomic write, audit append, index resync.
-export interface MemoryTool {
-  name: "memory_save" | "memory_update" | "memory_archive" | "memory_list";
+export interface FileTool {
+  name: "read" | "write" | "edit" | "bash" | "glob" | "grep";
   description: string;
   inputSchema: JsonSchema;
-  handler: (args: unknown, toolCtx: MemoryToolContext) => Promise<MemoryToolResult>;
+  handler: (args: unknown, toolCtx: FileToolContext) => Promise<FileToolResult>;
 }
 
 export enum ExtractionResult { Queued = "queued", Completed = "completed", Skipped = "skipped", Failed = "failed" }
@@ -515,7 +517,7 @@ export enum ExtractionResult { Queued = "queued", Completed = "completed", Skipp
 //  3 before = scanMemoryFiles → manifest
 //  4 select window via cursor
 //  5 build bound tools + toolCtx (sharing the lock); changed = await agent({...})
-//    — the subagent writes via the tools (memory_list → memory_save/update/archive)
+//    — the subagent acts through read/write/edit/bash/glob/grep
 //  6 relocateRootFiles again
 //  7 after = scanMemoryFiles → syncMemoryIndex
 //  8 advance cursor ONLY on success; stamp .last-extraction
@@ -551,24 +553,24 @@ export function relocateRootFiles(ctx: StorageContext): Promise<string[]>;
 
 ### 3.12 `dream.ts` — consolidation: deterministic pre-pass + **tool-calling consolidation subagent**
 
-Dream is symmetric to extraction: a deterministic, LLM-free structural pre-pass runs first, then a pluggable consolidation **subagent** reads full bodies and merges / compresses / retires memories by calling the memory tools directly. The tool calls ARE the changes — there is no JSON op format to emit or parse, and "nothing to consolidate" is simply making no tool calls. `runDreamSession` holds the per-root write lock across both phases.
+Dream is symmetric to extraction: a deterministic, LLM-free structural pre-pass runs first, then a pluggable consolidation **subagent** reads full bodies and merges / compresses / retires memories by calling the ordinary file tools directly. The tool calls ARE the changes — there is no JSON op format to emit or parse, and "nothing to consolidate" is simply making no tool calls. `runDreamSession` holds the per-root write lock across both phases.
 
 ```ts
 // The deterministic, LLM-free structural ops — the only two unambiguous fixes.
 // Everything semantic (near-duplicate merges, compression, type re-judgement) is
-// the subagent's job, via the memory tools.
+// the subagent's job, via the ordinary file tools.
 export type DreamOp =
   | { kind: "delete-duplicate"; path: string }
   | { kind: "relocate"; path: string; toType: MemoryType };
 
 // THE pluggable dream injection point — symmetric to ExtractionAgentRunner. The
-// subagent gets the structural packets + the bound memory tools/context (sharing
+// subagent gets the structural packets + the bound ordinary file tools/context (sharing
 // the held lock) and consolidates by calling those tools. It returns the union of
 // relative paths it changed.
 export type DreamAgentRunner = (input: {
   root: string;
-  toolCtx: MemoryToolContext;
-  tools: MemoryTool[];
+  toolCtx: FileToolContext;
+  tools: FileTool[];
   health: HealthFinding[];                 // §3.13
   typeReview: { path: string; type: MemoryType; name: string; description: string; excerpt: string }[];
   manifest: string;
@@ -580,7 +582,7 @@ export type DreamAgentRunner = (input: {
 // no network, no parser). The prompt encodes the consolidation policy (merge
 // near-duplicates KEEPING every item, compress verbose notes to short trigger
 // signals, retire superseded entries) and the read-before-merge rule: never author
-// a merged/compressed body from an excerpt — memory_read the full body first.
+// a merged/compressed body from an excerpt — read the full body first.
 export const DEFAULT_DREAM_SYSTEM_PROMPT: string;
 export function buildDreamAgentUserMessage(input: {
   health: HealthFinding[];
@@ -590,17 +592,15 @@ export function buildDreamAgentUserMessage(input: {
   coordination?: { reason: string; memoryAction: string; topics: string[] };
 }): string;
 
-// The SDK's createDreamAgentRunner({ toolCompletion }) seeds the shared tool-agent
+// The SDK's createDreamAgentRunner({ model }) seeds the shared tool-agent
 // loop with DEFAULT_DREAM_SYSTEM_PROMPT + buildDreamAgentUserMessage into a full
-// DreamAgentRunner (§4.3). The SAME toolCompletion channel drives extraction.
+// DreamAgentRunner (§4.3). The SAME canonical model channel drives extraction.
 
 // Deterministic plan (no LLM): from health findings + duplicate/content analysis.
-// The CLI's `dream plan` prints exactly this.
 export function planDeterministic(root: string, entries: MemoryEntry[]): Promise<DreamOp[]>;
 export function planDream(opts: { root: string }): Promise<DreamOp[]>;
 
 // Apply a deterministic plan, then relocate stray root files + syncMemoryIndex.
-// The CLI's `dream apply` is exactly this (no subagent).
 export function applyDream(opts: {
   ctx: StorageContext;
   plan: DreamOp[];
@@ -623,15 +623,15 @@ export const DREAM_DEFAULT_MIN_HOURS = 24;
 export const DREAM_DEFAULT_MIN_SESSIONS = 5;
 ```
 
-> **No post-hoc frontmatter "stabilization."** The subagent's writes go through the same validated memory tools as extraction (single-line name/description, valid type), and `memory_update` preserves frontmatter unless explicitly overridden — so deliberate, validated edits are trusted rather than reverted from a snapshot. The read-before-merge rule (memory_read the full body before merging/compressing) is what prevents data loss, exactly as read-before-update protects list-type appends in extraction.
+> **No post-hoc frontmatter "stabilization."** The subagent's writes go through the same validated ordinary file tools as extraction (single-line name/description, valid type), and `edit` preserves frontmatter unless explicitly overridden — so deliberate, validated edits are trusted rather than reverted from a snapshot. The read-before-merge rule (read the full body before merging/compressing) is what prevents data loss, exactly as read-before-update protects list-type appends in extraction.
 
-> **Scope: whole-store consolidation, not conversation review.** Dream reviews the current memory store (health / type / duplicates / compression). As a host-agnostic library MemScribe has no in-process session registry or transcript store, so the dream subagent does **not** read recent host conversations — its only conversational cue is the optional `coordination` directive, through which a host may pass recently-derived hints (e.g. a topic to compress). The gate's session count is likewise a counter the scribe keeps (`.dream-state.json`, bumped on session end, reset on a successful pass), not a scan of past sessions.
+> **Scope: whole-store consolidation, not conversation review.** Dream reviews the current memory store (health / type / duplicates / compression). As a host-agnostic library MemFlywheel has no in-process session registry or transcript store, so the dream subagent does **not** read recent host conversations — its only conversational cue is the optional `coordination` directive, through which a host may pass recently-derived hints (e.g. a topic to compress). The gate's session count is likewise a counter the scribe keeps (`.dream-state.json`, bumped on session end, reset on a successful pass), not a scan of past sessions.
 
 ---
 
 ### 3.13 `health.ts`
 
-Structural health findings. Used by `dream.planDeterministic` and CLI `doctor`.
+Structural health findings. Used by `dream.planDeterministic` and host diagnostics.
 
 ```ts
 export type HealthCode =
@@ -658,14 +658,14 @@ export function buildHealthFindings(root: string): Promise<HealthFinding[]>;
 
 ---
 
-## 4. `@memscribe/sdk` — lifecycle hooks + extraction-subagent wiring
+## 4. `@memflywheel/sdk` — lifecycle hooks + extraction-subagent wiring
 
 The SDK is the thin host-facing layer that orchestrates core around a conversation lifecycle and **exposes the injection points** so a host wires in its own LLM.
 
 ```
 sdk/src/
 ├── index.ts
-├── memory-scribe.ts      # createMemScribe factory (the main object)
+├── memory-scribe.ts      # createMemFlywheel factory (the main object)
 ├── hooks.ts            # lifecycle hook types
 └── memory-scribe.test.ts
 ```
@@ -673,7 +673,7 @@ sdk/src/
 ### 4.1 Factory + config
 
 ```ts
-export interface MemScribeConfig {
+export interface MemFlywheelConfig {
   root?: string;                 // default getMemoryRoot()
   enabled?: boolean;             // default true
   agent?: ExtractionAgentRunner; // §3.11 — extraction subagent injection point (optional)
@@ -682,7 +682,7 @@ export interface MemScribeConfig {
   dream?: { minHours?: number; minSessions?: number; auto?: boolean };
 }
 
-export interface MemScribe {
+export interface MemFlywheel {
   // ---- Lifecycle hooks (host calls these) ----
   onSessionStart(input: { sessionId: string }): Promise<void>;
   // Returns the two recall segments; host merges systemPrompt into its prompt
@@ -694,7 +694,7 @@ export interface MemScribe {
   // Idle/scheduled consolidation trigger (gated by minHours/minSessions).
   onIdle(input?: { force?: boolean }): Promise<void>;
 
-  // ---- Explicit operations (also surfaced via MCP/CLI) ----
+  // ---- Explicit host operations ----
   getContext(): Promise<BuildContextResult>;
   readMemory(relativePath: string): Promise<MemoryDocument | null>;
   saveMemory(input: { type: MemoryType; name: string; description?: string; body: string }): Promise<{ changed: string[] }>;
@@ -703,7 +703,7 @@ export interface MemScribe {
   rebuildIndex(): Promise<string>;
 }
 
-export function createMemScribe(config: MemScribeConfig): MemScribe;
+export function createMemFlywheel(config: MemFlywheelConfig): MemFlywheel;
 ```
 
 ### 4.2 Hook → core mapping
@@ -715,107 +715,54 @@ export function createMemScribe(config: MemScribeConfig): MemScribe;
 | `onTurnEnd` | `extract.runExtractionSession({ ctx, agent, messages, sessionId, cursorStore })` (skipped if no `agent`) |
 | `onIdle` | gate check → `dream.runDreamSession({ ctx, runner: dreamRunner })` (deterministic pre-pass always; the subagent only if a `dreamRunner` is configured) |
 | `onSessionEnd` | flush pending extraction queue |
-| `saveMemory` | `memory-tools.memory_save` handler → `index-file.syncMemoryIndex` |
+| `saveMemory` | `memory-tools.write` handler → `index-file.syncMemoryIndex` |
 
-> **Injection-point exposure:** the host passes `agent` and `dreamRunner` into `createMemScribe`. These are the *only* places an LLM enters the system. If omitted, MemScribe still runs (recall, the deterministic dream pre-pass, health, explicit save) — it just won't auto-extract or run the semantic dream subagent.
+> **Injection-point exposure:** the host passes `agent` and `dreamRunner` into `createMemFlywheel`. These are the *only* places an LLM enters the system. If omitted, MemFlywheel still runs (recall, the deterministic dream pre-pass, health, explicit save) — it just won't auto-extract or run the semantic dream subagent.
 
-### 4.3 Default extraction / dream subagent factories + built-in completion
+### 4.3 Default extraction / dream subagent factories + canonical model protocol
 
-The SDK assembles core's default prompts + write tools into running tool-calling subagents, and ships a built-in tool completion so one API key is enough to run both extraction and consolidation. There is ONE LLM channel — `toolCompletion` — and it drives both subagents.
+The SDK assembles core's default prompts + write tools into running tool-calling subagents. There is ONE provider-neutral model channel — `model` — and it drives both subagents. Provider wire shapes live in `@memflywheel/model`, not in the SDK loops.
 
 ```ts
-// A tool-aware LLM channel: takes messages + tool specs, returns the assistant
-// message (which may carry tool_calls). Drives BOTH subagent loops.
-export type ToolCompletion = (req: ToolCompletionRequest) => Promise<ToolCompletionResponse>;
+export interface CanonicalModelCompletion {
+  complete(req: CanonicalModelRequest): Promise<CanonicalModelResponse>;
+}
 
 // Drive a tool-calling loop over core's DEFAULT_EXTRACTION_SYSTEM_PROMPT + write
-// tools + toolCompletion into a full ExtractionAgentRunner. The subagent writes
+// tools + canonical model into a full ExtractionAgentRunner. The subagent writes
 // memory files itself via the tools. Pass a custom prompt/maxSteps to override.
 export function createExtractionAgentRunner(opts: {
-  toolCompletion: ToolCompletion; systemPrompt?: string; maxSteps?: number;
+  model: CanonicalModelCompletion; systemPrompt?: string; maxSteps?: number;
 }): ExtractionAgentRunner;
 
 // Dream consolidation subagent: DEFAULT_DREAM_SYSTEM_PROMPT + buildDreamAgentUserMessage
 // over the SAME tool-calling loop. Reads full bodies, then merges/compresses/retires
-// via the memory tools. Same toolCompletion channel as extraction.
+// via the ordinary file tools. Same canonical model channel as extraction.
 export function createDreamAgentRunner(opts: {
-  toolCompletion: ToolCompletion; systemPrompt?: string; maxSteps?: number;
+  model: CanonicalModelCompletion; systemPrompt?: string; maxSteps?: number;
 }): DreamAgentRunner;
 
-// Built-in fetch-based tool completion (Node global fetch, zero deps). Targets an
-// OpenAI-compatible /chat/completions endpoint WITH a tools array. Reads provider /
-// endpoint / API key / model from the environment (MEMSCRIBE_LLM_*) or explicit opts.
-export interface ToolCompletionConfig {
-  provider?: string;   // default inferred from env
-  endpoint?: string;   // default per provider
-  apiKey?: string;     // default from env
-  model?: string;      // default from env
+// Provider mapper in @memflywheel/model. Targets an OpenAI-compatible
+// /chat/completions endpoint WITH a tools array. Reads endpoint / API key / model
+// from the environment (MEMFLYWHEEL_LLM_*) or explicit opts.
+export interface OpenAIChatCompletionsModelConfig {
+  endpoint?: string;
+  apiKey?: string;
+  model?: string;
   fetchImpl?: typeof fetch; // injectable for tests (fake tool_calls)
 }
-export function createToolCompletion(config?: ToolCompletionConfig): ToolCompletion;
+export function createOpenAIChatCompletionsModel(
+  config?: OpenAIChatCompletionsModelConfig
+): CanonicalModelCompletion;
 ```
 
-> **Batteries included:** `createMemScribe({ agent: createExtractionAgentRunner({ toolCompletion: createToolCompletion() }) })` is a complete, running extraction setup given one API key in the environment. Adapters wrap their host's own tool-calling LLM channel into `toolCompletion` instead of using `createToolCompletion`.
+> **Batteries included:** `createMemFlywheel({ agent: createExtractionAgentRunner({ model: createOpenAIChatCompletionsModel() }) })` is a complete, running extraction setup given one API key in the environment. Native adapters should wrap their host's own tool-calling LLM channel into `CanonicalModelCompletion`; OpenAI-compatible HTTP is only one mapper.
 
 ---
 
-## 5. `@memscribe/mcp-server` — minimal tool face
+## 5. `@memflywheel/adapters` — host lifecycle mappings
 
-Exactly three tools. **No search tool** — there is no lexical retrieval.
-
-```
-mcp-server/src/
-├── index.ts        # server bootstrap (stdio), wires a MemScribe
-├── tools.ts        # the three tool definitions
-└── tools.test.ts
-```
-
-| Tool | Input | Output | Maps to |
-|---|---|---|---|
-| `memory_context` | `{}` | full-index prelude string (`<system-reminder>…`) | `scribe.getContext().preludePrompt` |
-| `memory_read` | `{ path: string }` | the memory body (markdown) | `scribe.readMemory(path)` → `doc.body` |
-| `memory_save` | `{ type, name, description?, body }` | `{ changed: string[] }` | `scribe.saveMemory(candidate)` |
-
-- The MCP server is transport only; all logic is in `core`/`sdk`.
-- `doctor` / `dream` / `rebuild-index` are **not** MCP tools — they live in the CLI.
-- Built on the stdio JSON-RPC contract by hand (no SDK dep) OR a thin local protocol module — still zero runtime deps.
-
----
-
-## 6. `@memscribe/cli` — command set
-
-```
-cli/src/
-├── index.ts        # arg parse (hand-rolled, no deps) + dispatch
-├── commands/
-│   ├── context.ts
-│   ├── read.ts
-│   ├── write.ts
-│   ├── doctor.ts
-│   ├── dream.ts
-│   ├── rebuild-index.ts
-│   └── list.ts
-└── *.test.ts
-```
-
-| Command | Description | Core/SDK |
-|---|---|---|
-| `memscribe context` | print the two-segment recall (rules + prelude) | `scribe.getContext()` |
-| `memscribe list` | print scan entries (name, type, path, mtime) | `scan.scanMemoryFiles` |
-| `memscribe read <path>` | print a memory body | `scribe.readMemory` |
-| `memscribe write --type --name [--description] --file/-` | write a memory (stdin or file body) | `scribe.saveMemory` |
-| `memscribe doctor` | print health findings (exit ≠0 if errors) | `scribe.doctor` |
-| `memscribe dream [--force]` | run consolidation (deterministic pre-pass; the subagent runs only when a host wires a `dreamRunner`) | `scribe.runDream` |
-| `memscribe rebuild-index` | regenerate MEMORY.md from scan | `scribe.rebuildIndex` |
-
-- The CLI cannot supply an LLM subagent by itself; `dream`/`doctor` run the **deterministic** path. A host integration may pass the extraction / dream subagents through a config module the CLI loads (optional, still no runtime dep).
-- `--root` global flag overrides `MEMSCRIBE_HOME`.
-
----
-
-## 7. `@memscribe/adapters` — host lifecycle mappings
-
-Each adapter maps a host's lifecycle events onto the SDK's `MemScribe` hooks. Adapters contain **no memory logic** — pure event translation.
+Each adapter maps a host's lifecycle events onto the SDK's `MemFlywheel` hooks. Adapters contain **no memory logic** — pure event translation.
 
 ```
 adapters/src/
@@ -834,8 +781,8 @@ adapters/src/
 ```ts
 export interface HostAdapter {
   name: string;
-  // Wire a MemScribe into the host's runtime; returns a disposer.
-  attach(scribe: MemScribe, host: unknown): () => void;
+  // Wire a MemFlywheel into the host's runtime; returns a disposer.
+  attach(scribe: MemFlywheel, host: unknown): () => void;
 }
 ```
 
@@ -850,22 +797,22 @@ export interface HostAdapter {
 | **Codex** | task start | instruction assembly | task complete | scheduled job |
 | **Claude Code** | session start hook | UserPromptSubmit-style hook → prelude | Stop/turn-end hook | idle/cron |
 
-For each: `onSessionStart` ↔ start, `onPromptBuild` (returns both segments) ↔ prompt assembly, `onTurnEnd` ↔ turn-done (async, non-blocking), `onIdle` ↔ idle/scheduled. The adapter is responsible only for (a) extracting `ExtractionMessage[]` from the host's transcript shape, (b) placing `systemPrompt`/`preludePrompt` where that host expects them (the prelude must remain `<system-reminder>`-wrapped), and (c) wrapping the host's own tool-calling LLM channel into a single `toolCompletion` that drives both `createExtractionAgentRunner` and `createDreamAgentRunner`.
+For each: `onSessionStart` ↔ start, `onPromptBuild` (returns both segments) ↔ prompt assembly, `onTurnEnd` ↔ turn-done (async, non-blocking), `onIdle` ↔ idle/scheduled. The adapter is responsible only for (a) extracting `ExtractionMessage[]` from the host's transcript shape, (b) placing `systemPrompt`/`preludePrompt` where that host expects them (the prelude must remain `<system-reminder>`-wrapped), and (c) exposing the host's own tool-calling LLM channel as `CanonicalModelCompletion` or `HostHarnessPort` that drives both `createExtractionAgentRunner` and `createDreamAgentRunner`.
 
 ### 7.3 Default extraction-subagent wiring + install/verify
 
-An adapter carries no memory or LLM logic: it wraps the host's tool-calling LLM into `toolCompletion`, hands it to the SDK's `createExtractionAgentRunner({ toolCompletion })` and `createDreamAgentRunner({ toolCompletion })`, and attaches the resulting `MemScribe`. `install` plans then applies a versioned wiring marker into the host config (atomic write), and `verify` re-reads from disk to round-trip-confirm the wiring.
+An adapter carries no memory or provider-specific LLM logic: it exposes the host's tool-calling LLM as a canonical model or `HostHarnessPort`, hands it to the SDK's `createExtractionAgentRunner({ model })` and `createDreamAgentRunner({ model })`, and attaches the resulting `MemFlywheel`. `install` plans then applies a versioned wiring marker into the host config (atomic write), and `verify` re-reads from disk to round-trip-confirm the wiring.
 
 ### 7.4 Runnable examples
 
-The `examples/` directory holds a minimal, runnable integration per targeted host — at least OpenClaw, Hermes, and Pi. Each example wraps the host's tool-calling LLM into `toolCompletion`, builds the default extraction subagent, mounts the full lifecycle (session start / prompt build / turn end / agent end / idle), and installs + verifies the wiring.
+The `examples/` directory holds a minimal, runnable integration per targeted host — at least OpenClaw, Hermes, and Pi. Each example exposes a canonical model or explicit recall-only mode, builds the default extraction subagent when the host is model-capable, mounts the full lifecycle (session start / prompt build / turn end / agent end / idle), and installs + verifies the wiring.
 
 ---
 
-## 8. Storage Layout on Disk
+## 6. Storage Layout on Disk
 
 ```
-<MEMSCRIBE_HOME or os-data>/memscribe/memory/
+<MEMFLYWHEEL_HOME or os-data>/memflywheel/memory/
 ├── MEMORY.md             # derived index (rebuildable)
 ├── .memory-task-lock     # write mutex (JSON: pid, owner, startedAt)
 ├── .last-extraction      # ISO timestamp
@@ -886,6 +833,10 @@ Memory file = frontmatter + body:
 name: 用户称呼
 description: 用户偏好的称呼
 type: identity
+retrieval_terms:
+  - 用户称呼
+  - preferred name
+  - address user
 created_at: 2026-06-15T10:30:00.000Z
 updated_at: 2026-06-15T10:30:00.000Z
 ---
@@ -895,7 +846,7 @@ updated_at: 2026-06-15T10:30:00.000Z
 
 ---
 
-## 9. Concurrency, Atomicity, Audit (cross-cutting)
+## 7. Concurrency, Atomicity, Audit (cross-cutting)
 
 - **Write lock** (`lock.ts`) wraps every multi-file mutation (extraction, dream-apply). Stale detection via `process.kill(pid,0)` + 180s timeout.
 - **Atomic write** (`atomic.ts`): temp file in same dir → `rename`. Index sync, doc writes, lock file all atomic.
@@ -903,7 +854,7 @@ updated_at: 2026-06-15T10:30:00.000Z
 
 ---
 
-## 10. Privacy Pipeline (cross-cutting)
+## 8. Privacy Pipeline (cross-cutting)
 
 Order on any inbound body (a subagent tool write or an explicit save):
 1. `redactPrivateSpans` — `<private>…</private>` → `[REDACTED]` (always on, deterministic).
@@ -912,20 +863,20 @@ Order on any inbound body (a subagent tool write or an explicit save):
 
 ---
 
-## 11. Recall ↔ Extraction ↔ Dream data flow (end to end)
+## 9. Recall ↔ Extraction ↔ Dream data flow (end to end)
 
 ```
 [turn N: prompt build]
   scribe.onPromptBuild → recall.buildContext
      scan → syncIndex → readIndex → truncate → aging
-     ⇒ { systemPrompt(rules), preludePrompt(<system-reminder> full index) }
+     ⇒ { systemPrompt(rules), preludePrompt(<system-reminder> index cues) }
   host injects both → model self-selects, optionally Reads a body
 
 [turn N: done]  (async, never blocks)
   scribe.onTurnEnd → runExtractionSession
      lock → relocate → before-scan → select window(cursor)
      → agent({ tools, toolCtx, messages, manifest, root })   ← LLM injection point
-        subagent: memory_list/search/read → memory_save / memory_update / memory_archive (writes files)
+        subagent: glob/search/read → write / edit / bash (writes files)
      → relocate → after-scan → syncIndex
      → advance cursor (success only) → stamp .last-extraction → unlock → drain
 
@@ -933,32 +884,31 @@ Order on any inbound body (a subagent tool write or an explicit save):
   scribe.onIdle → gate(minHours|minSessions|force) → runDreamSession
      lock → planDeterministic (health + dupes) → apply (delete-duplicate / relocate)
      → dreamRunner({ tools, toolCtx, health, typeReview, manifest, index, coordination })  ← LLM injection point
-        subagent: memory_read full bodies → memory_save (merge) / memory_update (compress) / memory_archive
+        subagent: read full bodies → write (merge) / edit (compress) / bash
      → relocate → after-scan → syncIndex → audit → unlock
 ```
 
 ---
 
-## 12. We Deliberately Do NOT Build (do not add these back)
+## 10. We Deliberately Do NOT Build (do not add these back)
 
 These are **out of scope by design** — reviewers and future contributors must not reintroduce them:
 
-- **No scope / multi-tenancy.** No user/project/workspace tiers. Single global store. (There is no `getWorkspaceMemoryDir`; MemScribe is deliberately a single global store.)
-- **No retrieval of any kind.** No BM25, no lexical/keyword search, no TF-IDF.
+- **No scope / multi-tenancy.** No user/project/workspace tiers. Single global store. (There is no `getWorkspaceMemoryDir`; MemFlywheel is deliberately a single global store.)
+- **No memory-body retrieval.** Do not embed, rank, or search memory bodies. Optional retrieval is limited to `MEMORY.md` index lines.
 - **No entity index / knowledge graph.**
-- **No embeddings / vectors / similarity / top-k / re-ranking / scoring.** Recall is full-index injection + LLM self-selection, period.
-- **No `search` MCP tool.** The tool face is `memory_context`, `memory_read`, `memory_save` only.
-- **No extra frontmatter fields.** No `scope`, `origin`, `source_ref`, `confidence`, `status`, `agent`, `project`, `session`. Only `name` / `description` / `type` (+ `created_at` / `updated_at`).
+- **No embedded default model / reranker.** Embedding providers are host-supplied, apply only to index lines, and are skipped when the full index fits.
+- **No open-ended frontmatter fields.** No `scope`, `origin`, `source_ref`, `confidence`, `status`, `agent`, `project`, `session`. Only `name` / `description` / `type`, optional `occurred_on` / `retrieval_terms`, and minimal `created_at` / `updated_at`.
 - **No LLM calls inside core.** Extraction and dream semantics are pluggable injection points; core stays deterministic.
-- **No runtime npm dependencies.** No YAML lib, no arg-parser lib, no MCP SDK runtime dep — hand-roll on Node stdlib.
+- **No runtime npm dependencies.** No YAML lib, no arg-parser lib, no protocol SDK runtime dep — hand-roll on Node stdlib.
 - **MEMORY.md is never LLM-authored.** It is derived from scan and rebuilt; the model never edits it.
 
 ---
 
-## 13. Design constants and portability notes
+## 11. Design constants and portability notes
 
-- `parseMemoryFrontmatter` requires `name` + `type` only; `description` defaults to `""` — reflected in `frontmatter.ts` / `MemoryEntry`.
+- `parseMemoryFrontmatter` requires `name` + `type` only; `description` defaults to `""`; `retrieval_terms` is the only supported YAML list field — reflected in `frontmatter.ts` / `MemoryEntry`.
 - Locked constants: `MAX_SCAN_ENTRIES=200`, `FRONTMATTER_READ_BYTES=2048`, `INDEX_MAX_LINES=200`, `INDEX_MAX_BYTES=25000`, aging `context`/`ambient = 30d` (others `null`), `LOCK_TIMEOUT_MS=180000`, `EXTRACTION_CONTEXT_WINDOW_SIZE=6`, `EXTRACTION_MAX_MESSAGES=40`, dream `minHours=24` / `minSessions=5`.
 - Two-segment injection (`buildMemoryInstructionPrompt` stable rules + `buildMemoryIndexPrompt` `<system-reminder>` prelude) lives in `recall.ts`.
-- No desktop-framework coupling: root resolves via the `MEMSCRIBE_HOME` env or an OS data dir helper in `paths.ts` (pure Node, fully portable). The index uses relative paths.
+- No desktop-framework coupling: root resolves via the `MEMFLYWHEEL_HOME` env or an OS data dir helper in `paths.ts` (pure Node, fully portable). The index uses relative paths.
 ```

@@ -12,15 +12,15 @@ import {
   memoryTypeForRelativePath,
 } from "./paths.js";
 
-const ROOT = "/tmp/memscribe-root";
+const ROOT = "/tmp/memflywheel-root";
 
-test("getMemoryRoot honors explicit root then MEMSCRIBE_HOME", () => {
+test("getMemoryRoot honors explicit root then MEMFLYWHEEL_HOME", () => {
   assert.equal(getMemoryRoot({ root: "/x/y" }), path.resolve("/x/y"));
-  const prev = process.env.MEMSCRIBE_HOME;
-  process.env.MEMSCRIBE_HOME = "/env/mem";
+  const prev = process.env.MEMFLYWHEEL_HOME;
+  process.env.MEMFLYWHEEL_HOME = "/env/mem";
   assert.equal(getMemoryRoot(), path.resolve("/env/mem"));
-  if (prev === undefined) delete process.env.MEMSCRIBE_HOME;
-  else process.env.MEMSCRIBE_HOME = prev;
+  if (prev === undefined) delete process.env.MEMFLYWHEEL_HOME;
+  else process.env.MEMFLYWHEEL_HOME = prev;
 });
 
 test("isValidMemoryFilename accepts a flat .md name", () => {

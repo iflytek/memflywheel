@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible MemScribe bug
+about: Report a reproducible MemFlywheel bug
 title: "bug: "
 labels: bug
 assignees: ""
@@ -8,7 +8,7 @@ assignees: ""
 
 ## Package
 
-`@memscribe/core` / `@memscribe/sdk` / `@memscribe/cli` / `@memscribe/mcp-server` / `@memscribe/adapters`
+`@memflywheel/core` / `@memflywheel/model` / `@memflywheel/sdk` / `@memflywheel/skills` / `@memflywheel/adapters`
 
 ## Environment
 

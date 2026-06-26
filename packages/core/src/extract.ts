@@ -4,19 +4,26 @@
  * Core owns the full extraction lifecycle (lock / window / relocate / index /
  * cursor) but NEVER calls an LLM. The actual memory writes are performed by the
  * injected ExtractionAgentRunner, which drives a tool-calling subagent that
- * writes files directly through the memory tools.
+ * writes files directly through ordinary file tools.
  */
 
-import { readdir, stat, mkdir, rename, copyFile, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readdir, stat, mkdir, rename, copyFile, unlink, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { RESERVED_MEMORY_FILES } from "./types.js";
 import { type StorageContext } from "./storage.js";
 import { getTypedMemoryPath, normalizeRelativePath } from "./paths.js";
 import { readMemoryFrontmatterHeader } from "./internal-frontmatter.js";
-import { scanMemoryFiles, formatManifest } from "./scan.js";
+import { scanAllMemoryFiles, scanMemoryFiles, formatManifest } from "./scan.js";
 import { syncMemoryIndex } from "./index-file.js";
-import { type MemoryTool, type MemoryToolContext, createMemoryTools } from "./memory-tools.js";
+import {
+  type FileTool,
+  type FileToolContext,
+  type MemorySourceRef,
+  createFileTools,
+  createMemoryFileToolContext,
+} from "./file-tools.js";
 
 export const EXTRACTION_CONTEXT_WINDOW_SIZE = 6;
 export const EXTRACTION_MAX_MESSAGES = 40;
@@ -33,7 +40,7 @@ export enum ExtractionResult {
  * adapter pairs a tool invocation with its result; core renders them as
  * truncated `Tool(name): input` / `Output: output` lines so durable facts that
  * only surface in tool activity (e.g. "this project uses pnpm") are not lost.
- * MemScribe cannot fork the host agent (it is an external scribe), so it cannot
+ * MemFlywheel cannot fork the host agent (it is an external scribe), so it cannot
  * share the host's structured tool blocks / prompt cache the way an in-host
  * extractor can — instead it folds tool calls into the reconstructed transcript.
  */
@@ -55,6 +62,14 @@ export interface ExtractionMessage {
    * message with no toolCalls renders exactly as before.
    */
   toolCalls?: ExtractionToolCall[];
+  /**
+   * Absolute time anchor for THIS turn (e.g. "2023-05-08" or an ISO datetime),
+   * supplied by the host when the turn's wall-clock time is known. It lets the
+   * extractor resolve relative dates in the text ("yesterday", "last week")
+   * into an absolute `occurred_on`. Optional and backward-compatible: when
+   * absent the message renders exactly as before and no date is ever guessed.
+   */
+  timestamp?: string;
 }
 
 // ---- Tool-call folding (per-field truncation + window-level backstop) ----
@@ -69,6 +84,7 @@ export const TOOL_OUTPUT_MAX_CHARS = 500;
  * a turn with very many tool calls cannot blow up the extraction prompt. Tunable.
  */
 export const TOOL_FOLD_WINDOW_MAX_CHARS = 4000;
+export const SOURCE_TRACE_DIR = ".memflywheel/sources";
 
 function elision(omitted: number): string {
   return `…[省略 ${omitted} 字符]…`;
@@ -109,8 +125,8 @@ export function truncateHeadTail(text: string, max: number): string {
  * lock). Core never calls an LLM — it calls this.
  */
 export type ExtractionAgentRunner = (input: {
-  toolCtx: MemoryToolContext;
-  tools: MemoryTool[];
+  toolCtx: FileToolContext;
+  tools: FileTool[];
   messages: ExtractionMessage[];
   manifest: string;
   root: string;
@@ -152,9 +168,55 @@ export function cleanMessages(messages: ExtractionMessage[]): ExtractionMessage[
     }
     const cleaned = stripSystemReminderBlocks(m.text);
     if (!cleaned || isPreludeText(cleaned)) continue;
-    out.push(m.toolCalls ? { role: "user", text: cleaned, toolCalls: m.toolCalls } : { role: "user", text: cleaned });
+    const rebuilt: ExtractionMessage = { role: "user", text: cleaned };
+    if (m.toolCalls) rebuilt.toolCalls = m.toolCalls;
+    if (m.timestamp) rebuilt.timestamp = m.timestamp;
+    out.push(rebuilt);
   }
   return out;
+}
+
+function sourceFileForSession(sessionId: string): string {
+  const hash = createHash("sha256").update(sessionId || "default").digest("hex").slice(0, 16);
+  return `${SOURCE_TRACE_DIR}/session-${hash}.jsonl`;
+}
+
+function sourceTraceLine(message: ExtractionMessage): string {
+  const payload: Record<string, unknown> = {
+    role: message.role,
+    text: message.text,
+  };
+  if (message.timestamp) payload.timestamp = message.timestamp;
+  if (message.toolCalls && message.toolCalls.length > 0) {
+    payload.toolCalls = message.toolCalls.map((call) => ({
+      name: call.name,
+      input: truncateHead(foldValueToText(call.input), TOOL_INPUT_MAX_CHARS),
+      output: truncateHeadTail(foldValueToText(call.output), TOOL_OUTPUT_MAX_CHARS),
+    }));
+  }
+  return JSON.stringify(payload);
+}
+
+async function appendSourceTrace(
+  root: string,
+  sessionId: string,
+  messages: ExtractionMessage[],
+): Promise<MemorySourceRef> {
+  const relativePath = sourceFileForSession(sessionId);
+  const absolutePath = path.join(root, relativePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+
+  const previous = await readFile(absolutePath, "utf8").catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw error;
+  });
+  const existingLines = previous.trimEnd() ? previous.trimEnd().split(/\r?\n/).length : 0;
+  const lines = messages.map(sourceTraceLine);
+  const startLine = existingLines + 1;
+  const endLine = existingLines + lines.length;
+  const separator = previous && !previous.endsWith("\n") ? "\n" : "";
+  await writeFile(absolutePath, `${previous}${separator}${lines.join("\n")}\n`, "utf8");
+  return { relativePath, startLine, endLine };
 }
 
 /**
@@ -187,6 +249,23 @@ export function selectMessagesForExtraction(
   const contextMessages = messages.slice(contextStart, cursorIndex + 1);
 
   return [...contextMessages, ...newMessages];
+}
+
+function selectMessagesForSourceTrace(
+  messages: ExtractionMessage[],
+  cursorIndex: number | null,
+): ExtractionMessage[] {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+
+  if (cursorIndex === null || cursorIndex < 0 || cursorIndex >= messages.length) {
+    return messages.slice(-EXTRACTION_MAX_MESSAGES);
+  }
+
+  const newMessages = messages.slice(cursorIndex + 1);
+  if (newMessages.length === 0) return [];
+  return newMessages.length >= EXTRACTION_MAX_MESSAGES
+    ? newMessages.slice(-EXTRACTION_MAX_MESSAGES)
+    : newMessages;
 }
 
 // ---- Cursor + pending queue ----
@@ -296,7 +375,7 @@ export interface RunExtractionSessionOptions {
   messages: ExtractionMessage[];
   sessionId: string;
   cursorStore: CursorStore;
-  /** Hard secret gate for the memory tools. Default OFF (privacy via prompt). */
+  /** Hard secret gate for ordinary file tools. Default OFF (privacy via prompt). */
   refuseSecrets?: boolean;
 }
 
@@ -306,7 +385,7 @@ export interface RunExtractionSessionOptions {
  *  2 relocateRootFiles
  *  3 select window via cursor (over cleaned messages)
  *  4 before = scanMemoryFiles → manifest
- *  5 build memory tools (bound to ctx; they share the held lock) and invoke the
+ *  5 build ordinary file tools (bound to ctx; they share the held lock) and invoke the
  *    injected agent runner, which writes memories itself via those tools
  *  6 relocateRootFiles again (catch any root-level write the subagent made)
  *  7 after = scanMemoryFiles → syncMemoryIndex
@@ -342,8 +421,10 @@ export async function runExtractionSession(
     const before = await scanMemoryFiles(ctx.root);
     const manifest = formatManifest(before);
 
-    const toolCtx: MemoryToolContext = { ctx, refuseSecrets };
-    const tools = createMemoryTools();
+    const sourceMessages = selectMessagesForSourceTrace(cleaned, cursor);
+    const sourceRef = await appendSourceTrace(ctx.root, sessionId, sourceMessages);
+    const toolCtx = createMemoryFileToolContext({ ctx, refuseSecrets, sourceRef });
+    const tools = createFileTools();
 
     try {
       await agent({ toolCtx, tools, messages: selected, manifest, root: ctx.root });
@@ -353,7 +434,7 @@ export async function runExtractionSession(
 
     await relocateRootFiles(ctx);
     const after = await scanMemoryFiles(ctx.root);
-    await syncMemoryIndex(ctx.root, after);
+    await syncMemoryIndex(ctx.root, await scanAllMemoryFiles(ctx.root));
 
     // Advance cursor only on success (we did not throw / fail).
     cursorStore.set(sessionId, cleaned.length - 1);

@@ -1,22 +1,22 @@
 # Architecture
 
-MemScribe is a file-backed long-term memory kernel. It has four moving parts — **storage**,
+MemFlywheel is a file-backed long-term memory kernel. It has four moving parts — **storage**,
 **recall**, **extraction**, and **dream** — plus cross-cutting concerns (privacy, locking,
 atomic writes, audit) that every write path shares.
 
-The core (`@memscribe/core`) is pure: it touches only the filesystem and never calls an LLM.
-The two model-driven steps (extraction, dream) are deterministic in the core and reach the
-model only through injected function contracts. Hosts wire those contracts and the turn
-lifecycle through `@memscribe/sdk` and `@memscribe/adapters`, or expose a subset over
-`@memscribe/mcp-server`.
+The core (`@memflywheel/core`) is pure filesystem logic plus injected ports. It never owns
+model transport, provider auth, or provider wire shapes. The two generative steps
+(extraction, dream) reach the model only through injected function contracts; optional
+index-layer retrieval consumes a host-supplied embedding provider. Hosts wire those
+contracts and the turn lifecycle through `@memflywheel/sdk` and `@memflywheel/adapters`.
 
 ## Memory root and layout
 
 The store is a single directory tree. The root is resolved with this precedence:
 
 1. An explicit `root` passed by the caller.
-2. The `MEMSCRIBE_HOME` environment variable.
-3. `<os-data-dir>/memscribe/memory`, where the OS data dir is `APPDATA` on Windows,
+2. The `MEMFLYWHEEL_HOME` environment variable.
+3. `<os-data-dir>/memflywheel/memory`, where the OS data dir is `APPDATA` on Windows,
    `~/Library/Application Support` on macOS, and `$XDG_DATA_HOME` (or `~/.local/share`)
    on Linux.
 
@@ -27,6 +27,8 @@ The store is a single directory tree. The root is resolved with this precedence:
 ├── .last-extraction     # extraction timestamp
 ├── .consolidate-lock    # dream lock
 ├── .audit.log           # append-only audit log
+├── .memflywheel/
+│   └── sources/         # cleaned execution traces, addressed by memory body refs
 ├── identity/
 ├── preference/
 ├── style/
@@ -48,6 +50,10 @@ A memory file is a YAML frontmatter block followed by a free-text Markdown body:
 name: 用户称呼
 description: 用户偏好的称呼
 type: identity
+retrieval_terms:
+  - 用户称呼
+  - preferred name
+  - address user
 ---
 
 叫用户小钟。
@@ -68,8 +74,9 @@ on a `StorageContext` (`{ root, audit }`). Every write is:
 - **Audited** — appended to `.audit.log`.
 
 `scanMemoryFiles(root)` walks the tree, parses each header, sorts entries by `mtime`
-descending, and caps the result at `MAX_SCAN_ENTRIES` (200). Its output is the
-`MemoryEntry[]` that drives both the index and recall.
+descending, and caps the result at `MAX_SCAN_ENTRIES` (200) for prompt-sized manifests.
+`scanAllMemoryFiles(root)` uses the same scan without that cap for the rebuildable
+`MEMORY.md` index and index-layer retrieval corpus.
 
 ## The derived index (`MEMORY.md`)
 
@@ -77,7 +84,7 @@ descending, and caps the result at `MAX_SCAN_ENTRIES` (200). Its output is the
 model. Each entry becomes one line:
 
 ```
-- [<name>](<absolute-path>) - <description> (type: <type>, path: <type>/<file>.md)
+- [<name>](<type>/<file>.md) - <description> (type: <type>, path: <type>/<file>.md)
 ```
 
 `syncMemoryIndex(root, entries)` rewrites the file. Before injection the content is passed
@@ -87,27 +94,36 @@ aging — see [`memory-schema.md`](memory-schema.md)).
 
 ## Recall
 
-Recall is full-index injection, no retrieval. `buildContext({ root, enabled })` runs a
-deterministic pipeline — scan → sync index → read → truncate → apply aging hints — and
-returns two strings:
+Recall is progressive index injection. `buildContext({ root, enabled, query?, indexRetrieval? })`
+runs a deterministic pipeline — scan → sync index → read → truncate → apply aging hints —
+and returns two strings:
 
 - `systemPrompt`: stable memory rules (a cache-friendly prefix).
-- `preludePrompt`: the whole index wrapped in `<system-reminder>`, re-injected each turn.
+- `preludePrompt`: either the full/truncated index or a hybrid-retrieved subset of index
+  lines plus a `MEMORY.md` fallback path, wrapped in `<system-reminder>`.
 
 The main model reads the index and decides on its own whether any entry is relevant and
-whether to `Read` a body. There is no scoring, ranking, or embedding step anywhere. See
+whether to `Read` a body. Hybrid retrieval, when configured, ranks only index lines with
+embedding + BM25 + RRF; memory bodies are not embedded or searched. See
 [`recall.md`](recall.md).
 
 ## Extraction
 
 After a turn, the host may trigger extraction. The core owns the whole mechanism — lock,
-cursor, message-window selection, relocation, index sync, and the validated memory tools —
+cursor, message-window selection, relocation, index sync, and the validated ordinary file tools —
 and calls the host's injected `ExtractionAgentRunner` for the one model-driven step. The
-subagent calls `memory_list` / `memory_search` / `memory_read` and then writes through
-`memory_save` / `memory_update` / `memory_archive`; those tool calls are the file changes.
+subagent calls `glob` / `grep` / `read` and then writes through
+`write` / `edit` / `bash`; those tool calls are the file changes.
 `runExtractionSession` acquires the write lock, cleans and windows the messages against a
-per-session cursor, lets the subagent drive the tools, relocates any stray root-level files
-into typed directories, re-syncs the index, and advances the cursor only on success. See
+per-session cursor, appends only the newly processed messages as cleaned JSONL under
+`.memflywheel/sources/session-<hash>.jsonl`, lets the subagent drive the tools, and passes the
+resulting `sourceRef` into the memory file tools. Cursor context is still visible to the
+extraction agent, but is not persisted again. Any memory written through `write` or `edit`
+during that extraction pass gets a `## Sources` body section pointing to the JSONL line
+range. Multiple memories from the same pass therefore share the same source file and line
+range; later passes append new lines and can add more refs. The hidden source directory is
+never indexed. The pass then relocates any stray root-level files into typed directories,
+re-syncs the index, and advances the cursor only on success. See
 [`extraction.md`](extraction.md).
 
 ## Dream (consolidation)
@@ -118,9 +134,9 @@ deterministic, LLM-free structural pre-pass cleans the state (delete identical-b
 duplicates, relocate path/type-mismatched files). Then the host's injected `DreamAgentRunner`
 — a tool-calling consolidation subagent that runs the same agent loop as extraction — works
 over the cleaned state: it reads full memory bodies and performs semantic consolidation
-(merges, compression, type re-judgement) by calling the memory tools directly
-(`memory_list` / `memory_search` / `memory_read` / `memory_save` / `memory_update` /
-`memory_archive`). There are no operations
+(merges, compression, type re-judgement) by calling the ordinary file tools directly
+(`glob` / `grep` / `read` / `write` / `edit` /
+`bash`). There are no operations
 returned anymore — the tool calls are the changes. `shouldRunDream` gates the pass on a
 minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 (`DREAM_DEFAULT_MIN_SESSIONS` = 5).
@@ -129,8 +145,8 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 
 - **Privacy.** `redactPrivateSpans` softens `<private>…</private>` to `[REDACTED]`.
   The hard-secret scan (`scanSecrets` / `enforceWritePrivacy`) is controlled by the
-  `refuseSecrets` gate: MCP enables it for `memory_save`; core/SDK/CLI leave it off by
-  default. When enabled, obvious secrets (SSH/PEM keys, API-key and token prefixes,
+  `refuseSecrets` gate. Host integrations decide whether to enable it for their write
+  path. When enabled, obvious secrets (SSH/PEM keys, API-key and token prefixes,
   bearer/JWT tokens, `password:`/`cookie:` assignments) are refused with masked findings.
 - **Locking.** A per-root file lock (`.memory-task-lock`) serializes writers, with stale
   detection (`LOCK_TIMEOUT_MS`) for crashed holders. `withLock` wraps a critical section.
@@ -142,16 +158,14 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 ## Package boundaries
 
 ```
-@memscribe/core      filesystem only, no LLM, no host coupling
+@memflywheel/core      filesystem only, no LLM, no host coupling
    ▲
    │ ExtractionAgentRunner / DreamAgentRunner contracts + lifecycle calls
    │
-@memscribe/sdk       wires injection points + turn lifecycle
+@memflywheel/sdk       wires injection points + turn lifecycle
    ▲
    │
-@memscribe/adapters  per-host lifecycle mapping (Hermes / OpenCode / OpenClaw / Pi / Codex / Claude Code)
-@memscribe/mcp-server context / read / save tools over MCP
-@memscribe/cli       context / list / read / write / doctor / dream / rebuild-index
+@memflywheel/adapters  per-host lifecycle mapping
 ```
 
-See [`integrations.md`](integrations.md) for the adapter and MCP surfaces.
+See [`integrations.md`](integrations.md) for the SDK and host adapter surfaces.

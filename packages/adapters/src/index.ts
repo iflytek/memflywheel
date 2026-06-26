@@ -1,8 +1,8 @@
 /**
- * @memscribe/adapters — host lifecycle mappings.
+ * @memflywheel/adapters — host lifecycle mappings.
  *
  * Each adapter maps a host's lifecycle events (session start, prompt build,
- * turn end, idle/scheduled) onto a MemScribe's hooks. Adapters contain NO
+ * turn end, idle/scheduled) onto a MemFlywheel's hooks. Adapters contain NO
  * memory logic — pure event translation plus a real, round-trippable install
  * of the host-side wiring.
  *
@@ -12,13 +12,13 @@
 
 // Framework: contracts, install/verify/doctor, lifecycle binding.
 export {
-  // Adapter-facing contract (structural mirror of @memscribe/sdk MemScribe)
-  type MemScribeMessage,
-  type MemScribeContext,
-  type MemScribe,
+  // Adapter-facing contract (structural mirror of @memflywheel/sdk MemFlywheel)
+  type MemFlywheelMessage,
+  type MemFlywheelContext,
+  type MemFlywheel,
   type HostRuntime,
   // Lifecycle mapping
-  type MemScribeHook,
+  type MemFlywheelHook,
   type LifecycleMapping,
   type LifecycleMap,
   type HookTranslators,
@@ -57,14 +57,71 @@ export {
   normalizeMessages,
 } from "./make-adapter.js";
 
-// Host-scribe bridge: wrap a host LLM channel into a batteries-included scribe.
+// Host harness port: stable host boundary + capability gates.
 export {
-  type ToolCompletion,
-  type HostMemScribeOptions,
-  type HostMemScribe,
-  createHostMemScribe,
-  adaptSdkMemScribe,
-} from "./host-memscribe.js";
+  type HostCapability,
+  type HostIntegrationMode,
+  type Dispose,
+  type HostPromptBuildEvent,
+  type HostPromptBuildResult,
+  type HostTurnEndEvent,
+  type HostSessionEvent,
+  type HostIdleEvent,
+  type HostLifecyclePort,
+  type HostToolCallEvent,
+  type HostToolResultEvent,
+  type HostTelemetryPort,
+  type HostHarnessPort,
+  classifyHostCapabilities,
+  requireHostCapabilities,
+  createCapabilitySet,
+} from "./harness-port.js";
+
+// Pi native port: Pi model/lifecycle/telemetry -> HostHarnessPort.
+export {
+  type PiTextContent,
+  type PiImageContent,
+  type PiToolCallContent,
+  type PiUserMessage,
+  type PiToolResultMessage,
+  type PiAssistantMessage,
+  type PiAgentMessage,
+  type PiModelContext,
+  type PiModelAuthResult,
+  type PiExtensionContextLike,
+  type PiExtensionHandler,
+  type PiExtensionApiLike,
+  type PiCompleteSimple,
+  type PiSessionIdResolver,
+  type CreatePiModelCompletionOptions,
+  type CreatePiHarnessPortOptions,
+  type PiScribeLike,
+  canonicalMessagesFromPi,
+  memScribeMessagesFromPi,
+  buildPiPromptInjection,
+  createPiModelCompletion,
+  attachPiScribe,
+  createPiHarnessPort,
+} from "./pi-port.js";
+
+// Host-scribe bridge: wrap a canonical host model into a batteries-included scribe.
+export {
+  type HostLearnedSkillEvolutionInput,
+  type HostLearnedSkillsOptions,
+  type MemFlywheelHarnessMode,
+  type MemFlywheelHarnessRuntimeOptions,
+  type MemFlywheelHarnessRuntimeAdapter,
+  type MemFlywheelHarnessRuntime,
+  type MemFlywheelLearningLoopConfig,
+  type MemoryIndexRetrievalOptions,
+  type SkillPreludeBuilder,
+  type SkillRecallProvider,
+  type CanonicalModelCompletion,
+  canonicalMessagesToMemFlywheelMessages,
+  attachMemFlywheelToHostPort,
+  createMemFlywheelHarnessRuntime,
+  adaptSdkMemFlywheel,
+} from "./host-memflywheel.js";
 
 // Built-in host adapters.
 export { piAdapter } from "./pi.js";

@@ -11,17 +11,16 @@ test("default prompt covers the spec surface, tool contract, and is name-free", 
   for (const type of ["identity", "preference", "style", "workflow", "context", "ambient"]) {
     assert.ok(p.includes(type), `prompt mentions ${type}`);
   }
-  for (const tool of [
-    "memory_list",
-    "memory_search",
-    "memory_read",
-    "memory_save",
-    "memory_update",
-    "memory_archive",
-  ]) {
+  for (const tool of ["glob", "grep", "read", "write", "edit", "bash"]) {
     assert.ok(p.includes(tool), `prompt mentions ${tool}`);
   }
+  assert.doesNotMatch(p, /memory_(list|search|read|save|update|archive)/);
   assert.ok(/read before you update/i.test(p), "prompt has the read-before-update rule");
+  assert.ok(/retrieval_terms/i.test(p), "prompt requires retrieval routing terms");
+  assert.ok(/without embedding the full body/i.test(p), "prompt keeps body out of embedding");
+  assert.ok(/never use absolute paths/i.test(p), "prompt forbids absolute paths");
+  assert.ok(/never prefix paths with memory\//i.test(p), "prompt forbids memory/ prefix");
+  assert.ok(/never use event\//i.test(p), "prompt forbids invented event type");
   assert.ok(/high-risk/i.test(p));
   assert.ok(!/```json/.test(p), "prompt no longer asks for a JSON array");
   assert.ok(!new RegExp(["loo", "my"].join(""), "i").test(p), "prompt is name-free");
@@ -38,7 +37,19 @@ test("buildExtractionAgentUserMessage renders manifest and labelled turns", () =
   assert.ok(out.includes("preference/x.md"));
   assert.ok(out.includes("User: I prefer tea."));
   assert.ok(out.includes("Assistant: Noted."));
-  assert.ok(out.includes("Use the memory tools"));
+  assert.ok(out.includes("Use the ordinary file tools"));
+});
+
+test("buildExtractionAgentUserMessage renders the timestamp anchor in the speaker label", () => {
+  const out = buildExtractionAgentUserMessage({
+    messages: [
+      { role: "user", text: "I went to the support group yesterday", timestamp: "2023-05-08" },
+      { role: "assistant", text: "Noted." },
+    ],
+    manifest: "",
+  });
+  assert.ok(out.includes("User [2023-05-08]: I went to the support group yesterday"));
+  assert.ok(out.includes("Assistant: Noted."));
 });
 
 test("buildExtractionAgentUserMessage falls back to (none) for empty manifest", () => {

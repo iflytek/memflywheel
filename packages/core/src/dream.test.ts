@@ -12,7 +12,7 @@ import {
 import { type StorageContext, readMemoryDocument, archiveMemoryDocument } from "./storage.js";
 import { scanMemoryFiles } from "./scan.js";
 import { buildHealthFindings } from "./health.js";
-import { memoryToolMap } from "./memory-tools.js";
+import { fileToolMap, serializeMemoryFile } from "./file-tools.js";
 import { readDreamState, bumpDreamSessions } from "./dream-state.js";
 import { createNullAuditLogger } from "./audit.js";
 import { makeRoot, cleanup, writeFixture, writeRaw } from "./test-helpers.js";
@@ -154,28 +154,37 @@ test("runDreamSession: deterministic pre-pass, then the subagent merges via tool
     // memory keeping every item, archive the sources. This is the tool-driven
     // equivalent of a merge op.
     const runner: DreamAgentRunner = async ({ tools, toolCtx }) => {
-      const map = memoryToolMap(tools);
-      const read = map.get("memory_read")!;
-      const save = map.get("memory_save")!;
-      const archive = map.get("memory_archive")!;
+      const map = fileToolMap(tools);
+      const read = map.get("read")!;
+      const write = map.get("write")!;
+      const bash = map.get("bash")!;
 
-      const tea = await read.handler({ relativePath: "preference/green-tea.md" }, toolCtx);
-      const coffee = await read.handler({ relativePath: "preference/americano.md" }, toolCtx);
+      const tea = await read.handler({ filePath: "preference/green-tea.md" }, toolCtx);
+      const coffee = await read.handler({ filePath: "preference/americano.md" }, toolCtx);
       assert.ok(tea.ok && coffee.ok);
 
       const changed: string[] = [];
-      const saved = await save.handler(
+      const saved = await write.handler(
         {
-          type: "preference",
-          name: "Drinks",
-          description: "drink preferences",
-          body: "Likes green tea and americano coffee.",
+          filePath: "preference/drinks.md",
+          content: serializeMemoryFile({
+            type: "preference",
+            name: "Drinks",
+            description: "drink preferences",
+            body: "Likes green tea and americano coffee.",
+          }),
         },
         toolCtx,
       );
       if (saved.ok && saved.changed) changed.push(...saved.changed);
-      await archive.handler({ relativePath: "preference/green-tea.md" }, toolCtx);
-      await archive.handler({ relativePath: "preference/americano.md" }, toolCtx);
+      await bash.handler(
+        {
+          command:
+            "mkdir -p .archive/preference && mv preference/green-tea.md .archive/preference/green-tea.md && mv preference/americano.md .archive/preference/americano.md",
+          description: "archive merged source memories",
+        },
+        toolCtx,
+      );
       return { changed };
     };
 

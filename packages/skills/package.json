@@ -1,0 +1,55 @@
+{
+  "name": "@memflywheel/skills",
+  "version": "0.1.0",
+  "description": "File-native learned skill layer for MemFlywheel agent runtimes.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.d.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iflytek/memflywheel.git",
+    "directory": "packages/skills"
+  },
+  "bugs": {
+    "url": "https://github.com/iflytek/memflywheel/issues"
+  },
+  "homepage": "https://github.com/iflytek/memflywheel#readme",
+  "keywords": [
+    "agent-memory",
+    "learned-skills",
+    "llm",
+    "memory",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b",
+    "test": "tsc -b && node --test \"dist/**/*.test.js\"",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@memflywheel/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.5.4"
+  }
+}

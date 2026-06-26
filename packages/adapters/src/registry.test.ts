@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 
 import { ADAPTERS, adapterIds, getAdapter } from "./registry.js";
 import { normalizeMessages } from "./make-adapter.js";
-import type { MemScribeHook } from "./adapter.js";
+import type { MemFlywheelHook } from "./adapter.js";
 
-const ALL_HOOKS: MemScribeHook[] = ["onSessionStart", "onPromptBuild", "onTurnEnd", "onIdle"];
+const REQUIRED_HOOKS: MemFlywheelHook[] = ["onPromptBuild", "onTurnEnd"];
 
 test("registry contains all six built-in adapters with unique ids", () => {
   assert.deepEqual(
@@ -21,9 +21,13 @@ test("getAdapter resolves known ids and returns undefined otherwise", () => {
   assert.equal(getAdapter("nope"), undefined);
 });
 
-test("every adapter has a complete lifecycle map with self-consistent hooks", () => {
+test("every adapter has a self-consistent lifecycle map", () => {
   for (const adapter of ADAPTERS) {
-    for (const hook of ALL_HOOKS) {
+    for (const hook of REQUIRED_HOOKS) {
+      const mapping = adapter.lifecycle[hook];
+      assert.ok(mapping, `${adapter.id} missing ${hook}`);
+    }
+    for (const hook of Object.keys(adapter.lifecycle) as MemFlywheelHook[]) {
       const mapping = adapter.lifecycle[hook];
       assert.ok(mapping, `${adapter.id} missing ${hook}`);
       // The map key must equal the mapping's declared hook.
@@ -32,7 +36,7 @@ test("every adapter has a complete lifecycle map with self-consistent hooks", ()
       assert.ok(mapping.note.length > 0, `${adapter.id}.${hook} empty note`);
     }
     // Host events must be distinct within an adapter.
-    const events = ALL_HOOKS.map((h) => adapter.lifecycle[h].hostEvent);
+    const events = Object.values(adapter.lifecycle).map((mapping) => mapping.hostEvent);
     assert.equal(new Set(events).size, events.length, `${adapter.id} duplicate hostEvents`);
   }
 });

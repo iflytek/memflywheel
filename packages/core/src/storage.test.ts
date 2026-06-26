@@ -49,6 +49,27 @@ test("writeMemoryDocument stamps timestamps and preserves created_at", async () 
   }
 });
 
+test("writeMemoryDocument preserves model-authored occurred_on alongside write times", async () => {
+  const root = await makeRoot();
+  try {
+    const ctx = ctxFor(root);
+    const rel = await writeMemoryDocument(ctx, {
+      type: "context",
+      filename: "team-reorg.md",
+      doc: {
+        frontmatter: { name: "Team Reorg", description: "merge", type: "context", occurred_on: "2024-11-05" },
+        body: "The team merged into Infra on 2024-11-05.",
+      },
+    });
+    const doc = await readMemoryDocument(ctx, rel);
+    assert.equal(doc?.frontmatter.occurred_on, "2024-11-05");
+    assert.ok(doc?.frontmatter.created_at);
+    assert.ok(doc?.frontmatter.updated_at);
+  } finally {
+    await cleanup(root);
+  }
+});
+
 test("writeMemoryDocument rejects invalid filename", async () => {
   const root = await makeRoot();
   try {

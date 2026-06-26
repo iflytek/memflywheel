@@ -11,3 +11,4 @@ coverage/
 .agents/
 .claude/
 .codex/
+bench/

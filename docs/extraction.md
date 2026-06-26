@@ -11,20 +11,20 @@ core-provided write tools.
 
 ```ts
 type ExtractionAgentRunner = (input: {
-  toolCtx: MemoryToolContext;     // bound to the held write lock
-  tools: MemoryTool[];            // the memory write tools, from createMemoryTools()
+  toolCtx: FileToolContext;     // bound to the held write lock
+  tools: FileTool[];            // read / write / edit / bash / glob / grep
   messages: ExtractionMessage[];  // cleaned, windowed recent turns
   manifest: string;               // formatted list of existing memories
   root: string;                   // the memory root
 }) => Promise<{ changed: string[] }>;
 ```
 
-The runner wraps a tool-calling LLM. It is handed the memory write tools (already bound to the
+The runner wraps a tool-calling LLM. It is handed the ordinary file tools (already bound to the
 context inside the held write lock) plus the windowed conversation and the existing-memory
 manifest, and it returns the relative paths it touched. Returning `{ changed: [] }` is normal
 and means "nothing to extract this turn."
 
-You do not have to build that loop yourself. MemScribe ships a complete default agent (see
+You do not have to build that loop yourself. MemFlywheel ships a complete default agent (see
 below); the contract above is the seam that lets you replace it.
 
 ```ts
@@ -34,26 +34,25 @@ interface ExtractionMessage {
 }
 ```
 
-## The memory write tools (core)
+## The ordinary file tools (core)
 
-Core exposes the write surface the subagent drives, via `createMemoryTools()`. Each tool is a
+Core exposes the write surface the subagent drives, via `createFileTools()`. Each tool is a
 JSON-schema-described function with a handler that does path-safety validation, an atomic
 write, an audit append, and an index resync:
 
-- **`memory_list`** — list existing memories so the subagent can decide add vs update.
-- **`memory_search`** — search existing memories by keyword over name / description / body.
-- **`memory_read`** — read one memory's full current body before merging or appending.
-- **`memory_save`** — create or overwrite one memory (`type` / `name` / `description` / `body`);
-  the file path is derived from the name.
-- **`memory_update`** — edit an existing memory by its relative path (e.g. `preference/drinks.md`).
-- **`memory_archive`** — archive one memory by relative path.
+- **`glob`** — list existing memories so the subagent can decide add vs update.
+- **`grep`** — search existing memories by keyword over name / description / body.
+- **`read`** — read one memory's full current body before merging or appending.
+- **`write`** — create or overwrite one typed Markdown file with full YAML frontmatter.
+- **`edit`** — exact string replacement in an existing memory file.
+- **`bash`** — archive corrected/retracted files by moving them under `.archive/`.
 
 A handler never throws for a recoverable problem; it returns `{ ok: false, text }` so the
 subagent can read the failure and adjust.
 
 ## The default extraction subagent (batteries included)
 
-The "what is worth remembering" judgment is shipped, not stubbed. MemScribe provides it in two
+The "what is worth remembering" judgment is shipped, not stubbed. MemFlywheel provides it in two
 layers so the core stays mechanical:
 
 - **In the core (pure values, no network).** A curated default extraction **system prompt** —
@@ -67,55 +66,60 @@ layers so the core stays mechanical:
   - the six memory types (`identity` · `preference` · `style` · `workflow` · `context` ·
     `ambient`) with definitions;
   - positive and negative examples, and the instruction to **write with the tools** (first
-    `memory_list` / `memory_search` / `memory_read`, then `memory_save` /
-    `memory_update` / `memory_archive`) rather than to return JSON.
+    `glob` / `grep` / `read`, then `write` /
+    `edit` / `bash`) rather than to return JSON.
 
   The core never makes an LLM call — it owns the prompt string, the user-message builder, and
   the write tools.
 
-- **In the SDK (assembles a running agent).** `createExtractionAgentRunner({ toolCompletion })`
-  composes the default prompt, the seed message, the advertised tools, and a tool-calling LLM
-  channel into a full `ExtractionAgentRunner`. The channel is a tool-aware completion:
+- **In the SDK (assembles a running agent).** `createExtractionAgentRunner({ model })`
+  composes the default prompt, the seed message, the advertised tools, and a canonical
+  tool-calling model channel into a full `ExtractionAgentRunner`. The channel is provider-neutral:
 
   ```ts
-  type ToolCompletion = (req: ToolCompletionRequest) => Promise<ToolCompletionResponse>;
+  interface CanonicalModelCompletion {
+    complete(req: CanonicalModelRequest): Promise<CanonicalModelResponse>;
+  }
   ```
 
-  The SDK also ships a built-in **fetch-based tool completion** (`createToolCompletion()`) that
-  uses Node's global `fetch` to call an OpenAI-compatible `/chat/completions` endpoint with a
-  `tools` array, reading the provider / endpoint / model / API key from the environment
-  (`MEMSCRIBE_LLM_*`). `defaultExtractionAgentFromEnv()` wires it up in one call. Together this
-  means: **give MemScribe one API key and extraction runs out of the box.**
+  The OpenAI-compatible mapper lives in `@memflywheel/model` as
+  `createOpenAIChatCompletionsModel()`. It uses Node's global `fetch` to call a
+  `/chat/completions` endpoint with a `tools` array, reading endpoint / model / API key from
+  `MEMFLYWHEEL_LLM_*`. Hosts can instead supply their own `CanonicalModelCompletion`.
 
   ```ts
-  import { createExtractionAgentRunner, createToolCompletion } from "@memscribe/sdk";
+  import { createExtractionAgentRunner } from "@memflywheel/sdk";
+  import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 
-  const agent = createExtractionAgentRunner({ toolCompletion: createToolCompletion() });
+  const agent = createExtractionAgentRunner({
+    model: createOpenAIChatCompletionsModel(),
+  });
   ```
 
-  To route through a host's existing LLM channel, pass your own `ToolCompletion`. To replace
-  the judgment entirely, pass a custom `ExtractionAgentRunner` straight to the core / SDK.
+  To route through a host's existing LLM channel, pass your own `CanonicalModelCompletion`.
+  To replace the judgment entirely, pass a custom `ExtractionAgentRunner` straight to the
+  core / SDK.
 
 ## The agent loop
 
-`runExtractionAgent({ toolCompletion, tools, toolCtx, messages, manifest, maxSteps })` drives
-the subagent:
+`runExtractionAgent({ model, tools, toolCtx, messages, manifest, maxSteps })` drives the subagent:
 
 1. Seed the conversation with the system prompt and a user message rendering the window +
-   manifest, advertising the four memory tools.
+   manifest, advertising the six ordinary file tools.
 2. Each round, call the model. If it requests tool calls, execute each handler (which **writes
    files**) and feed the result back as a `role: "tool"` message; then loop.
 3. Stop when the model requests no tools (`no-tool-calls`) or `maxSteps` (default 6) is reached.
 
 The loop never throws for tool errors — handlers return `{ ok: false }` results the subagent
-can read. Only a thrown `toolCompletion` (a network failure) propagates, which the core
-session treats as `Failed`.
+can read. Only a thrown canonical model call (for example a network failure) propagates,
+which the core session treats as `Failed`.
 
 ## ADD-or-update, by the subagent
 
 The subagent decides whether to add a new memory or refine an existing one — it can call
-`memory_list` first, then `memory_save` for a new fact, `memory_update` to refine a same-topic
-file instead of creating a near-duplicate, or `memory_archive` on an explicit user correction.
+`glob` / `grep` first, `read` before changing any existing file, then `write`
+for a new fact, `edit` to refine a same-topic file, or `bash` to archive on an
+explicit user correction.
 
 ## The run
 

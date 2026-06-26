@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { type MemoryEntry, type MemoryType } from "./types.js";
-import { scanMemoryFiles } from "./scan.js";
+import { scanAllMemoryFiles } from "./scan.js";
 import { atomicWriteFile } from "./atomic.js";
 
 export const INDEX_MAX_LINES = 200;
@@ -44,8 +44,11 @@ export function buildIndexContent(entries: MemoryEntry[]): string {
     .map((entry) => {
       const entryPath = getEntryPath(entry);
       const description = entry.description || "（无描述）";
+      const meta = [`type: ${entry.type}`, `path: ${entryPath}`];
+      if (entry.occurredOn) meta.push(`occurred_on: ${entry.occurredOn}`);
+      if (entry.retrievalTerms?.length) meta.push(`terms: ${entry.retrievalTerms.join("; ")}`);
       // Relative path keeps MEMORY.md portable across machines and checkouts.
-      return `- [${entry.name}](${entryPath}) - ${description} (type: ${entry.type}, path: ${entryPath})`;
+      return `- [${entry.name}](${entryPath}) - ${description} (${meta.join(", ")})`;
     })
     .join("\n");
 }
@@ -119,7 +122,7 @@ export async function readMemoryIndex(root: string): Promise<string> {
 
 /** Port of syncMemoryIndex: rebuild MEMORY.md from entries (or a fresh scan) and write it. */
 export async function syncMemoryIndex(root: string, entries?: MemoryEntry[]): Promise<string> {
-  const nextEntries = entries ?? (await scanMemoryFiles(root));
+  const nextEntries = entries ?? (await scanAllMemoryFiles(root));
   const content = buildIndexContent(nextEntries);
   await atomicWriteFile(path.join(root, INDEX_FILE), content);
   return content;

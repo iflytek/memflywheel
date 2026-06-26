@@ -5,23 +5,24 @@
  *   1. the deterministic structural pre-pass (delete identical-body duplicates,
  *      relocate a misfiled memory) — LLM-free, guaranteed; then
  *   2. the consolidation subagent, which reads full bodies and merges near-
- *      duplicates / compresses over-long notes via the memory tools.
+ *      duplicates / compresses over-long notes via ordinary file tools.
  *
- * It wraps every memory tool to log the subagent's real tool calls, then verifies
+ * It wraps every ordinary file tool to log the subagent's real tool calls, then verifies
  * the deterministic outcomes strictly and the semantic work by "no data loss".
  *
  * Run (uses YOUR key; never hardcode it):
- *   MEMSCRIBE_LLM_ENDPOINT=<your OpenAI-compatible base, e.g. https://.../api/v1> \
- *   MEMSCRIBE_LLM_MODEL=<model id> \
- *   MEMSCRIBE_LLM_API_KEY=<your key> \
+ *   MEMFLYWHEEL_LLM_ENDPOINT=<your OpenAI-compatible base, e.g. https://.../api/v1> \
+ *   MEMFLYWHEEL_LLM_MODEL=<model id> \
+ *   MEMFLYWHEEL_LLM_API_KEY=<your key> \
  *   node examples/dream-regression.mjs
  */
 import { mkdtemp, mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createMemScribe, createToolCompletion, runDreamAgent } from "@memscribe/sdk";
+import { createMemFlywheel, runDreamAgent } from "@memflywheel/sdk";
+import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 
-const root = await mkdtemp(path.join(tmpdir(), "memscribe-dream-rr-"));
+const root = await mkdtemp(path.join(tmpdir(), "memflywheel-dream-rr-"));
 
 async function seed(relativePath, frontmatter, body) {
   const full = path.join(root, relativePath);
@@ -71,10 +72,10 @@ await seed(
   ].join(" "),
 );
 
-const toolCompletion = createToolCompletion({
-  endpoint: process.env.MEMSCRIBE_LLM_ENDPOINT,
-  apiKey: process.env.MEMSCRIBE_LLM_API_KEY,
-  model: process.env.MEMSCRIBE_LLM_MODEL,
+const model = createOpenAIChatCompletionsModel({
+  endpoint: process.env.MEMFLYWHEEL_LLM_ENDPOINT,
+  apiKey: process.env.MEMFLYWHEEL_LLM_API_KEY,
+  model: process.env.MEMFLYWHEEL_LLM_MODEL,
 });
 
 // A dreamRunner that wraps core's tools with a tracer, then drives the real loop.
@@ -89,7 +90,7 @@ const dreamRunner = async (input) => {
     },
   }));
   return runDreamAgent({
-    toolCompletion,
+    model,
     tools: tracedTools,
     toolCtx: input.toolCtx,
     health: input.health,
@@ -101,7 +102,7 @@ const dreamRunner = async (input) => {
   });
 };
 
-const scribe = createMemScribe({ root, dreamRunner });
+const scribe = createMemFlywheel({ root, dreamRunner });
 
 async function listFiles() {
   const out = [];

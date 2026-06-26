@@ -6,58 +6,62 @@
  * ExtensionAPI and binds its per-session hooks; this adapter maps those onto the
  * scribe:
  *
- *  - session create/config (per-session ModelRegistry + systemPrompt) → onSessionStart
- *  - per-turn knowledge assembly                                       → onPromptBuild
- *      (scribe.systemPrompt merges into the per-session system prompt;
- *       scribe.preludePrompt is prepended to the prelude prompts — cache-friendly)
- *  - turn-done (`agent_end` / post-turn context)                       → onTurnEnd (fire-and-forget)
- *  - learning-loop idle tick                                            → onIdle
+ *  - `session_start`     → onSessionStart
+ *  - `context`           → onPromptBuild, returning `{ messages }` to prepend recall
+ *  - `agent_end`         → onTurnEnd
+ *  - `session_shutdown`  → onSessionEnd
  *
- * The host wraps Pi's auxiliary tool-calling completion into a `toolCompletion`
- * (see createHostMemScribe / examples) so the extraction subagent runs on Pi's own
- * model and writes memory files directly via core's memory tools.
+ * `createPiHarnessPort` maps Pi's native model/lifecycle/telemetry surface into
+ * the canonical HostHarnessPort. The extraction subagent then runs on Pi's own
+ * model and writes memory files directly via ordinary file tools.
  */
 
-import { makeAdapter, normalizeMessages, readString } from "./make-adapter.js";
+import { makeAdapter, readString } from "./make-adapter.js";
 import type { HostAdapter, LifecycleMap } from "./adapter.js";
+import { attachPiScribe, memScribeMessagesFromPi, type PiExtensionApiLike } from "./pi-port.js";
 
 const lifecycle: LifecycleMap = {
   onSessionStart: {
     hook: "onSessionStart",
-    hostEvent: "session:ensure",
-    note: "Pi session create/config: per-session ModelRegistry + systemPrompt.",
+    hostEvent: "session_start",
+    note: "Pi session_start: initialize the MemFlywheel session state.",
   },
   onPromptBuild: {
     hook: "onPromptBuild",
-    hostEvent: "turn:build",
-    note: "Per-turn assembly: merge scribe.systemPrompt into systemPrompt, prepend prelude to preludePrompts.",
+    hostEvent: "context",
+    note: "Pi context hook: prepend MemFlywheel recall as a returned context message.",
   },
   onTurnEnd: {
     hook: "onTurnEnd",
     hostEvent: "agent_end",
-    note: "Pi agent_end with post-turn context — async extraction subagent, never blocks the stream.",
+    note: "Pi agent_end with post-turn messages — async extraction subagent over the host-owned model.",
   },
-  onIdle: {
-    hook: "onIdle",
-    hostEvent: "learning:idle",
-    note: "Pi learning-loop idle tick triggers dream consolidation.",
+  onSessionEnd: {
+    hook: "onSessionEnd",
+    hostEvent: "session_shutdown",
+    note: "Pi session_shutdown: final extraction sweep and session cleanup.",
   },
 };
 
-export const piAdapter: HostAdapter = makeAdapter({
+const basePiAdapter = makeAdapter({
   id: "pi",
   name: "Pi kernel",
   lifecycle,
   defaultConfigRelPath: ".pi/agent/settings.json",
   integrationNote:
-    "Real integration: a Pi `.js` extension wraps the auxiliary tool-calling completion as `toolCompletion`; settings.json carries the wiring marker.",
+    "Native integration: a Pi extension builds `createPiHarnessPort(pi, { completeSimple })` and passes it to `createMemFlywheelHarnessRuntime`; settings.json carries the wiring marker.",
   translators: {
     sessionId: (payload) => readString(payload, "sessionId"),
     turnEnd: (payload) => ({
       sessionId: readString(payload, "sessionId"),
-      // Pi's post-turn context carries the turn transcript under `messages`.
-      messages: normalizeMessages((payload as { messages?: unknown } | undefined)?.messages),
+      messages: memScribeMessagesFromPi((payload as { messages?: unknown } | undefined)?.messages),
     }),
-    idle: () => undefined,
   },
 });
+
+export const piAdapter: HostAdapter = {
+  ...basePiAdapter,
+  attach(scribe, host) {
+    return attachPiScribe(scribe, host as PiExtensionApiLike);
+  },
+};

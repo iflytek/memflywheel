@@ -1,9 +1,8 @@
 /**
  * Hermes adapter (real integration).
  *
- * A Hermes plugin's `register(ctx)` wraps the host LLM facade
- * (`ctx.llm.acomplete`, with tool calling) into a `toolCompletion` and binds the
- * scribe to Hermes' real hooks:
+ * A Hermes plugin's `register(ctx)` maps the host LLM facade into the canonical
+ * model protocol and binds the scribe to Hermes' real hooks:
  *
  *  - `on_session_start` → onSessionStart
  *  - `pre_llm_call`     → onPromptBuild  (inject prelude as {"context": ...} into
@@ -13,8 +12,8 @@
  *                          the tool loop completes, transcript is final)
  *  - `on_session_end`   → onIdle         (per-turn end point; gate-checked dream)
  *
- * See examples/hermes for the `register(ctx)` glue that wraps the host model as
- * a `toolCompletion`.
+ * See examples/hermes for the `register(ctx)` glue that requires
+ * `ctx.llm.completeWithTools`.
  */
 
 import { makeAdapter, normalizeMessages, readString } from "./make-adapter.js";
@@ -49,12 +48,16 @@ export const hermesAdapter: HostAdapter = makeAdapter({
   lifecycle,
   defaultConfigRelPath: ".hermes/config.json",
   integrationNote:
-    "Real integration: a Hermes plugin wraps `ctx.llm.acomplete` as `toolCompletion`; the plugin config block carries the wiring marker.",
+    "Real integration path: a Hermes plugin must expose `ctx.llm.completeWithTools` as a canonical model; the plugin config block carries the wiring marker.",
   translators: {
     sessionId: (payload) =>
       readString(payload, "session_id") ||
       readString(payload, "conversationId") ||
       readString(payload, "sessionId"),
+    promptQuery: (payload) =>
+      readString(payload, "user_message") ||
+      readString(payload, "prompt") ||
+      readString(payload, "query"),
     turnEnd: (payload) => {
       const sessionId =
         readString(payload, "session_id") ||

@@ -11,40 +11,42 @@ importers:
       '@types/node':
         specifier: ^22.5.0
         version: 22.19.21
+      typebox:
+        specifier: ^1.2.19
+        version: 1.2.19
       typescript:
         specifier: ^5.5.4
         version: 5.9.3
 
   examples:
     dependencies:
-      '@memscribe/adapters':
+      '@memflywheel/adapters':
         specifier: workspace:*
         version: link:../packages/adapters
-      '@memscribe/sdk':
+      '@memflywheel/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      '@memflywheel/model':
+        specifier: workspace:*
+        version: link:../packages/model
+      '@memflywheel/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
+      '@memflywheel/skills':
+        specifier: workspace:*
+        version: link:../packages/skills
 
   packages/adapters:
     dependencies:
-      '@memscribe/sdk':
+      '@memflywheel/model':
+        specifier: workspace:*
+        version: link:../model
+      '@memflywheel/sdk':
         specifier: workspace:*
         version: link:../sdk
-    devDependencies:
-      '@types/node':
-        specifier: ^22.5.0
-        version: 22.19.21
-      typescript:
-        specifier: ^5.5.4
-        version: 5.9.3
-
-  packages/cli:
-    dependencies:
-      '@memscribe/core':
+      '@memflywheel/skills':
         specifier: workspace:*
-        version: link:../core
-      '@memscribe/sdk':
-        specifier: workspace:*
-        version: link:../sdk
+        version: link:../skills
     devDependencies:
       '@types/node':
         specifier: ^22.5.0
@@ -62,14 +64,7 @@ importers:
         specifier: ^5.5.4
         version: 5.9.3
 
-  packages/mcp-server:
-    dependencies:
-      '@memscribe/core':
-        specifier: workspace:*
-        version: link:../core
-      '@memscribe/sdk':
-        specifier: workspace:*
-        version: link:../sdk
+  packages/model:
     devDependencies:
       '@types/node':
         specifier: ^22.5.0
@@ -80,7 +75,23 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@memscribe/core':
+      '@memflywheel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@memflywheel/model':
+        specifier: workspace:*
+        version: link:../model
+    devDependencies:
+      '@types/node':
+        specifier: ^22.5.0
+        version: 22.19.21
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+
+  packages/skills:
+    dependencies:
+      '@memflywheel/core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -96,6 +107,9 @@ packages:
   '@types/node@22.19.21':
     resolution: {integrity: sha512-VMeFBSCKQKmm2swI2kW51SFusDqekC6q9trBCvJ/JliDchFSuoYYKN7yVNjPthP1HKZcx3U1gI/wTcEBjEFKTA==}
 
+  typebox@1.2.19:
+    resolution: {integrity: sha512-9stLVZhos9aUXJzu0Yf717xbcv3vFsE5APzsQ7j/honIUFtern451IdTlqmVzPzuGxHkeWwWc2cerw6m2lqKOQ==}
+
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
@@ -109,6 +123,8 @@ snapshots:
   '@types/node@22.19.21':
     dependencies:
       undici-types: 6.21.0
+
+  typebox@1.2.19: {}
 
   typescript@5.9.3: {}
 

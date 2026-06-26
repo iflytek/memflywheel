@@ -7,7 +7,7 @@ import path from "node:path";
 
 import { RESERVED_MEMORY_FILES, type MemoryEntry, type MemoryType } from "./types.js";
 import { parseFrontmatter, stripFrontmatter, FRONTMATTER_READ_BYTES } from "./frontmatter.js";
-import { normalizeRelativePath } from "./paths.js";
+import { memoryTypeForRelativePath, normalizeRelativePath } from "./paths.js";
 
 export const MAX_SCAN_ENTRIES = 200;
 
@@ -33,8 +33,10 @@ async function walkMemoryFiles(
     if (dirent.name.startsWith(".")) continue;
 
     const absolutePath = path.join(currentDir, dirent.name);
+    const relativePath = normalizeRelativePath(path.relative(memoryRoot, absolutePath));
 
     if (dirent.isDirectory()) {
+      if (currentDir === memoryRoot && !memoryTypeForRelativePath(relativePath)) continue;
       await walkMemoryFiles(memoryRoot, absolutePath, entries);
       continue;
     }
@@ -42,6 +44,7 @@ async function walkMemoryFiles(
     if (!dirent.isFile()) continue;
     if (!dirent.name.endsWith(".md")) continue;
     if (RESERVED_MEMORY_FILES.has(dirent.name)) continue;
+    if (!memoryTypeForRelativePath(relativePath)) continue;
 
     try {
       const st = await stat(absolutePath);
@@ -53,10 +56,12 @@ async function walkMemoryFiles(
 
       entries.push({
         filename: dirent.name,
-        relativePath: normalizeRelativePath(path.relative(memoryRoot, absolutePath)),
+        relativePath,
         name: meta.name,
         description: meta.description || "",
         type: meta.type,
+        occurredOn: meta.occurred_on,
+        retrievalTerms: meta.retrieval_terms,
         mtime: st.mtimeMs,
       });
     } catch {
@@ -65,11 +70,7 @@ async function walkMemoryFiles(
   }
 }
 
-/**
- * Recursive scan: skip hidden dirents, *.md only, skip reserved files, parse
- * the frontmatter header, sort by mtime DESC, cap at MAX_SCAN_ENTRIES.
- */
-export async function scanMemoryFiles(root: string): Promise<MemoryEntry[]> {
+async function scanMemoryFilesInternal(root: string): Promise<MemoryEntry[]> {
   const entries: MemoryEntry[] = [];
 
   try {
@@ -80,7 +81,24 @@ export async function scanMemoryFiles(root: string): Promise<MemoryEntry[]> {
   }
 
   entries.sort((a, b) => b.mtime - a.mtime);
+  return entries;
+}
+
+/**
+ * Recursive scan: skip hidden dirents, *.md only, skip reserved files, parse
+ * the frontmatter header, sort by mtime DESC, cap at MAX_SCAN_ENTRIES.
+ */
+export async function scanMemoryFiles(root: string): Promise<MemoryEntry[]> {
+  const entries = await scanMemoryFilesInternal(root);
   return entries.slice(0, MAX_SCAN_ENTRIES);
+}
+
+/**
+ * Complete recursive scan for rebuildable index/search corpus. Extraction and
+ * dream prompt manifests should keep using scanMemoryFiles to cap prompt size.
+ */
+export async function scanAllMemoryFiles(root: string): Promise<MemoryEntry[]> {
+  return scanMemoryFilesInternal(root);
 }
 
 /**
@@ -130,7 +148,8 @@ export function formatManifest(entries: MemoryEntry[]): string {
     .map((entry) => {
       const date = new Date(entry.mtime).toISOString().slice(0, 10);
       const entryPath = entry.relativePath || entry.filename;
-      return `- [${entry.type}] ${entryPath} (${date}): ${entry.description}`;
+      const terms = entry.retrievalTerms?.length ? `; terms: ${entry.retrievalTerms.join(", ")}` : "";
+      return `- [${entry.type}] ${entryPath} (${date}): ${entry.description}${terms}`;
     })
     .join("\n");
 }
