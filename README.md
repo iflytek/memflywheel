@@ -2,25 +2,13 @@
 
 Turn every Agent run into a smarter start for the next one.
 
-MemFlywheel is a file-native long-term memory and skill-learning layer for AI Agent Harnesses.
+MemFlywheel is a file-native long-term memory and skill-learning layer for AI Agent Harnesses. It turns preferences, tool trajectories, project conventions, failure lessons, and repeated workflows into inspectable, diffable, reusable Markdown memories and learned skills.
 
-It turns an Agent's preference understanding, tool-call trajectory, project conventions, failure lessons, and repeated workflows into auditable, portable, evolvable Markdown memories and learned skills.
-
-Memory is no longer a temporary fragment inside the context window, nor hidden state inside a black-box service. It becomes an engineering asset that can be inspected, diffed, archived, and reused.
-
-<!--
-IMAGE_PLACEHOLDER: docs/assets/readme/01-overview.png
-Image prompt:
-A technical hand-drawn whiteboard-style architecture diagram on a light paper background, black sketch lines, with a few blue and green accents. Put "MemFlywheel" in the center. On the left, "Host Agent / Harness" with labels showing model, auth, tools, and lifecycle are owned by the host. On the right, file-native storage including MEMORY.md, typed markdown memories, .memflywheel/sources, and learned skills. Use circular arrows to show the flywheel loop: memory -> recall -> skill -> dream -> memory. Clean engineering feel, no 3D, no gradients, no people.
--->
+![MemFlywheel overview](docs/assets/readme/01-overview.png)
 
 ## Why MemFlywheel
 
-Many existing Agent memory systems start from "memory storage and recall": extracting conversations, preferences, or knowledge into a memory store, vector database, knowledge graph, or framework store, then reusing them later through search, retrieval, or context injection.
-
-MemFlywheel takes a filesystem-first and agent-native-first approach. It does not design long-term memory as a black-box service that depends on complex retrieval algorithms. Instead, it organizes memory into a four-layer progressive disclosure structure that is easy for Agents to read and operate: first expose index cues, then read memory bodies, trace back to raw evidence when needed, and finally promote stable workflows into learned skills. Even in a simple agent loop, as long as the model has solid tool-use ability, it can achieve stable long-term memory by looking at indexes, reading files, checking evidence, and reusing skills.
-
-Therefore, MemFlywheel is not only concerned with preserving "what was remembered". It also captures "why this worked", "where it failed", and "which procedures are worth reusing". These experiences become auditable, portable, and evolvable file assets instead of remaining inside the context window or invisible service state.
+Most Agent memory systems put memories into a memory store, vector database, or knowledge graph, then reuse them through retrieval or context injection. MemFlywheel instead starts from files and agent-native reading: it progressively exposes index cues, memory bodies, raw traces, and learned skills, turning preferences, failure lessons, and reusable procedures into auditable, portable, evolvable file assets.
 
 | Dimension | Common memory systems | MemFlywheel |
 |---|---|---|
@@ -30,8 +18,6 @@ Therefore, MemFlywheel is not only concerned with preserving "what was remembere
 | Recall path | Retrieve relevant snippets and inject them into the prompt | Index cues -> memory body -> source trace -> learned skill |
 | Learning loop | Usually focused on whether memory can be recalled | Repeated workflows become learned skills and feed back into long-term memory consolidation |
 | Engineering governance | Depends on service or framework-internal state | Files are readable, diffable, archivable, and indexes are rebuildable |
-
-MemFlywheel also does not take over the model, tools, or main Agent execution. Model service, authentication, business tools, and task decisions remain owned by the host Agent / Harness. MemFlywheel only plugs into lifecycle points such as prompt-build, turn-end, session-end, and idle, and is responsible for long-term memory, skill learning, and file-based governance.
 
 ## What MemFlywheel Is
 
@@ -70,62 +56,9 @@ The table below only includes LoCoMo-related projects backed by papers, official
 
 MemFlywheel is an agent-driven memory system. Its final performance depends to some extent on the answer/judge model and on the agentic ability of the models used in extraction and recall. With the same file-native memory structure, different models show different tool-use, evidence-location, and answer-synthesis capabilities.
 
-This result shows that MemFlywheel is not yet a top entry on the public LoCoMo scoreboard, but it has entered a comparable range in public LoCoMo results: its score is close to Memori's official result and above common reference results such as Letta Filesystem, Memobase, and LangMem. To make the comparison stronger, the next step is to add Cat3/Cat5 and the GPT-4o-mini judge setup.
-
 ## Core Flow
 
-```text
-Any Host Agent / Harness
-  Pi / Hermes / OpenClaw / OpenCode / custom harness
-  owns model / auth / tools / policy / business execution
-        |
-        | plug in through SDK hooks / host adapter
-        v
-MemFlywheel lifecycle hooks
-        |
-        +-- prompt-build
-        |     +-- scan memory files and build MEMORY.md index
-        |     +-- if index is small: inject full index cues
-        |     +-- if index is large: run index-layer pre-retrieval
-        |     |     +-- embedding + BM25 + RRF over MEMORY.md lines
-        |     |     +-- inject top relevant index cues
-        |     +-- inject recall rules
-        |     +-- optional learned-skill routes
-        |     |
-        |     +-- Main Agent decides what to read
-        |           selected/full index cue -> memory .md body -> .memflywheel/sources trace
-        |
-        +-- turn-end / agent-end / session-end
-        |     +-- collect new transcript + tool trajectory
-        |     +-- write cleaned trace to .memflywheel/sources
-        |     +-- extraction subagent decides create / update / merge / archive / noop
-        |     +-- write memory files and rebuild MEMORY.md
-        |
-        +-- skill learning gate
-        |     +-- after successful extraction, check turns / tool calls / cooldown
-        |     +-- evolve learned skills: create / update / merge / noop
-        |     +-- if skill changed, force dream to compress related memory into skill cues
-        |
-        +-- idle / forced dream
-        |     +-- deterministic cleanup
-        |     +-- optional dream subagent consolidation
-        |     +-- dedupe / compress / archive / retag
-        |     +-- rebuild MEMORY.md
-        |
-        v
-Next turn / next session
-  gets cleaner index cues + richer memories + reusable learned skills
-        |
-        +---------------------------------------------------------------+
-        |                                                               |
-        +---------------- back to prompt-build --------------------------+
-```
-
-<!--
-IMAGE_PLACEHOLDER: docs/assets/readme/02-lifecycle.png
-Image prompt:
-A technical hand-drawn whiteboard-style flowchart showing the MemFlywheel lifecycle loop. Nodes include prompt-build, main agent turn, turn-end extraction, skill evolution gate, dream consolidation, and next prompt-build. Use hand-drawn rectangular boxes and arrows forming a loop. Add side labels for typed memory files, MEMORY.md, and learned skills. Clean, clear, engineering diagram, light background.
--->
+![MemFlywheel lifecycle hooks](docs/assets/readme/02-lifecycle.png)
 
 ## File-Native Storage
 
@@ -133,21 +66,19 @@ The source of truth in MemFlywheel is the Markdown files under the memory root. 
 
 ```text
 memory-root/
-  MEMORY.md
-
-  identity/*.md
-  preference/*.md
-  style/*.md
-  workflow/*.md
-  context/*.md
-  ambient/*.md
-
-  .memflywheel/
-    sources/*.jsonl
-    index/*
+├─ MEMORY.md
+├─ identity/*.md
+├─ preference/*.md
+├─ style/*.md
+├─ workflow/*.md
+├─ context/*.md
+├─ ambient/*.md
+└─ .memflywheel/
+   ├─ sources/*.jsonl
+   └─ index/*
 
 skills-root/
-  memflywheel-learned-*/SKILL.md
+└─ memflywheel-learned-*/SKILL.md
 ```
 
 These directories are the default memory categories. Integrators can adjust the category granularity for their project, user, or business domain.
@@ -190,32 +121,24 @@ The user prefers concise engineering answers that start with the concrete conclu
 - .memflywheel/sources/session-20260624-collaboration.jsonl#L31-L37
 ```
 
-<!--
-IMAGE_PLACEHOLDER: docs/assets/readme/03-file-layout.png
-Image prompt:
-A technical hand-drawn file-tree diagram showing memory-root and skills-root. Under memory-root show MEMORY.md, identity, preference, style, workflow, context, ambient, .memflywheel/sources, and .memflywheel/index. Under skills-root show memflywheel-learned-*/SKILL.md. Use folder and document icons, whiteboard sketch style, clean and clear, with subtle color accents for MEMORY.md, sources, and learned skills.
--->
-
 ## Progressive Recall and Index-Layer Pre-Retrieval
 
 MemFlywheel does not put every memory body into the prompt. It first injects index cues and lets the main business Agent decide whether to read complete memory files.
 
 ```text
-User query / current task
-        |
-        v
-MEMORY.md index records
-        |
-        +-- small index -> inject full MEMORY.md cues
-        |
-        +-- large index -> embedding + BM25 + RRF over index lines
-                         -> inject topN relevant paths
-        |
-        v
-Main Agent reads selected *.md files
-        |
-        v
-If body is not enough, read .memflywheel/sources/*.jsonl line ranges
+●  User query / current task
+        │
+        ▼
+●  MEMORY.md index records
+        │
+        ├─▸ small index  →  inject full MEMORY.md cues
+        ├─▸ large index  →  embedding + BM25 + RRF over index lines
+        │                →  inject topN relevant paths
+        ▼
+●  Main Agent reads selected *.md files
+        │
+        ▼
+●  If body is not enough → read .memflywheel/sources/*.jsonl line ranges
 ```
 
 Pre-retrieval only runs over the `MEMORY.md` index layer:
@@ -233,74 +156,18 @@ Pre-retrieval only runs over the `MEMORY.md` index layer:
 The goal is to keep context lightweight while preserving three-layer progressive reading:
 
 ```text
-Layer 1: MEMORY.md index cues
-        |
-Layer 2: selected memory Markdown body
-        |
-Layer 3: source trace JSONL line ranges
+  Layer 1  ·  MEMORY.md index cues
+     │
+     ▼
+  Layer 2  ·  selected memory Markdown body
+     │
+     ▼
+  Layer 3  ·  source trace JSONL line ranges
 ```
-
-<!--
-IMAGE_PLACEHOLDER: docs/assets/readme/04-progressive-recall.png
-Image prompt:
-A technical hand-drawn layered diagram titled Progressive Recall. Three layers from top to bottom: MEMORY.md index cues, selected memory .md body, .memflywheel/sources JSONL traces. On the left, user query enters index pre-retrieval, passes through embedding + BM25 + RRF, and selects top paths only. On the right, label "host agent uses its own Read/Grep tools". Light background, black lines, a few blue and green accents.
--->
 
 ## Learning Flywheel
 
-MemFlywheel does not only preserve factual memory. It also turns repeatedly appearing executable procedures into learned skills. After one execution finishes, memory extraction first captures facts and trajectories, then skill evolution distills stable procedures into skills. When a skill changes, it triggers dream coordination in the opposite direction, compressing redundant procedural detail into memory cues that point to the skill. At the start of the next task, the main Agent sees both related memory and skill routes; after using them, it produces new trajectories that enter the next round of extraction, learning, and consolidation, creating the flywheel effect.
-
-```text
-Real task execution
-        |
-        v
-Conversation + tool trajectory
-        |
-        v
-memory extraction
-        |
-        +-- facts / preferences / project rules
-        +-- failure lessons / workflow evidence
-        |
-        v
-skill learning gate
-        |
-        v
-skill evolution agent
-        |
-        +-- create / update / merge / noop learned skills
-        |
-        v
-memflywheel-learned-*/SKILL.md
-        |
-        v
-dream coordination
-        |
-        +-- compress redundant workflow memory
-        +-- leave skill cues in related memories
-        |
-        v
-next prompt-build
-        |
-        +-- memory index cues
-        +-- learned-skill routes
-        |
-        v
-Main Agent reuses memory + skill
-        |
-        v
-better execution, new evidence
-        |
-        +--------------------------------+
-        |                                |
-        +------ back to extraction -------+
-```
-
-<!--
-IMAGE_PLACEHOLDER: docs/assets/readme/05-skill-flywheel.png
-Image prompt:
-A technical hand-drawn flywheel diagram. Circular arrows include Memory, Recall, Repeated Workflow, Learned Skill, Dream Compression, and Better Memory. Put MemFlywheel in the center. Add a SKILL.md file card and several Markdown memory file cards around it. Show that memory and skills reinforce each other. Whiteboard sketch style, clean, not a marketing poster.
--->
+![MemFlywheel learning flywheel](docs/assets/readme/05-skill-flywheel.png)
 
 ## Package Structure
 
