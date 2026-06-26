@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
@@ -124,7 +124,10 @@ async function writeDiskCache(root: string, model: string, entries: DiskCache["e
   const dir = path.join(root, CACHE_DIR);
   await mkdir(dir, { recursive: true });
   const payload: DiskCache = { version: 1, model, entries };
-  await writeFile(path.join(dir, CACHE_FILE), `${JSON.stringify(payload)}\n`, "utf8");
+  const target = path.join(dir, CACHE_FILE);
+  const temp = path.join(dir, `${CACHE_FILE}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`);
+  await writeFile(temp, `${JSON.stringify(payload)}\n`, "utf8");
+  await rename(temp, target);
 }
 
 export async function buildMemoryIndexSearchCache(input: {
@@ -238,6 +241,24 @@ function bm25Rank(records: MemoryIndexRecord[], query: string, topK: number): Ra
     .map((row, index) => ({ path: row.path, rank: index + 1 }));
 }
 
+function exactTermRank(records: MemoryIndexRecord[], query: string, topK: number): RankedPath[] {
+  const q = query.toLowerCase();
+  return records
+    .map((record) => {
+      let score = 0;
+      for (const term of record.retrievalTerms) {
+        const t = term.toLowerCase().trim();
+        if (t.length >= 3 && q.includes(t)) score += 4;
+      }
+      if (record.occurred_on && q.includes(record.occurred_on.toLowerCase())) score += 3;
+      return { path: record.path, score };
+    })
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+    .slice(0, topK)
+    .map((row, index) => ({ path: row.path, rank: index + 1 }));
+}
+
 export function rrfFuse(...rankings: RankedPath[][]): RankedPath[] {
   const scores = new Map<string, number>();
   for (const ranking of rankings) {
@@ -269,7 +290,8 @@ export async function hybridSearchMemoryIndex(input: {
 
   const dense = denseRank(input.records, input.vectors, queryVector, input.denseTopK ?? 80);
   const sparse = bm25Rank(input.records, input.query, input.bm25TopK ?? 80);
-  const fused = rrfFuse(dense, sparse).slice(0, input.limit);
+  const exact = exactTermRank(input.records, input.query, input.bm25TopK ?? 80);
+  const fused = rrfFuse(dense, sparse, exact).slice(0, input.limit);
   const byPath = new Map(input.records.map((record) => [record.path, record]));
   return fused.map((row) => byPath.get(row.path)).filter((record): record is MemoryIndexRecord => Boolean(record));
 }

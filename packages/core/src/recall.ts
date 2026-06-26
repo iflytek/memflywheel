@@ -47,6 +47,8 @@ export interface MemoryIndexRetrievalDiagnostic {
   mode?: MemoryIndexRetrievalMode;
   records?: number;
   selected?: number;
+  selectedLineIds?: string[];
+  selectedPaths?: string[];
   bytes?: number;
   limit?: number;
   minRecords?: number;
@@ -214,7 +216,14 @@ export async function buildContext(opts: {
       limit: retrieval.limit ?? 30,
       signal: retrieval.signal,
     });
-    emit({ stage: "search-complete", mode, records: cache.records.length, selected: selected.length });
+    emit({
+      stage: "search-complete",
+      mode,
+      records: cache.records.length,
+      selected: selected.length,
+      selectedLineIds: selected.map((record) => record.lineId),
+      selectedPaths: selected.map((record) => record.path),
+    });
   } catch (error) {
     const cause =
       error instanceof Error && typeof error.cause === "object" && error.cause !== null

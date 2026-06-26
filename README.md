@@ -18,14 +18,16 @@ A technical hand-drawn whiteboard-style architecture diagram on a light paper ba
 
 Many existing Agent memory systems start from "memory storage and recall": extracting conversations, preferences, or knowledge into a memory store, vector database, knowledge graph, or framework store, then reusing them later through search, retrieval, or context injection.
 
-MemFlywheel takes an agent-native-first approach and focuses on a layer closer to the execution site inside an Agent Harness: it does not only preserve "what was remembered", but also captures "why this worked", "where it failed", and "which procedures are worth reusing", then turns that experience into auditable, portable, evolvable file assets.
+MemFlywheel takes a filesystem-first and agent-native-first approach. It does not design long-term memory as a black-box service that depends on complex retrieval algorithms. Instead, it organizes memory into a four-layer progressive disclosure structure that is easy for Agents to read and operate: first expose index cues, then read memory bodies, trace back to raw evidence when needed, and finally promote stable workflows into learned skills. Even in a simple agent loop, as long as the model has solid tool-use ability, it can achieve stable long-term memory by looking at indexes, reading files, checking evidence, and reusing skills.
+
+Therefore, MemFlywheel is not only concerned with preserving "what was remembered". It also captures "why this worked", "where it failed", and "which procedures are worth reusing". These experiences become auditable, portable, and evolvable file assets instead of remaining inside the context window or invisible service state.
 
 | Dimension | Common memory systems | MemFlywheel |
 |---|---|---|
 | Focus | Memory storage, search recall, context injection | Execution experience capture, evidence traceability, skill evolution |
 | Memory objects | Conversations, preferences, knowledge snippets | Preference understanding, project conventions, tool trajectories, failure lessons, repeated workflows |
 | Storage shape | API, vector database, knowledge graph, framework store | Markdown memories, `MEMORY.md`, `.memflywheel/sources`, learned skills |
-| Recall path | Retrieve relevant snippets and inject them into the prompt | Pre-retrieval -> index cues -> memory body -> source trace |
+| Recall path | Retrieve relevant snippets and inject them into the prompt | Index cues -> memory body -> source trace -> learned skill |
 | Learning loop | Usually focused on whether memory can be recalled | Repeated workflows become learned skills and feed back into long-term memory consolidation |
 | Engineering governance | Depends on service or framework-internal state | Files are readable, diffable, archivable, and indexes are rebuildable |
 
@@ -43,6 +45,32 @@ MemFlywheel also does not take over the model, tools, or main Agent execution. M
 | Skills | reusable procedures are captured as `memflywheel-learned-*/SKILL.md` |
 | Model | core does not call an LLM; model, auth, and lifecycle are injected by the host or SDK |
 | Integration | SDK and adapters connect to hosts such as Pi, Hermes, OpenClaw, and OpenCode |
+
+## LoCoMo Evaluation Position
+
+On the LoCoMo Cat1/2/4 evaluation, MemFlywheel currently achieves an `81.23%` LLM-judge score and a `65.93%` token-F1. This run uses local `bge-m3` embeddings, with DeepSeek V4 Flash as the answer/judge model.
+
+The table below only includes LoCoMo-related projects backed by papers, official benchmark pages, or official repositories.
+
+| System | Public Result | Source / Practice |
+|---|---:|---|
+| [LoCoMo](https://github.com/snap-research/locomo) | benchmark | Official ACL 2024 benchmark for long-conversation memory QA, summary, and multimodal-dialog evaluation |
+| [Mem0](https://github.com/mem0ai/mem0) / [paper](https://arxiv.org/html/2504.19413v1) | 67.13% paper / 92.5% latest | The paper and latest official benchmark use different setups; practice: multi-level memory, fact extraction, vector / graph retrieval |
+| [MemMachine](https://github.com/MemMachine/MemMachine) / [paper](https://arxiv.org/abs/2604.04853) | 91.69% | arXiv 2026; preserves full conversational episodes and uses contextualized retrieval |
+| [Honcho](https://github.com/plastic-labs/honcho) / [eval](https://honcho.dev/evals/) | 89.9% | Official eval page; a memory-agent service that models users, agents, groups, and other peers |
+| **MemFlywheel current run** | qwen/qwen3.7-plus: 87.12%; DeepSeek V4 Flash: 81.23%; GPT-4o-mini: 76.89% | Local experiment; file-native memory where the Agent recalls and answers through indexes, memory bodies, source traces, and tool calls |
+| [Memori](https://memorilabs.ai/docs/memori-cloud/benchmark/results/) | 81.95% | Official results docs; practice: semantic triples + conversation summaries |
+| [Zep / Graphiti](https://help.getzep.com/graphiti/getting-started/overview) | 75.14%-80.00% | Zep blog / Memori table use different setups; practice: temporal knowledge graph combining time, semantic, and graph retrieval |
+| [Memobase](https://github.com/memodb-io/memobase) / [benchmark](https://github.com/memodb-io/memobase/blob/main/docs/experiments/locomo-benchmark/README.md) | 75.78% | Official benchmark repo; practice: user profile + event timeline for personalized context |
+| [Letta Filesystem](https://www.letta.com/blog/benchmarking-ai-agent-memory/) | 74.00% | Letta blog; practice: put LoCoMo conversations into a filesystem and let the agent retrieve with file search / grep / open |
+| [LangMem](https://langchain-ai.github.io/langmem/) | 58.10%-78.05% | MemMachine / Memori tables differ; practice: LangGraph BaseStore + semantic / episodic / procedural memories |
+| [MemoryOS](https://github.com/BAI-LAB/MemoryOS) / [paper](https://arxiv.org/html/2506.06326v1) | F1 +49.11% / BLEU-1 +46.18% | EMNLP 2025 Oral; hierarchical memory OS with dynamic short / mid / long-term updates |
+| [A-Mem](https://github.com/agiresearch/A-mem) / [paper](https://arxiv.org/html/2502.12110v11) | LoCoMo F1 / ROUGE-L | Paper / OpenReview; Zettelkasten-style dynamic notes, tags, and memory linking |
+| [SimpleMem](https://github.com/aiming-lab/SimpleMem) / [paper](https://arxiv.org/html/2601.02553v1) | 43.24 F1 | arXiv / project page; semantic structured compression + adaptive query-aware retrieval |
+
+MemFlywheel is an agent-driven memory system. Its final performance depends to some extent on the answer/judge model and on the agentic ability of the models used in extraction and recall. With the same file-native memory structure, different models show different tool-use, evidence-location, and answer-synthesis capabilities.
+
+This result shows that MemFlywheel is not yet a top entry on the public LoCoMo scoreboard, but it has entered a comparable range in public LoCoMo results: its score is close to Memori's official result and above common reference results such as Letta Filesystem, Memobase, and LangMem. To make the comparison stronger, the next step is to add Cat3/Cat5 and the GPT-4o-mini judge setup.
 
 ## Core Flow
 

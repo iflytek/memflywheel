@@ -218,6 +218,31 @@ test("OpenAI embeddings mapper calls /embeddings and returns canonical vectors",
   ]);
 });
 
+test("OpenAI embeddings mapper batches requests when batchSize is set", async () => {
+  const batches: unknown[] = [];
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { input: string[] };
+    batches.push(body.input);
+    return new Response(
+      JSON.stringify({
+        data: body.input.map((text) => ({ embedding: [text.length] })),
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  };
+
+  const embeddings = createOpenAIEmbeddingsModel({
+    apiKey: "sk-test",
+    batchSize: 2,
+    fetchImpl,
+  });
+
+  const result = await embeddings.embed({ texts: ["a", "bb", "ccc"] });
+
+  assert.deepEqual(batches, [["a", "bb"], ["ccc"]]);
+  assert.deepEqual(result.vectors, [[1], [2], [3]]);
+});
+
 test("OpenAI embeddings mapper fails on invalid vector counts", async () => {
   const fetchImpl: typeof fetch = async () =>
     new Response(JSON.stringify({ data: [{ embedding: [1, 2] }] }), {

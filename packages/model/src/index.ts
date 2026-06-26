@@ -79,6 +79,8 @@ export interface OpenAIEmbeddingsModelConfig {
   apiKey?: string;
   /** Embedding model id. */
   model?: string;
+  /** Maximum input texts per `/embeddings` request. */
+  batchSize?: number;
   /** Injectable fetch for tests and host-owned transports. */
   fetchImpl?: typeof fetch;
 }
@@ -132,6 +134,13 @@ function resolveEmbeddingEndpoint(config: OpenAIEmbeddingsModelConfig): string {
 
 function resolveEmbeddingModel(config: OpenAIEmbeddingsModelConfig): string {
   return config.model ?? env("MEMFLYWHEEL_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL;
+}
+
+function resolveEmbeddingBatchSize(config: OpenAIEmbeddingsModelConfig): number | undefined {
+  if (typeof config.batchSize === "number") return config.batchSize > 0 ? config.batchSize : undefined;
+  const fromEnv = env("MEMFLYWHEEL_EMBEDDING_BATCH_SIZE");
+  const parsed = fromEnv ? Number.parseInt(fromEnv, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function resolveMaxTokens(config: OpenAIChatCompletionsModelConfig): number | undefined {
@@ -303,26 +312,33 @@ export function createOpenAIEmbeddingsModel(
 ): CanonicalEmbeddingProvider {
   const endpoint = resolveEmbeddingEndpoint(config);
   const model = resolveEmbeddingModel(config);
+  const batchSize = resolveEmbeddingBatchSize(config);
   const doFetch = config.fetchImpl ?? fetch;
 
   return {
     async embed(req): Promise<{ vectors: number[][] }> {
-      const response = await doFetch(`${endpoint}/embeddings`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${resolveEmbeddingApiKey(config)}`,
-        },
-        body: JSON.stringify({ model, input: req.texts }),
-        signal: req.signal,
-      });
-      if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        throw new Error(
-          `MemFlywheel OpenAI embeddings model: request failed (${response.status}). ${detail}`.trim(),
-        );
+      const vectors: number[][] = [];
+      const size = batchSize ?? req.texts.length;
+      for (let offset = 0; offset < req.texts.length; offset += size) {
+        const texts = req.texts.slice(offset, offset + size);
+        const response = await doFetch(`${endpoint}/embeddings`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${resolveEmbeddingApiKey(config)}`,
+          },
+          body: JSON.stringify({ model, input: texts }),
+          signal: req.signal,
+        });
+        if (!response.ok) {
+          const detail = await response.text().catch(() => "");
+          throw new Error(
+            `MemFlywheel OpenAI embeddings model: request failed (${response.status}). ${detail}`.trim(),
+          );
+        }
+        vectors.push(...parseEmbeddingsResponse(await response.json(), texts.length).vectors);
       }
-      return parseEmbeddingsResponse(await response.json(), req.texts.length);
+      return { vectors };
     },
   };
 }

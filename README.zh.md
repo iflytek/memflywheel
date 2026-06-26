@@ -18,14 +18,16 @@ IMAGE_PLACEHOLDER: docs/assets/readme/01-overview.png
 
 多数现有 Agent memory 方案，通常从“记忆存储与召回”出发：把对话、偏好或知识抽取进 memory store、向量库、知识图谱或框架内存储，再在后续任务中通过搜索、检索或上下文注入重新使用。
 
-MemFlywheel 采用 agent-native 优先策略，关注的是 Agent Harness 里更靠近执行现场的一层：不仅保存“记住了什么”，还沉淀“为什么这样做、哪里失败过、哪些流程值得复用”，并把这些经验落成可审计、可迁移、可演化的文件资产。
+MemFlywheel 采用文件系统优先、agent-native 优先的策略。它不把长期记忆设计成一个必须依赖复杂召回算法的黑盒服务，而是把记忆组织成一套适合 Agent 阅读和操作的四层渐进披露结构：先给索引线索，再读记忆正文，必要时追溯原始轨迹，最后把稳定流程沉淀成 learned skills。即使在一个很简单的 agent loop 里，只要模型具备较好的工具使用能力，也可以通过“看索引、读文件、查证据、复用技能”的方式获得稳定的长期记忆效果。
+
+因此，MemFlywheel 关注的不只是保存“记住了什么”，还包括“为什么这样做、哪里失败过、哪些流程值得复用”。这些经验最终都会落成可审计、可迁移、可演化的文件资产，而不是停留在上下文窗口或不可见的服务状态里。
 
 | 对比维度 | 常见 memory 方案 | MemFlywheel |
 |---|---|---|
 | 关注点 | 记忆存储、搜索召回、上下文注入 | 执行经验沉淀、证据追溯、技能演化 |
 | 记忆对象 | 对话、偏好、知识片段 | 偏好理解、项目约定、工具轨迹、失败教训、重复流程 |
 | 存储形态 | API、向量库、知识图谱、框架内 Store | Markdown memories、`MEMORY.md`、`.memflywheel/sources`、learned skills |
-| 召回方式 | 检索相关片段后注入 prompt | 预召回 → 索引线索 → 记忆正文 → 原始轨迹 |
+| 召回方式 | 检索相关片段后注入 prompt | 索引线索 → 记忆正文 → 原始轨迹 → learned skill |
 | 学习闭环 | 通常聚焦“记忆能否被召回” | 重复流程沉淀为 learned skill，并反向整理长期记忆 |
 | 工程治理 | 依赖服务或框架内部状态 | 文件可读、可 diff、可归档、索引可重建 |
 
@@ -44,6 +46,33 @@ MemFlywheel 采用 agent-native 优先策略，关注的是 Agent Harness 里更
 | 模型 | core 不调用 LLM；模型、鉴权和生命周期由宿主或 SDK 注入 |
 | 接入 | 通过 SDK 和 adapters 接入 Pi、Hermes、OpenClaw、OpenCode 等宿主 |
 
+
+## LoCoMo 评测位置
+
+在 LoCoMo Cat1/2/4 评测上，MemFlywheel 当前取得 `81.23%` LLM-judge score，token-F1 为 `65.93%`。本次使用本地 `bge-m3` embedding，answer/judge 模型为 DeepSeek V4 Flash。
+
+下面只保留 LoCoMo 相关且有论文、官方 benchmark 页或官方仓库支撑的项目。
+
+| 系统 | 公开结果 | 来源 / 实践 |
+|---|---:|---|
+| [LoCoMo](https://github.com/snap-research/locomo) | benchmark | 官方 ACL 2024 benchmark；用于长对话记忆 QA / summary / multimodal-dialog 评测 |
+| [Mem0](https://github.com/mem0ai/mem0) / [paper](https://arxiv.org/html/2504.19413v1) | 67.13% paper / 92.5% latest | 论文与官方 benchmark 口径不同；实践是多层 memory、fact extraction、vector / graph retrieval |
+| [MemMachine](https://github.com/MemMachine/MemMachine) / [paper](https://arxiv.org/abs/2604.04853) | 91.69% | arXiv 2026；保留完整 conversational episodes，做 contextualized retrieval |
+| [Honcho](https://github.com/plastic-labs/honcho) / [eval](https://honcho.dev/evals/) | 89.9% | 官方 eval 页；memory agent 服务，建模 user / agent / group 等 peers |
+| **MemFlywheel 本次** | qwen/qwen3.7-plus: 87.12%；DeepSeek V4 Flash: 81.23%；GPT-4o-mini: 76.89% | 本地实验；文件原生 memory，Agent 通过索引、正文、source trace 和工具调用完成召回回答 |
+| [Memori](https://memorilabs.ai/docs/memori-cloud/benchmark/results/) | 81.95% | 官方 results docs；实践是 semantic triples + conversation summaries |
+| [Zep / Graphiti](https://help.getzep.com/graphiti/getting-started/overview) | 75.14%-80.00% | Zep blog / Memori 表口径不同；实践是 temporal knowledge graph，结合 time / semantic / graph retrieval |
+| [Memobase](https://github.com/memodb-io/memobase) / [benchmark](https://github.com/memodb-io/memobase/blob/main/docs/experiments/locomo-benchmark/README.md) | 75.78% | 官方 benchmark repo；实践是 user profile + event timeline，面向画像和个性化上下文 |
+| [Letta Filesystem](https://www.letta.com/blog/benchmarking-ai-agent-memory/) | 74.00% | Letta blog；实践是把 LoCoMo 对话放进 filesystem，让 agent 用 file search / grep / open 检索 |
+| [LangMem](https://langchain-ai.github.io/langmem/) | 58.10%-78.05% | MemMachine / Memori 表口径差异较大；实践是 LangGraph BaseStore + semantic / episodic / procedural memories |
+| [MemoryOS](https://github.com/BAI-LAB/MemoryOS) / [paper](https://arxiv.org/html/2506.06326v1) | F1 +49.11% / BLEU-1 +46.18% | EMNLP 2025 Oral；层级 memory OS，short / mid / long-term 动态更新 |
+| [A-Mem](https://github.com/agiresearch/A-mem) / [paper](https://arxiv.org/html/2502.12110v11) | LoCoMo F1 / ROUGE-L | 论文 / OpenReview；Zettelkasten 风格动态 note、tag 和 memory linking |
+| [SimpleMem](https://github.com/aiming-lab/SimpleMem) / [paper](https://arxiv.org/html/2601.02553v1) | 43.24 F1 | arXiv / project page；semantic structured compression + adaptive query-aware retrieval |
+
+MemFlywheel 是 agent 驱动的记忆系统，最终效果一定程度上依赖 answer/judge 模型以及提取、召回阶段模型的 agentic 能力；同一套文件原生记忆结构，在不同模型下会体现出不同的工具使用、证据定位和综合回答能力。
+
+
+这个结果说明 MemFlywheel 当前还不是公开 LoCoMo 榜单里的头部项目，但在 LoCoMo 公开结果里已经进入可对比区间：分数接近 Memori 官方口径，高于 Letta Filesystem、Memobase、LangMem 等常见参考结果。下一步如果要更硬，需要补 Cat3/Cat5 和 GPT-4o-mini judge 口径。
 
 
 ## 核心流程

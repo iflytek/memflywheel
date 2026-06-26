@@ -134,6 +134,39 @@ test("buildMemoryIndexSearchCache reuses unchanged path vectors even when line i
   }
 });
 
+test("buildMemoryIndexSearchCache writes cache atomically under concurrent builders", async () => {
+  const root = await makeRoot();
+  try {
+    const records = parseMemoryIndexRecords(
+      [
+        "- [Alpha](context/alpha.md) - First memory. (type: context, path: context/alpha.md)",
+        "- [Beta](context/beta.md) - Second memory. (type: context, path: context/beta.md)",
+      ].join("\n"),
+    );
+    const provider: EmbeddingProvider = {
+      async embed({ texts }) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return { vectors: texts.map((_, index) => [index + 1, 0]) };
+      },
+    };
+
+    await Promise.all(
+      Array.from({ length: 8 }, () =>
+        buildMemoryIndexSearchCache({ root, records, embeddingProvider: provider, model: "fake" }),
+      ),
+    );
+
+    const raw = await readFile(path.join(root, ".memflywheel", "index", "memory-index.json"), "utf8");
+    const parsed = JSON.parse(raw) as { entries: Array<{ path: string }> };
+    assert.deepEqual(parsed.entries.map((entry) => entry.path).sort(), [
+      "context/alpha.md",
+      "context/beta.md",
+    ]);
+  } finally {
+    await cleanup(root);
+  }
+});
+
 test("rrfFuse keeps dense and bm25 ranks independent of raw scores", () => {
   assert.deepEqual(
     rrfFuse(
@@ -207,4 +240,30 @@ test("hybridSearchMemoryIndex ignores zero-score BM25 rows instead of letting pa
   });
 
   assert.deepEqual(results.map((record) => record.path), ["preference/language.md"]);
+});
+
+test("hybridSearchMemoryIndex boosts exact retrieval term matches", async () => {
+  const records = parseMemoryIndexRecords(
+    [
+      "- [Noisy Status](context/noisy.md) - This mentions relationship status but is not the user fact. (type: context, path: context/noisy.md)",
+      "- [Caroline Adoption](identity/caroline.md) - Caroline is planning adoption. (type: identity, path: identity/caroline.md, terms: relationship status; single parent; adoption)",
+    ].join("\n"),
+  );
+  const provider = providerWithVectors({
+    "what is Caroline's relationship status?": [1, 0],
+  });
+  const vectors = new Map<string, number[]>([
+    ["context/noisy.md", [1, 0]],
+    ["identity/caroline.md", [0, 1]],
+  ]);
+
+  const results = await hybridSearchMemoryIndex({
+    query: "what is Caroline's relationship status?",
+    records,
+    vectors,
+    embeddingProvider: provider,
+    limit: 1,
+  });
+
+  assert.deepEqual(results.map((record) => record.path), ["identity/caroline.md"]);
 });

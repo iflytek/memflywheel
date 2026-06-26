@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   type EmbeddingProvider,
+  type MemoryIndexRetrievalDiagnostic,
   buildContext,
   buildMemoryInstructionPrompt,
   buildMemoryIndexPrompt,
@@ -91,6 +92,7 @@ test("buildContext uses hybrid index retrieval when a query and provider are ava
       body: "tea",
       mtime: 2,
     });
+    const diagnostics: MemoryIndexRetrievalDiagnostic[] = [];
 
     const result = await buildContext({
       root,
@@ -99,6 +101,7 @@ test("buildContext uses hybrid index retrieval when a query and provider are ava
         embeddingProvider: releaseEmbeddingProvider(),
         minRecords: 1,
         limit: 1,
+        onDiagnostic: (event) => diagnostics.push(event),
       },
     });
 
@@ -106,6 +109,10 @@ test("buildContext uses hybrid index retrieval when a query and provider are ava
     assert.ok(result.preludePrompt.includes("发布流程"));
     assert.ok(!result.preludePrompt.includes("饮茶偏好"));
     assert.ok(result.preludePrompt.includes("MEMORY.md"));
+    assert.deepEqual(
+      diagnostics.find((event) => event.stage === "search-complete")?.selectedPaths,
+      ["workflow/release.md"],
+    );
   } finally {
     await cleanup(root);
   }
