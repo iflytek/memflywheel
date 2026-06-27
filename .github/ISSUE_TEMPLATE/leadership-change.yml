@@ -1,0 +1,57 @@
+name: Leadership Change
+description: Onboarding / Offboarding checklist for group leads
+title: "<Group FOO>: Leadership Change"
+body:
+- id: group
+  type: input
+  attributes:
+    label: "Group name:"
+    placeholder: "e.g. SIG foo"
+- id: leader_onboarding
+  type: input
+  attributes:
+    label: "Onboarding Lead(s):"
+    placeholder: GitHub handle(s) of the new leads
+- id: leader_offboarding
+  type: input
+  attributes:
+    label: "Offboarding Lead(s):"
+    placeholder: GitHub handle(s) of the previous leads
+- type: markdown
+  attributes:
+    value: |
+      **Process to initiate leadership change**
+
+      An email should be sent to the group mailing list with the following:
+      - Intent to step down / nominate a new lead
+        - If nominating a new lead:
+          - 1-2 lines about why they are being nominated, and links to any potential meeting notes where the change was discussed.
+          - Contacts to privately reach out to for questions (current leads) or concerns.
+          - Lazy consensus deadline of at least one week.
+- id: discussion_link
+  type: input
+  attributes:
+    label: "Link to discussion:"
+- id: new_lead_prereqs
+  type: checkboxes
+  attributes:
+    label: "Prerequisites for new leads:"
+    options:
+    - label: Are an org member
+    - label: Have read and agree to abide by the [Code of Conduct](https://github.com/iflytek/community/blob/master/code-of-conduct.md)
+- id: req_checklist
+  type: checkboxes
+  attributes:
+    label: "Onboarding / Offboarding tasks:"
+    options:
+    - label: Updated [OWNERS](https://github.com/iflytek/community/blob/master/OWNERS) file. **NOTE:** If offboarding, remember to remove from approvers.
+    - label: Updated [MAINTAINERS.md](https://github.com/iflytek/community/blob/master/MAINTAINERS.md).
+    - label: Updated access/teams in project infrastructure.
+    - label: Updated ownership of group mailing list.
+    - label: Updated ownership of group calendar.
+    - label: Added to relevant communication channels.
+- id: additional_info
+  type: textarea
+  attributes:
+    label: "Additional information:"
+    placeholder: "Other links to leadership discussions etc."
