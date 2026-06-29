@@ -30,8 +30,8 @@ importers:
         specifier: ^3.9.1
         version: 3.9.1
       typebox:
-        specifier: ^1.3.1
-        version: 1.3.1
+        specifier: ^1.3.2
+        version: 1.3.2
       typescript:
         specifier: ^5.5.4
         version: 5.9.3
@@ -515,8 +515,8 @@ packages:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
 
-  typebox@1.3.1:
-    resolution: {integrity: sha512-tHgMbqge7xNyyMYbdAXHxryHtpIilxhgM5nR/5aeQtYdOo/SjsHYqCwi/Yyqwcgccuy00kQSVJ4FL2ec0HYpnQ==}
+  typebox@1.3.2:
+    resolution: {integrity: sha512-/JwVcKLrZkcmqtiX7hhvhxyJxEOSs22bzuTBMdzcdEfl9qNbQ0ZL7sg/z3QLEf7vLxo0TTLyH49Ca7TjagmRvw==}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -934,7 +934,7 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
 
-  typebox@1.3.1: {}
+  typebox@1.3.2: {}
 
   typescript@5.9.3: {}
 
