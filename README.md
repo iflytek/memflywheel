@@ -99,7 +99,8 @@ smoke-test paths live in [`docs/integrations.md`](docs/integrations.md).
 
 MemFlywheel uses LoCoMo-oriented regression checks to keep long-term-memory
 behavior measurable while the recall, extraction, and learned-skill loops
-evolve. Details live in [`docs/evaluation.md`](docs/evaluation.md).
+evolve. See [`docs/extraction-regression.md`](docs/extraction-regression.md)
+and [`docs/dream-regression.md`](docs/dream-regression.md).
 
 ## Documentation
 
@@ -107,7 +108,8 @@ evolve. Details live in [`docs/evaluation.md`](docs/evaluation.md).
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries |
 | [`docs/integrations.md`](docs/integrations.md)                     | Pi package install, SDK hooks, adapter boundary, host capability levels   |
-| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                               |
+| [`docs/extraction-regression.md`](docs/extraction-regression.md)         | Extraction subagent real-model regression report                  |
+| [`docs/dream-regression.md`](docs/dream-regression.md)                   | Dream consolidation real-model regression report                  |
 | [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                        |
 | [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                         |
 

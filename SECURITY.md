@@ -1,5 +1,9 @@
 # Security Policy
 
+This project follows the [Iflytek Opensource Community Security Policy](https://github.com/iflytek/community/blob/main/SECURITY.md).
+
+For project-specific security considerations, see below.
+
 ## Reporting a Vulnerability
 
 Please report security issues privately through GitHub Security Advisories when

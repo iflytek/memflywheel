@@ -2,6 +2,8 @@
 
 Thanks for helping improve MemFlywheel.
 
+This document covers project-specific guidelines. For broader community governance, contribution workflows, and code of conduct, see the [Iflytek Opensource Community](https://github.com/iflytek/community).
+
 MemFlywheel is a file-native long-term memory layer for AI agents. It is a memory
 foundation component inside an Agent Harness, not a model, not an agent
 framework, and not a vector database.
