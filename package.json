@@ -31,8 +31,8 @@
     "pack:dry-run": "pnpm -r --filter './packages/*' exec npm pack --dry-run --json"
   },
   "devDependencies": {
-    "@types/node": "^22.5.0",
-    "typebox": "^1.2.19",
+    "@types/node": "^22.20.0",
+    "typebox": "^1.3.1",
     "typescript": "^5.5.4"
   }
 }
