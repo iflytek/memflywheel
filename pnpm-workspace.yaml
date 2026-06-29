@@ -1,3 +1,7 @@
 packages:
   - "packages/*"
   - "examples"
+
+# Disable pnpm v11's default 24h minimum-release-age supply-chain check so
+# Dependabot PRs for freshly-published packages don't fail CI.
+minimumReleaseAge: 60
