@@ -1,5 +1,9 @@
 # MemFlywheel
 
+<p align="center">
+  <img src="docs/assets/brand/memflywheel-icon.png" alt="MemFlywheel icon" width="96" height="96">
+</p>
+
 Turn every Agent run into a smarter start for the next one.
 
 MemFlywheel is a file-native long-term memory and skill-learning layer for AI Agent Harnesses. It turns preferences, tool trajectories, project conventions, failure lessons, and repeated workflows into inspectable, diffable, reusable Markdown memories and learned skills.

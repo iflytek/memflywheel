@@ -1,5 +1,9 @@
 # MemFlywheel
 
+<p align="center">
+  <img src="docs/assets/brand/memflywheel-icon.png" alt="MemFlywheel icon" width="96" height="96">
+</p>
+
 让 Agent 把每一次执行，沉淀成下一次更懂你的开始。
 
 MemFlywheel 是面向 AI Agent Harness 的文件原生长期记忆与技能学习层，把偏好、工具轨迹、项目约定、失败教训和重复工作流，变成可检查、可 diff、可复用的 Markdown 记忆与 learned skills。
