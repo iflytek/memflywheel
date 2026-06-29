@@ -236,6 +236,8 @@ pnpm test
 pnpm run ci
 ```
 
+For npm publishing and versioning, see [`docs/release.md`](docs/release.md).
+
 ## Open-Source Boundary
 
 MemFlywheel is intended to be a long-term memory and skill-learning foundation component inside an Agent Harness. It stays file-native, model-agnostic, and host-first; it does not absorb the main Agent, model service, tool permissions, or skill execution into itself.

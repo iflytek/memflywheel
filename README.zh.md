@@ -238,6 +238,8 @@ pnpm test
 pnpm run ci
 ```
 
+npm 发布与版本规范见 [`docs/release.md`](docs/release.md)。
+
 ## 开源边界
 
 MemFlywheel 的目标是成为 Agent Harness 里的长期记忆和技能学习基础组件。它保持文件原生、模型无关、宿主优先，不把主 Agent、模型服务、工具权限或技能执行吞进自己内部。
