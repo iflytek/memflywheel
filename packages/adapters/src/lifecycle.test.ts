@@ -5,11 +5,7 @@ import type { MemFlywheelContext } from "./adapter.js";
 import { piAdapter } from "./pi.js";
 import { claudeCodeAdapter } from "./claude-code.js";
 import { hermesAdapter } from "./hermes.js";
-import {
-  createFakeHost,
-  createOffHost,
-  createRecordingMemFlywheel,
-} from "./test-helpers.js";
+import { createFakeHost, createOffHost, createRecordingMemFlywheel } from "./test-helpers.js";
 
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -31,7 +27,9 @@ test("attach binds each host event to its scribe hook (pi)", async () => {
   await flush();
 
   assert.deepEqual(scribe.calls.sessionStart, [{ sessionId: "s1" }]);
-  assert.deepEqual(scribe.calls.promptBuild, [{ sessionId: "s1", query: "how do I release this package?" }]);
+  assert.deepEqual(scribe.calls.promptBuild, [
+    { sessionId: "s1", query: "how do I release this package?" },
+  ]);
   assert.equal(scribe.calls.turnEnd.length, 1);
   assert.equal(scribe.calls.turnEnd[0]?.sessionId, "s1");
   assert.deepEqual(scribe.calls.turnEnd[0]?.messages, [

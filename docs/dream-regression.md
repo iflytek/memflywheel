@@ -17,16 +17,16 @@ node examples/dream-regression.mjs
 
 ## Seed: a realistic, messy store
 
-| Path | Type | Why it's there |
-|---|---|---|
-| `identity/role.md` | identity | stable identity — should be left alone |
-| `preference/tea.md` | preference | beverage pref #1 (green tea) |
-| `preference/coffee.md` | preference | beverage pref #2 (americano) — same topic as #1 |
-| `ambient/mara.md` | ambient | team note #1 |
-| `ambient/jin.md` | ambient | team note #2 — same topic as #1 |
-| `style/brevity.md` / `style/short.md` | style | identical bodies — exact duplicate |
-| `identity/editor.md` | preference | misfiled: in `identity/` but declares `preference` |
-| `workflow/debugging.md` | workflow | a full 9-step SOP — over-long, should compress |
+| Path                                  | Type       | Why it's there                                     |
+| ------------------------------------- | ---------- | -------------------------------------------------- |
+| `identity/role.md`                    | identity   | stable identity — should be left alone             |
+| `preference/tea.md`                   | preference | beverage pref #1 (green tea)                       |
+| `preference/coffee.md`                | preference | beverage pref #2 (americano) — same topic as #1    |
+| `ambient/mara.md`                     | ambient    | team note #1                                       |
+| `ambient/jin.md`                      | ambient    | team note #2 — same topic as #1                    |
+| `style/brevity.md` / `style/short.md` | style      | identical bodies — exact duplicate                 |
+| `identity/editor.md`                  | preference | misfiled: in `identity/` but declares `preference` |
+| `workflow/debugging.md`               | workflow   | a full 9-step SOP — over-long, should compress     |
 
 ## What the model actually did
 
@@ -38,7 +38,7 @@ file (`style/short.md`), and relocated the misfiled `identity/editor.md` →
 `read ×5, write ×2, bash ×4, edit ×1`.
 
 1. **Beverage merge — read-before-merge, no data loss.** The subagent called
-   `read` on **both** `coffee.md` and `tea.md` (full bodies) *before*
+   `read` on **both** `coffee.md` and `tea.md` (full bodies) _before_
    writing, then `write` one `preference/Drinks` keeping **both** items
    ("prefers green tea as their daily drink, and also enjoys an americano coffee
    in the afternoon"), then `bash` on each source. This is the core

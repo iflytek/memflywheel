@@ -25,14 +25,12 @@ test("file tool schemas expose ordinary OpenCode-style tool names", () => {
     assert.equal(tool.inputSchema.additionalProperties, false);
     assert.ok(Array.isArray(tool.inputSchema.required));
   }
-  assert.deepEqual(createFileTools().map((tool) => tool.name).sort(), [
-    "bash",
-    "edit",
-    "glob",
-    "grep",
-    "read",
-    "write",
-  ]);
+  assert.deepEqual(
+    createFileTools()
+      .map((tool) => tool.name)
+      .sort(),
+    ["bash", "edit", "glob", "grep", "read", "write"],
+  );
 });
 
 test("write validates memory frontmatter, writes atomically, and resyncs the index", async () => {
@@ -55,7 +53,10 @@ test("write validates memory frontmatter, writes atomically, and resyncs the ind
 
     assert.equal(result.ok, true);
     assert.deepEqual(result.changed, ["preference/drinks.md"]);
-    assert.equal((await readMemoryDocument(ctx, "preference/drinks.md"))?.body, "Prefers green tea.");
+    assert.equal(
+      (await readMemoryDocument(ctx, "preference/drinks.md"))?.body,
+      "Prefers green tea.",
+    );
     assert.match(await readMemoryIndex(root), /preference\/drinks\.md/);
   } finally {
     await cleanup(root);
@@ -151,7 +152,9 @@ test("glob, grep, and bash expose ordinary file operations", async () => {
     assert.match(glob.text, /context\/project\.md/);
     const grep = await map.get("grep")!.handler({ pattern: "pnpm", include: "**/*.md" }, toolCtx);
     assert.match(grep.text, /Line/);
-    const bash = await map.get("bash")!.handler({ command: "pwd", description: "show root" }, toolCtx);
+    const bash = await map
+      .get("bash")!
+      .handler({ command: "pwd", description: "show root" }, toolCtx);
     assert.equal(bash.ok, true);
     assert.match(bash.text, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   } finally {

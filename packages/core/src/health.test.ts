@@ -28,11 +28,7 @@ test("buildHealthFindings flags path-type-mismatch", async () => {
   const root = await makeRoot();
   try {
     // File lives in identity/ but declares type: preference.
-    await writeRaw(
-      root,
-      "identity/wrong.md",
-      "---\nname: 错位\ntype: preference\n---\n\n正文",
-    );
+    await writeRaw(root, "identity/wrong.md", "---\nname: 错位\ntype: preference\n---\n\n正文");
     const findings = await buildHealthFindings(root);
     assert.ok(findings.some((f) => f.code === "path-type-mismatch"));
   } finally {
@@ -43,7 +39,12 @@ test("buildHealthFindings flags path-type-mismatch", async () => {
 test("buildTypeReviewPacket returns sorted entries with excerpts", async () => {
   const root = await makeRoot();
   try {
-    await writeFixture(root, "identity", "u.md", { name: "用户", description: "称呼", body: "叫小钟", mtime: 1 });
+    await writeFixture(root, "identity", "u.md", {
+      name: "用户",
+      description: "称呼",
+      body: "叫小钟",
+      mtime: 1,
+    });
     const packet = await buildTypeReviewPacket(root);
     assert.equal(packet.length, 1);
     assert.equal(packet[0]!.path, "identity/u.md");

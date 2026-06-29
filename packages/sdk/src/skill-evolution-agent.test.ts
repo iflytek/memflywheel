@@ -61,7 +61,13 @@ const STOP_RESPONSE: CanonicalModelResponse = {
  */
 function makeStore(opts: { catalog?: string[]; finalizeResult: LearnedSkillChangeSet }): {
   store: SkillEvolutionStore;
-  state: { checkpointed: number; finalized: number; rolledBack: number; toolCalls: string[]; files: Map<string, string> };
+  state: {
+    checkpointed: number;
+    finalized: number;
+    rolledBack: number;
+    toolCalls: string[];
+    files: Map<string, string>;
+  };
 } {
   const catalog = opts.catalog ?? [];
   const files = new Map<string, string>();
@@ -135,7 +141,13 @@ function makeStore(opts: { catalog?: string[]; finalizeResult: LearnedSkillChang
       handler: async (args) => {
         const content = files.get((args as { filePath: string }).filePath);
         if (content === undefined) return { ok: false, text: "File not found" };
-        return { ok: true, text: content.split(/\r?\n/).map((line, index) => `${index + 1}: ${line}`).join("\n") };
+        return {
+          ok: true,
+          text: content
+            .split(/\r?\n/)
+            .map((line, index) => `${index + 1}: ${line}`)
+            .join("\n"),
+        };
       },
     },
   ];
@@ -179,7 +191,10 @@ function run(store: SkillEvolutionStore, model: CanonicalModelCompletion) {
 }
 
 test("runSkillEvolutionAgent: a new skill file derives a create coordination (no JSON emitted)", async () => {
-  const { store, state } = makeStore({ catalog: [], finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] } });
+  const { store, state } = makeStore({
+    catalog: [],
+    finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
+  });
   const { model, requests } = scriptedModel([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "new body" }, "u1"),
     STOP_RESPONSE,
@@ -199,7 +214,13 @@ test("runSkillEvolutionAgent: a new skill file derives a create coordination (no
   assert.ok(result.coordination.memoryTopics.length > 0);
 
   const seed = String(requests()[0].messages[1].content);
-  for (const section of [/# Review packet/, /# Learned skill index/, /# Tool trajectory/, /# Artifact paths/, /# Quality signals/]) {
+  for (const section of [
+    /# Review packet/,
+    /# Learned skill index/,
+    /# Tool trajectory/,
+    /# Artifact paths/,
+    /# Quality signals/,
+  ]) {
     assert.match(seed, section);
   }
   const specs = requests()[0].tools;
@@ -208,7 +229,10 @@ test("runSkillEvolutionAgent: a new skill file derives a create coordination (no
 });
 
 test("runSkillEvolutionAgent: editing an existing catalog skill derives an update coordination", async () => {
-  const { store, state } = makeStore({ catalog: [REVIEW], finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] } });
+  const { store, state } = makeStore({
+    catalog: [REVIEW],
+    finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
+  });
   const { model } = scriptedModel([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "improved body" }, "u1"),
     STOP_RESPONSE,
@@ -222,7 +246,10 @@ test("runSkillEvolutionAgent: editing an existing catalog skill derives an updat
 });
 
 test("runSkillEvolutionAgent: a skill change auto-links memory via a compress-memory coordination", async () => {
-  const { store } = makeStore({ catalog: [REVIEW], finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] } });
+  const { store } = makeStore({
+    catalog: [REVIEW],
+    finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
+  });
   const { model } = scriptedModel([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "improved" }, "u1"),
     STOP_RESPONSE,
@@ -238,7 +265,10 @@ test("runSkillEvolutionAgent: a skill change auto-links memory via a compress-me
 });
 
 test("runSkillEvolutionAgent: making no file change is a graceful noop, not a throw", async () => {
-  const { store, state } = makeStore({ catalog: [], finalizeResult: { changedSkills: [], changedFiles: [] } });
+  const { store, state } = makeStore({
+    catalog: [],
+    finalizeResult: { changedSkills: [], changedFiles: [] },
+  });
   const { model } = scriptedModel([STOP_RESPONSE]);
 
   const result = await run(store, model);
@@ -272,7 +302,10 @@ test("runSkillEvolutionAgent: deleting a duplicate directory derives a merge coo
 test("runSkillEvolutionAgent: rolls back when the change set violates the one-skill invariant", async () => {
   const { store, state } = makeStore({
     catalog: [],
-    finalizeResult: { changedSkills: [REVIEW, DEBUG], changedFiles: [`${REVIEW}/SKILL.md`, `${DEBUG}/SKILL.md`] },
+    finalizeResult: {
+      changedSkills: [REVIEW, DEBUG],
+      changedFiles: [`${REVIEW}/SKILL.md`, `${DEBUG}/SKILL.md`],
+    },
   });
   const { model } = scriptedModel([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "a" }, "u1"),
@@ -285,13 +318,17 @@ test("runSkillEvolutionAgent: rolls back when the change set violates the one-sk
 });
 
 test("runSkillEvolutionAgent: feeds skill tool validation errors back so the model can correct them", async () => {
-  const { store, state } = makeStore({ catalog: [], finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] } });
+  const { store, state } = makeStore({
+    catalog: [],
+    finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
+  });
   // Reject any write that is not the canonical path, so the model must correct it.
   const writeTool = store.createFileTools({ id: "cp" }).find((tool) => tool.name === "write")!;
   const originalWrite = writeTool.handler;
   writeTool.handler = async (args) => {
     const filePath = (args as { filePath?: string }).filePath;
-    if (filePath !== `${REVIEW}/SKILL.md`) return { ok: false, text: "filePath must be memflywheel-learned-<slug>/SKILL.md" };
+    if (filePath !== `${REVIEW}/SKILL.md`)
+      return { ok: false, text: "filePath must be memflywheel-learned-<slug>/SKILL.md" };
     return originalWrite(args);
   };
   const { model, requests } = scriptedModel([
@@ -305,7 +342,10 @@ test("runSkillEvolutionAgent: feeds skill tool validation errors back so the mod
   assert.equal(state.rolledBack, 0);
   assert.equal(result.coordination.targetSkill, REVIEW);
   // the tool error was surfaced back to the model as a tool result
-  assert.match(String(requests()[1].messages.at(-1)?.content), /memflywheel-learned-<slug>\/SKILL\.md/);
+  assert.match(
+    String(requests()[1].messages.at(-1)?.content),
+    /memflywheel-learned-<slug>\/SKILL\.md/,
+  );
 });
 
 test("validateSkillEvolutionChangeSet: enforces noop / one-skill / merge invariants", () => {
@@ -326,15 +366,30 @@ test("validateSkillEvolutionChangeSet: enforces noop / one-skill / merge invaria
     supportingFiles: [],
   };
   assert.throws(
-    () => validateSkillEvolutionChangeSet({ ...noopBase, decision: "noop" }, { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] }),
+    () =>
+      validateSkillEvolutionChangeSet(
+        { ...noopBase, decision: "noop" },
+        { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
+      ),
     /noop decision changed learned skill files/,
   );
   assert.throws(
-    () => validateSkillEvolutionChangeSet({ ...compressBase, decision: "create" }, { changedSkills: [REVIEW, DEBUG], changedFiles: [`${REVIEW}/SKILL.md`, `${DEBUG}/SKILL.md`] }),
+    () =>
+      validateSkillEvolutionChangeSet(
+        { ...compressBase, decision: "create" },
+        {
+          changedSkills: [REVIEW, DEBUG],
+          changedFiles: [`${REVIEW}/SKILL.md`, `${DEBUG}/SKILL.md`],
+        },
+      ),
     /must change exactly one learned skill/,
   );
   assert.throws(
-    () => validateSkillEvolutionChangeSet({ ...compressBase, decision: "merge", mergedSkills: [DEBUG] }, { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] }),
+    () =>
+      validateSkillEvolutionChangeSet(
+        { ...compressBase, decision: "merge", mergedSkills: [DEBUG] },
+        { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
+      ),
     /merge decision must change targetSkill and every mergedSkills entry/,
   );
 });

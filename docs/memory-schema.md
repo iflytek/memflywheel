@@ -23,15 +23,15 @@ retrieval_terms:
 
 The persisted frontmatter carries **only** these fields:
 
-| Field | Required | Meaning |
-|---|---|---|
-| `name` | yes | Short, unique display name. |
-| `description` | no (defaults to empty) | One-line summary shown in the index. |
-| `type` | yes | One of the six memory types below. |
-| `retrieval_terms` | no for existing files, required for new/updated extraction writes | Short routing phrases used by index-layer retrieval; not a body summary. |
-| `occurred_on` | no | Event date (`YYYY-MM-DD`) when the fact is tied to a resolvable real-world date. |
-| `created_at` | no | Minimal timestamp metadata. |
-| `updated_at` | no | Minimal timestamp metadata. |
+| Field             | Required                                                          | Meaning                                                                          |
+| ----------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `name`            | yes                                                               | Short, unique display name.                                                      |
+| `description`     | no (defaults to empty)                                            | One-line summary shown in the index.                                             |
+| `type`            | yes                                                               | One of the six memory types below.                                               |
+| `retrieval_terms` | no for existing files, required for new/updated extraction writes | Short routing phrases used by index-layer retrieval; not a body summary.         |
+| `occurred_on`     | no                                                                | Event date (`YYYY-MM-DD`) when the fact is tied to a resolvable real-world date. |
+| `created_at`      | no                                                                | Minimal timestamp metadata.                                                      |
+| `updated_at`      | no                                                                | Minimal timestamp metadata.                                                      |
 
 There are no other fields. MemFlywheel deliberately does not carry `scope`, `origin`,
 `source_ref`, `confidence`, `status`, `agent`, `project`, or `session`.
@@ -83,14 +83,14 @@ that has already read a relevant memory file.
 
 The six valid types are:
 
-| Type | What it holds | Examples |
-|---|---|---|
-| `identity` | Stable identity facts about the user. | Name, role, profession, long-term background. |
-| `preference` | Long-term preferences. | Tool choice, collaboration preference, food preference. |
-| `style` | Expression and writing habits. | Tone, length, formatting, summary preference. |
-| `workflow` | Working and collaboration patterns. | Debugging habit, decision-making style, approach. |
-| `context` | Long-term reusable terminology and conventions. | Project rules, naming conventions, fixed terminology. |
-| `ambient` | Long-term peripheral facts related to the user. | Team members, external people, related background. |
+| Type         | What it holds                                   | Examples                                                |
+| ------------ | ----------------------------------------------- | ------------------------------------------------------- |
+| `identity`   | Stable identity facts about the user.           | Name, role, profession, long-term background.           |
+| `preference` | Long-term preferences.                          | Tool choice, collaboration preference, food preference. |
+| `style`      | Expression and writing habits.                  | Tone, length, formatting, summary preference.           |
+| `workflow`   | Working and collaboration patterns.             | Debugging habit, decision-making style, approach.       |
+| `context`    | Long-term reusable terminology and conventions. | Project rules, naming conventions, fixed terminology.   |
+| `ambient`    | Long-term peripheral facts related to the user. | Team members, external people, related background.      |
 
 A file's directory must match its declared `type` (`identity/foo.md` must declare
 `type: identity`). A mismatch is a health finding (`path-type-mismatch`) and the dream pass
@@ -110,14 +110,14 @@ signals, not full procedures or SOPs.
 
 `context` and `ambient` memories age; the other four types are permanent.
 
-| Type | Aging threshold |
-|---|---|
-| `identity` | none (permanent) |
+| Type         | Aging threshold  |
+| ------------ | ---------------- |
+| `identity`   | none (permanent) |
 | `preference` | none (permanent) |
-| `style` | none (permanent) |
-| `workflow` | none (permanent) |
-| `context` | 30 days |
-| `ambient` | 30 days |
+| `style`      | none (permanent) |
+| `workflow`   | none (permanent) |
+| `context`    | 30 days          |
+| `ambient`    | 30 days          |
 
 When a `context` or `ambient` entry has not been modified within 30 days, the index line for
 it gets a hint appended:

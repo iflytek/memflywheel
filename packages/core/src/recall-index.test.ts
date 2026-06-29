@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -28,11 +28,14 @@ test("parseMemoryIndexRecords uses stable path identity and embeds name descript
 
   const records = parseMemoryIndexRecords(index);
 
-  assert.deepEqual(records.map((record) => record.path), [
-    "workflow/pr-discipline.md",
-    "style/user-style.md",
-  ]);
-  assert.deepEqual(records.map((record) => record.lineId), ["L0001", "L0002"]);
+  assert.deepEqual(
+    records.map((record) => record.path),
+    ["workflow/pr-discipline.md", "style/user-style.md"],
+  );
+  assert.deepEqual(
+    records.map((record) => record.lineId),
+    ["L0001", "L0002"],
+  );
   assert.equal(records[0]?.cacheKey, "workflow/pr-discipline.md");
   assert.deepEqual(records[0]?.retrievalTerms, ["review", "pull request"]);
   assert.equal(
@@ -84,13 +87,10 @@ test("buildMemoryIndexSearchCache reuses vectors by path when line ids shift", a
       model: "fake",
     });
 
-    assert.deepEqual(
-      embedded,
-      [
-        "New Top\nNew entry.",
-        "PR Discipline\nRepo changes must go through pull requests.",
-      ],
-    );
+    assert.deepEqual(embedded, [
+      "New Top\nNew entry.",
+      "PR Discipline\nRepo changes must go through pull requests.",
+    ]);
     assert.equal(cache.vectors.get("workflow/pr-discipline.md")?.length, 2);
 
     const raw = JSON.parse(await readFile(path.join(cacheDir, "memory-index.json"), "utf8")) as {
@@ -118,7 +118,12 @@ test("buildMemoryIndexSearchCache reuses unchanged path vectors even when line i
         return { vectors: texts.map(() => [1, 0]) };
       },
     };
-    await buildMemoryIndexSearchCache({ root, records, embeddingProvider: provider, model: "fake" });
+    await buildMemoryIndexSearchCache({
+      root,
+      records,
+      embeddingProvider: provider,
+      model: "fake",
+    });
 
     const shifted = parseMemoryIndexRecords(
       [
@@ -126,7 +131,12 @@ test("buildMemoryIndexSearchCache reuses unchanged path vectors even when line i
         "- [PR Discipline](workflow/pr-discipline.md) - Repo changes must go through pull requests. (type: workflow, path: workflow/pr-discipline.md)",
       ].join("\n"),
     );
-    await buildMemoryIndexSearchCache({ root, records: shifted, embeddingProvider: provider, model: "fake" });
+    await buildMemoryIndexSearchCache({
+      root,
+      records: shifted,
+      embeddingProvider: provider,
+      model: "fake",
+    });
 
     assert.equal(calls, 2, "only the new path is embedded on the second build");
   } finally {
@@ -156,7 +166,10 @@ test("buildMemoryIndexSearchCache writes cache atomically under concurrent build
       ),
     );
 
-    const raw = await readFile(path.join(root, ".memflywheel", "index", "memory-index.json"), "utf8");
+    const raw = await readFile(
+      path.join(root, ".memflywheel", "index", "memory-index.json"),
+      "utf8",
+    );
     const parsed = JSON.parse(raw) as { entries: Array<{ path: string }> };
     assert.deepEqual(parsed.entries.map((entry) => entry.path).sort(), [
       "context/alpha.md",
@@ -192,7 +205,7 @@ test("hybridSearchMemoryIndex returns top records without a no-result branch", a
     "Release PR Discipline\nChanges must go through pull requests.": [1, 0],
     "Tea Preference\nUser drinks green tea.": [0, 1],
   });
-  const cache = {
+  const _cache = {
     records,
     vectors: new Map(records.map((record) => [record.path, providerWithVectors({})])),
   };
@@ -211,7 +224,10 @@ test("hybridSearchMemoryIndex returns top records without a no-result branch", a
     limit: 2,
   });
 
-  assert.deepEqual(results.map((record) => record.path), ["workflow/pr.md", "preference/tea.md"]);
+  assert.deepEqual(
+    results.map((record) => record.path),
+    ["workflow/pr.md", "preference/tea.md"],
+  );
 });
 
 test("hybridSearchMemoryIndex ignores zero-score BM25 rows instead of letting path order override dense rank", async () => {
@@ -239,7 +255,10 @@ test("hybridSearchMemoryIndex ignores zero-score BM25 rows instead of letting pa
     limit: 1,
   });
 
-  assert.deepEqual(results.map((record) => record.path), ["preference/language.md"]);
+  assert.deepEqual(
+    results.map((record) => record.path),
+    ["preference/language.md"],
+  );
 });
 
 test("hybridSearchMemoryIndex boosts exact retrieval term matches", async () => {
@@ -265,5 +284,8 @@ test("hybridSearchMemoryIndex boosts exact retrieval term matches", async () => 
     limit: 1,
   });
 
-  assert.deepEqual(results.map((record) => record.path), ["identity/caroline.md"]);
+  assert.deepEqual(
+    results.map((record) => record.path),
+    ["identity/caroline.md"],
+  );
 });

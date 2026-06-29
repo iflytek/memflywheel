@@ -30,9 +30,19 @@ import {
 import { normalizeRelativePath, ensureMemoryDir } from "./paths.js";
 import { scanAllMemoryFiles, scanMemoryFiles, formatManifest } from "./scan.js";
 import { syncMemoryIndex, readMemoryIndex } from "./index-file.js";
-import { buildHealthFindings, buildTypeReviewPacket, type HealthFinding, type TypeReviewItem } from "./health.js";
+import {
+  buildHealthFindings,
+  buildTypeReviewPacket,
+  type HealthFinding,
+  type TypeReviewItem,
+} from "./health.js";
 import { relocateRootFiles } from "./extract.js";
-import { type FileTool, type FileToolContext, createFileTools, createMemoryFileToolContext } from "./file-tools.js";
+import {
+  type FileTool,
+  type FileToolContext,
+  createFileTools,
+  createMemoryFileToolContext,
+} from "./file-tools.js";
 import { markDreamConsolidated } from "./dream-state.js";
 
 export const DREAM_DEFAULT_MIN_HOURS = 24;
@@ -80,10 +90,7 @@ export type DreamAgentRunner = (input: {
  * (Near-duplicate merges / type re-judgement are the subagent's job — they need
  * semantics.)
  */
-export async function planDeterministic(
-  root: string,
-  entries: MemoryEntry[],
-): Promise<DreamOp[]> {
+export async function planDeterministic(root: string, entries: MemoryEntry[]): Promise<DreamOp[]> {
   const findings = await buildHealthFindings(root);
   const ops: DreamOp[] = [];
   const deletedDup = new Set<string>();

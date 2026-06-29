@@ -11,11 +11,11 @@ core-provided write tools.
 
 ```ts
 type ExtractionAgentRunner = (input: {
-  toolCtx: FileToolContext;     // bound to the held write lock
-  tools: FileTool[];            // read / write / edit / bash / glob / grep
-  messages: ExtractionMessage[];  // cleaned, windowed recent turns
-  manifest: string;               // formatted list of existing memories
-  root: string;                   // the memory root
+  toolCtx: FileToolContext; // bound to the held write lock
+  tools: FileTool[]; // read / write / edit / bash / glob / grep
+  messages: ExtractionMessage[]; // cleaned, windowed recent turns
+  manifest: string; // formatted list of existing memories
+  root: string; // the memory root
 }) => Promise<{ changed: string[] }>;
 ```
 
@@ -133,7 +133,7 @@ explicit user correction.
 4. **Window.** Clean the messages and select the window against the session cursor.
 5. **Run the subagent.** Build the bound tools + context (sharing the held lock) and `await`
    the `ExtractionAgentRunner`, which writes via the tools. If it throws, the run returns
-   `Failed` and the cursor is *not* advanced (so the same window is retried next time).
+   `Failed` and the cursor is _not_ advanced (so the same window is retried next time).
 6. **Relocate again, then sync.** Re-relocate stray files, rescan, and `syncMemoryIndex`.
 7. **Advance cursor + stamp.** Advance the cursor only on success and write `.last-extraction`.
 8. **Release + drain.** Release the lock and drain any queued runs.

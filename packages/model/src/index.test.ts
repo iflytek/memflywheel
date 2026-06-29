@@ -44,7 +44,7 @@ test("OpenAI mapper serializes canonical messages and parses tool calls into str
                   type: "function",
                   function: {
                     name: "write",
-                    arguments: "{\"filePath\":\"preference/tea.md\",\"content\":\"Green tea\"}",
+                    arguments: '{"filePath":"preference/tea.md","content":"Green tea"}',
                   },
                 },
               ],
@@ -65,7 +65,11 @@ test("OpenAI mapper serializes canonical messages and parses tool calls into str
 
   const response = await model.complete({
     messages: [
-      { role: "assistant", content: null, toolCalls: [{ id: "c1", name: "glob", input: { pattern: "**/*.md" } }] },
+      {
+        role: "assistant",
+        content: null,
+        toolCalls: [{ id: "c1", name: "glob", input: { pattern: "**/*.md" } }],
+      },
       { role: "tool", toolCallId: "c1", content: "(none)" },
     ],
     tools,
@@ -78,9 +82,9 @@ test("OpenAI mapper serializes canonical messages and parses tool calls into str
   assert.equal(body.tools[0]?.function.name, "write");
   assert.deepEqual(body.tools[0]?.function.parameters, toolSchema);
   assert.equal(
-    ((body.messages[0]?.tool_calls as Array<{ function: { arguments: string } }>)[0])?.function
+    (body.messages[0]?.tool_calls as Array<{ function: { arguments: string } }>)[0]?.function
       .arguments,
-    "{\"pattern\":\"**/*.md\"}",
+    '{"pattern":"**/*.md"}',
   );
   assert.equal(body.messages[1]?.tool_call_id, "c1");
 
@@ -191,10 +195,7 @@ test("OpenAI embeddings mapper calls /embeddings and returns canonical vectors",
     captured = JSON.parse(String(init?.body));
     return new Response(
       JSON.stringify({
-        data: [
-          { embedding: [0.1, 0.2, 0.3] },
-          { embedding: [0.4, 0.5, 0.6] },
-        ],
+        data: [{ embedding: [0.1, 0.2, 0.3] }, { embedding: [0.4, 0.5, 0.6] }],
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );

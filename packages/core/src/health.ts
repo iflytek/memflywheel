@@ -43,7 +43,10 @@ function stripLooseFrontmatter(content: string): string {
   if (lines[0]?.trim() !== "---") return normalizeContent(content).trim();
   const endIndex = lines.indexOf("---", 1);
   if (endIndex === -1 || endIndex > 30) return normalizeContent(content).trim();
-  return lines.slice(endIndex + 1).join("\n").trim();
+  return lines
+    .slice(endIndex + 1)
+    .join("\n")
+    .trim();
 }
 
 function normalizeBody(content: string): string {
@@ -170,7 +173,12 @@ export async function buildHealthFindings(root: string): Promise<HealthFinding[]
 
     if (!frontmatter.hasFrontmatter) {
       findings.push(
-        createFinding("error", "missing-frontmatter", [relativePath], "该文件缺少合法 frontmatter。"),
+        createFinding(
+          "error",
+          "missing-frontmatter",
+          [relativePath],
+          "该文件缺少合法 frontmatter。",
+        ),
       );
       continue;
     }

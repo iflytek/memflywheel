@@ -81,10 +81,7 @@ export class SecretRefusedError extends Error {
  * secret gate is OFF by default — privacy now leans on the extraction prompt,
  * Returns the redacted text.
  */
-export function enforceWritePrivacy(
-  text: string,
-  options?: { refuseSecrets?: boolean },
-): string {
+export function enforceWritePrivacy(text: string, options?: { refuseSecrets?: boolean }): string {
   const redacted = redactPrivateSpans(text);
   if (options?.refuseSecrets) {
     const findings = scanSecrets(redacted);

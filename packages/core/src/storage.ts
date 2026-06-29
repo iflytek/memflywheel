@@ -62,7 +62,9 @@ function validateFrontmatterFields(fm: MemoryFrontmatter): void {
     }
     for (const term of fm.retrieval_terms) {
       if (!term || !isSingleLineValue(term) || term.length > 80) {
-        throw new InvalidMemoryError("frontmatter.retrieval_terms items must be non-empty single-line values up to 80 chars");
+        throw new InvalidMemoryError(
+          "frontmatter.retrieval_terms items must be non-empty single-line values up to 80 chars",
+        );
       }
     }
   }
@@ -123,7 +125,9 @@ export async function writeMemoryDocument(
   // discard the only structured temporal field.
   if (doc.frontmatter.occurred_on) frontmatter.occurred_on = doc.frontmatter.occurred_on;
   if (doc.frontmatter.retrieval_terms?.length) {
-    frontmatter.retrieval_terms = Array.from(new Set(doc.frontmatter.retrieval_terms.map((term) => term.trim()).filter(Boolean)));
+    frontmatter.retrieval_terms = Array.from(
+      new Set(doc.frontmatter.retrieval_terms.map((term) => term.trim()).filter(Boolean)),
+    );
   }
 
   const serialized = serializeDocument({ frontmatter, body: safeBody });
@@ -192,7 +196,10 @@ export async function archiveMemoryDocument(
 }
 
 /** mtime in ms for a relativePath, or null if missing. */
-export async function memoryMtime(ctx: StorageContext, relativePath: string): Promise<number | null> {
+export async function memoryMtime(
+  ctx: StorageContext,
+  relativePath: string,
+): Promise<number | null> {
   const abs = resolveRelativePath(ctx.root, relativePath);
   if (!abs) return null;
   try {

@@ -48,7 +48,12 @@ description: Captures a repeatable release preparation review.
 `;
 
 function slug(name: string): string {
-  return `${name.toLowerCase().replace(/[^a-z0-9一-龥]+/g, "-").replace(/^-+|-+$/g, "") || "memory"}.md`;
+  return `${
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9一-龥]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "memory"
+  }.md`;
 }
 
 function writeMemoryArgs(input: {
@@ -139,88 +144,93 @@ function learnedSkillLoopModel(): CanonicalModelCompletion {
   let dreamStep = 0;
   return {
     complete: async (req) => {
-    const toolNames = new Set(req.tools.map((tool) => tool.name));
-    const system = req.messages.find((message) => message.role === "system")?.content ?? "";
+      const toolNames = new Set(req.tools.map((tool) => tool.name));
+      const system = req.messages.find((message) => message.role === "system")?.content ?? "";
 
-    if (system.includes("learned-skill evolution agent")) {
-      skillStep += 1;
-      if (skillStep === 1) {
-        return {
-          message: {
-            role: "assistant",
-            content: null,
-            toolCalls: [
-              toolCall("skill-write", "write", {
-                filePath: `${TARGET_SKILL}/SKILL.md`,
-                content: VALID_SKILL,
-              }),
-            ],
-          },
-          finishReason: "tool-calls",
-        };
+      if (system.includes("learned-skill evolution agent")) {
+        skillStep += 1;
+        if (skillStep === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [
+                toolCall("skill-write", "write", {
+                  filePath: `${TARGET_SKILL}/SKILL.md`,
+                  content: VALID_SKILL,
+                }),
+              ],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        // The model is NOT required to emit any skill coordination — the decision is
+        // derived from the file changes, and a real skill change automatically links back
+        // to memory (memoryAction=compress-memory), triggering the follow-up dream pass.
+        return STOP;
       }
-      // The model is NOT required to emit any skill coordination — the decision is
-      // derived from the file changes, and a real skill change automatically links back
-      // to memory (memoryAction=compress-memory), triggering the follow-up dream pass.
-      return STOP;
-    }
 
-    if (system.includes("consolidation engine")) {
-      dreamStep += 1;
-      if (dreamStep === 1) {
-        return {
-          message: {
-            role: "assistant",
-            content: null,
-            toolCalls: [
-              toolCall("memory-read", "read", { filePath: "workflow/release-prep.md" }),
-            ],
-          },
-          finishReason: "tool-calls",
-        };
+      if (system.includes("consolidation engine")) {
+        dreamStep += 1;
+        if (dreamStep === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [
+                toolCall("memory-read", "read", { filePath: "workflow/release-prep.md" }),
+              ],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        if (dreamStep === 2) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [
+                toolCall("memory-update", "edit", {
+                  filePath: "workflow/release-prep.md",
+                  oldString:
+                    "Step 1: inspect metadata.\nStep 2: run CI.\nStep 3: scan public hygiene.",
+                  newString: `Release prep is handled by ${TARGET_SKILL}. Use that learned skill when release readiness comes up.`,
+                }),
+              ],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        return STOP;
       }
-      if (dreamStep === 2) {
-        return {
-          message: {
-            role: "assistant",
-            content: null,
-            toolCalls: [
-              toolCall("memory-update", "edit", {
-                filePath: "workflow/release-prep.md",
-                oldString: "Step 1: inspect metadata.\nStep 2: run CI.\nStep 3: scan public hygiene.",
-                newString: `Release prep is handled by ${TARGET_SKILL}. Use that learned skill when release readiness comes up.`,
-              }),
-            ],
-          },
-          finishReason: "tool-calls",
-        };
-      }
-      return STOP;
-    }
 
-    if (system.includes("memory extraction engine")) {
-      extractionStep += 1;
-      if (extractionStep === 1) {
-        return {
-          message: {
-            role: "assistant",
-            content: null,
-            toolCalls: [
-              toolCall("memory-save", "write", writeMemoryArgs({
-                type: "workflow",
-                name: "release prep",
-                description: "reusable release workflow",
-                body: "Step 1: inspect metadata.\nStep 2: run CI.\nStep 3: scan public hygiene.",
-              })),
-            ],
-          },
-          finishReason: "tool-calls",
-        };
+      if (system.includes("memory extraction engine")) {
+        extractionStep += 1;
+        if (extractionStep === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [
+                toolCall(
+                  "memory-save",
+                  "write",
+                  writeMemoryArgs({
+                    type: "workflow",
+                    name: "release prep",
+                    description: "reusable release workflow",
+                    body: "Step 1: inspect metadata.\nStep 2: run CI.\nStep 3: scan public hygiene.",
+                  }),
+                ),
+              ],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        return STOP;
       }
-      return STOP;
-    }
 
-    throw new Error(`unexpected tool request: ${[...toolNames].join(", ")}`);
+      throw new Error(`unexpected tool request: ${[...toolNames].join(", ")}`);
     },
   };
 }
@@ -409,7 +419,10 @@ test("createMemFlywheelHarnessRuntime learnedSkills assembly runs extraction, sk
 
   const skillFile = await readFile(path.join(skillsRoot, TARGET_SKILL, "SKILL.md"), "utf8");
   assert.match(skillFile, /## Procedure/);
-  const memoryFile = await readFile(path.join(root, "memory", "workflow", "release-prep.md"), "utf8");
+  const memoryFile = await readFile(
+    path.join(root, "memory", "workflow", "release-prep.md"),
+    "utf8",
+  );
   assert.match(memoryFile, new RegExp(TARGET_SKILL));
   assert.doesNotMatch(memoryFile, /Step 1:/);
 
@@ -458,7 +471,11 @@ test("createMemFlywheelHarnessRuntime decline (no tool calls) writes nothing", a
 
 test("disabled scribe makes every hook a no-op", async () => {
   const root = await tempDir();
-  const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root, enabled: false });
+  const { scribe } = createMemFlywheelHarnessRuntime({
+    model: savingModel(),
+    root,
+    enabled: false,
+  });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   await scribe.onTurnEnd({

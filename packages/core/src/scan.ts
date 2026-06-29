@@ -148,7 +148,9 @@ export function formatManifest(entries: MemoryEntry[]): string {
     .map((entry) => {
       const date = new Date(entry.mtime).toISOString().slice(0, 10);
       const entryPath = entry.relativePath || entry.filename;
-      const terms = entry.retrievalTerms?.length ? `; terms: ${entry.retrievalTerms.join(", ")}` : "";
+      const terms = entry.retrievalTerms?.length
+        ? `; terms: ${entry.retrievalTerms.join(", ")}`
+        : "";
       return `- [${entry.type}] ${entryPath} (${date}): ${entry.description}${terms}`;
     })
     .join("\n");

@@ -48,9 +48,13 @@ import {
 // ───────────────────────────── config ──────────────────────────────────────
 
 const ENDPOINT =
-  process.env.MEMFLYWHEEL_LLM_ENDPOINT ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
-const MODEL = process.env.MEMFLYWHEEL_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-const API_KEY = process.env.MEMFLYWHEEL_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
+  process.env.MEMFLYWHEEL_LLM_ENDPOINT ??
+  process.env.DEEPSEEK_BASE_URL ??
+  "https://api.deepseek.com/v1";
+const MODEL =
+  process.env.MEMFLYWHEEL_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
+const API_KEY =
+  process.env.MEMFLYWHEEL_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
 const HAVE_KEY = Boolean(API_KEY);
 const CAPTURE_PROXY = HAVE_KEY && process.env.MEMFLYWHEEL_CAPTURE_PROXY !== "0";
 let ACTIVE_ENDPOINT = ENDPOINT;
@@ -98,7 +102,7 @@ function requestBodySummary(body) {
     temperature: body?.temperature,
     messageRoles: messages.map((m) => m?.role),
     promptHead: messages
-      .map((m) => typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? ""))
+      .map((m) => (typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? "")))
       .join("\n")
       .slice(0, 1200),
     toolNames: tools.map((tool) => tool?.function?.name ?? tool?.name).filter(Boolean),
@@ -138,7 +142,10 @@ async function startCaptureProxy() {
         body: req.method === "GET" || req.method === "HEAD" ? undefined : raw,
       });
       entry.status = upstreamResponse.status;
-      res.writeHead(upstreamResponse.status, Object.fromEntries(upstreamResponse.headers.entries()));
+      res.writeHead(
+        upstreamResponse.status,
+        Object.fromEntries(upstreamResponse.headers.entries()),
+      );
       res.end(Buffer.from(await upstreamResponse.arrayBuffer()));
     } catch (error) {
       entry.error = redactString(error?.message ?? String(error));
@@ -164,7 +171,8 @@ function banner(t) {
 }
 function record(name, status, detail = "") {
   results.push({ name, status });
-  const icon = status === "pass" ? "✅" : status === "warn" ? "⚠️ " : status === "skip" ? "⏭️ " : "❌";
+  const icon =
+    status === "pass" ? "✅" : status === "warn" ? "⚠️ " : status === "skip" ? "⏭️ " : "❌";
   console.log(`  ${icon} ${name}${detail ? " — " + detail : ""}`);
 }
 function check(name, cond, detail = "") {
@@ -211,7 +219,9 @@ async function dumpRoot(label, root) {
   const files = await listFiles(root);
   console.log(`\n  ── ${label}: ${root}`);
   console.log("  MEMORY.md:\n" + (index ? index.replace(/^/gm, "    ") : "    (empty)"));
-  console.log(`  files (${files.length}): ${files.map((f) => path.relative(root, f)).join(", ") || "(none)"}`);
+  console.log(
+    `  files (${files.length}): ${files.map((f) => path.relative(root, f)).join(", ") || "(none)"}`,
+  );
   return { index, files };
 }
 
@@ -252,14 +262,21 @@ const factsTranscript = [
 ];
 
 const procedureTranscript = [
-  { role: "user", text: "把 MemFlywheel 的发布流程完整跑一遍。这是我的长期发布约定，必须沉淀成以后可复用的发布 skill。" },
+  {
+    role: "user",
+    text: "把 MemFlywheel 的发布流程完整跑一遍。这是我的长期发布约定，必须沉淀成以后可复用的发布 skill。",
+  },
   {
     role: "assistant",
     text: "执行发布流程。",
     toolCalls: [
       { name: "bash", input: { command: "pnpm -r build" }, output: "build ok" },
       { name: "bash", input: { command: "pnpm -r test" }, output: "242 passed" },
-      { name: "bash", input: { command: "npm publish --access public" }, output: "+ memflywheel@0.1.0" },
+      {
+        name: "bash",
+        input: { command: "npm publish --access public" },
+        output: "+ memflywheel@0.1.0",
+      },
     ],
   },
   {
@@ -300,7 +317,8 @@ const secretTranscript = [
     role: "user",
     text:
       "存一下我的发布习惯：用 GitHub Actions 发布。我的临时 token 是 " +
-      "sk-" + "ABCDEF0123456789ABCDEF（别存这个）。",
+      "sk-" +
+      "ABCDEF0123456789ABCDEF（别存这个）。",
   },
   { role: "assistant", text: "好的，发布习惯已记，敏感凭据不会保存。" },
 ];
@@ -336,7 +354,10 @@ async function groupA() {
   console.log("  onTurnEnd:", JSON.stringify(turn).slice(0, 200));
   const after = await dumpRoot("after extraction", root);
   check("A2 MEMORY.md non-empty", after.index.trim().length > 0);
-  check("A2 a memory file written", after.files.some((f) => !f.endsWith("MEMORY.md")));
+  check(
+    "A2 a memory file written",
+    after.files.some((f) => !f.endsWith("MEMORY.md")),
+  );
 
   banner("A3 · 跨轮召回：上轮记忆注入下轮 prompt");
   const ctx = await scribe.onPromptBuild({ sessionId });
@@ -348,7 +369,10 @@ async function groupA() {
     /identity|身份|name|Kai/i,
     /context|项目|MemFlywheel|deployment|ap-singapore|singapore/i,
   ].filter((re) => re.test(recall)).length;
-  check("A3 prior memory recalled", /可用记忆条目|Available memories/i.test(recall) && recalledSignals >= 2);
+  check(
+    "A3 prior memory recalled",
+    /可用记忆条目|Available memories/i.test(recall) && recalledSignals >= 2,
+  );
 
   banner("A4 · idle → dream 整理，索引仍一致");
   let dream;
@@ -375,7 +399,12 @@ async function groupA() {
 
 async function groupB() {
   if (!HAVE_KEY) {
-    for (const n of ["B1 skill evolution", "B2 skill route recall", "B3 trajectory-derived update", "B4 memory→cue"])
+    for (const n of [
+      "B1 skill evolution",
+      "B2 skill route recall",
+      "B3 trajectory-derived update",
+      "B4 memory→cue",
+    ])
       record(n, "skip", "no key");
     return null;
   }
@@ -399,9 +428,7 @@ async function groupB() {
             : "Create a reusable release runbook learned skill from this successful release trajectory.",
           requiredDecision: failure ? "update" : "create",
           targetSkill: "memflywheel-learned-release-runbook",
-          requiredFiles: [
-            "memflywheel-learned-release-runbook/SKILL.md",
-          ],
+          requiredFiles: ["memflywheel-learned-release-runbook/SKILL.md"],
           lastExtraction: {
             result: input.lastExtraction.result,
             skipped: input.lastExtraction.skipped,
@@ -430,14 +457,25 @@ async function groupB() {
   }
   console.log("  onTurnEnd:", JSON.stringify(t1).slice(0, 400));
   let skillFiles = (await listFiles(skillsRoot)).filter((f) => /SKILL\.md$/i.test(f));
-  for (const f of skillFiles) console.log(`\n  ── ${path.relative(skillsRoot, f)}\n` + (await readSafe(f)).replace(/^/gm, "    "));
-  record("B1 a learned skill package was created", skillFiles.length > 0 ? "pass" : "warn", skillFiles.length ? "" : "model declined — inspect onTurnEnd");
+  for (const f of skillFiles)
+    console.log(
+      `\n  ── ${path.relative(skillsRoot, f)}\n` + (await readSafe(f)).replace(/^/gm, "    "),
+    );
+  record(
+    "B1 a learned skill package was created",
+    skillFiles.length > 0 ? "pass" : "warn",
+    skillFiles.length ? "" : "model declined — inspect onTurnEnd",
+  );
 
   banner("B2 · 技能路由召回：新技能以 name+path 出现在 skillPrelude");
   const ctx = await scribe.onPromptBuild({ sessionId });
   const sp = ctx.skillPreludePrompt ?? "";
   console.log("  skillPrelude:\n" + (sp ? sp.replace(/^/gm, "    ") : "    (empty)"));
-  record("B2 skill route present (name + path)", /## 可用技能/.test(sp) && /path:/.test(sp) ? "pass" : "warn", sp ? "" : "depends on B1");
+  record(
+    "B2 skill route present (name + path)",
+    /## 可用技能/.test(sp) && /path:/.test(sp) ? "pass" : "warn",
+    sp ? "" : "depends on B1",
+  );
 
   banner("B3 · 轨迹派生失败 → 技能更新（纯看工具轨迹）");
   const before = skillFiles.length ? await readSafe(skillFiles[0]) : "";
@@ -453,7 +491,9 @@ async function groupB() {
   record(
     "B3 evolution reacted to the failing trajectory",
     before && after && before !== after ? "pass" : "warn",
-    before === after ? "skill unchanged — model may have declined; inspect output" : "skill updated",
+    before === after
+      ? "skill unchanged — model may have declined; inspect output"
+      : "skill updated",
   );
 
   banner("B4 · memory → routing cue：流程型记忆压成指向技能的 cue（人工核查）");
@@ -461,7 +501,11 @@ async function groupB() {
   console.log("  MEMORY.md:\n" + (mem ? mem.replace(/^/gm, "    ") : "    (empty)"));
   // Tolerant: assert memory does NOT duplicate the full numbered procedure verbatim.
   const dupSteps = /1\)\s*pnpm -r build[\s\S]*2\)\s*pnpm -r test[\s\S]*3\)/.test(mem);
-  record("B4 memory keeps a cue, not the full procedure", dupSteps ? "warn" : "pass", dupSteps ? "full steps still in memory — inspect" : "");
+  record(
+    "B4 memory keeps a cue, not the full procedure",
+    dupSteps ? "warn" : "pass",
+    dupSteps ? "full steps still in memory — inspect" : "",
+  );
 
   await scribe.onSessionEnd({ sessionId });
   return { root, skillsRoot };
@@ -479,7 +523,11 @@ async function groupC() {
     });
     const forbidden = ["execute", "run", "spawn", "load", "invoke", "exec"];
     const storeClean = forbidden.every((m) => typeof store[m] !== "function");
-    check("C1 store exposes no execution method", storeClean, `store keys: ${Object.keys(store).join(",")}`);
+    check(
+      "C1 store exposes no execution method",
+      storeClean,
+      `store keys: ${Object.keys(store).join(",")}`,
+    );
     const { scribe } = createMemFlywheelHarnessRuntime({ root, mode: "recall-only" });
     const scribeClean = forbidden.every((m) => typeof scribe[m] !== "function");
     check("C1 scribe exposes no execution method", scribeClean);
@@ -488,39 +536,72 @@ async function groupC() {
   banner("C2 · 能力分级：classifyHostCapabilities");
   {
     const all = createCapabilitySet([
-      "prompt-build", "turn-end", "session-end", "idle",
-      "single-tool-completion", "agentic-tool-loop", "tool-trajectory",
+      "prompt-build",
+      "turn-end",
+      "session-end",
+      "idle",
+      "single-tool-completion",
+      "agentic-tool-loop",
+      "tool-trajectory",
     ]);
     check("C2 full caps → skill-loop", classifyHostCapabilities(all) === "skill-loop");
-    check("C2 drop tool-trajectory → memory-loop",
-      classifyHostCapabilities(createCapabilitySet(["prompt-build", "turn-end", "agentic-tool-loop"])) === "memory-loop");
-    check("C2 only prompt-build → recall-only",
-      classifyHostCapabilities(createCapabilitySet(["prompt-build"])) === "recall-only");
+    check(
+      "C2 drop tool-trajectory → memory-loop",
+      classifyHostCapabilities(
+        createCapabilitySet(["prompt-build", "turn-end", "agentic-tool-loop"]),
+      ) === "memory-loop",
+    );
+    check(
+      "C2 only prompt-build → recall-only",
+      classifyHostCapabilities(createCapabilitySet(["prompt-build"])) === "recall-only",
+    );
     check("C2 empty → none", classifyHostCapabilities(createCapabilitySet([])) === "none");
     const stubPi = { on: () => () => {} };
     const stubModel = { complete: async () => ({ message: { role: "assistant", content: null } }) };
     const port = createPiHarnessPort(stubPi, { model: stubModel });
-    check("C2 Pi port classifies as skill-loop", classifyHostCapabilities(port.capabilities) === "skill-loop");
+    check(
+      "C2 Pi port classifies as skill-loop",
+      classifyHostCapabilities(port.capabilities) === "skill-loop",
+    );
   }
 
   banner("C3 · fail-fast：缺 model / 缺能力 → 显式抛错（无静默降级）");
   {
     const root = await mkdtemp(path.join(tmpdir(), "ms-C3-"));
-    expectThrows("C3 no model & not recall-only → throws",
-      () => createMemFlywheelHarnessRuntime({ root }), /canonical model/i);
+    expectThrows(
+      "C3 no model & not recall-only → throws",
+      () => createMemFlywheelHarnessRuntime({ root }),
+      /canonical model/i,
+    );
     let ok = true;
-    try { createMemFlywheelHarnessRuntime({ root, mode: "recall-only" }); } catch { ok = false; }
+    try {
+      createMemFlywheelHarnessRuntime({ root, mode: "recall-only" });
+    } catch {
+      ok = false;
+    }
     check("C3 recall-only constructs without a model", ok);
-    expectThrows("C3 requireHostCapabilities throws on missing cap",
-      () => requireHostCapabilities("test", createCapabilitySet(["prompt-build"]), ["prompt-build", "turn-end"]),
-      /missing host capabilities/i);
+    expectThrows(
+      "C3 requireHostCapabilities throws on missing cap",
+      () =>
+        requireHostCapabilities("test", createCapabilitySet(["prompt-build"]), [
+          "prompt-build",
+          "turn-end",
+        ]),
+      /missing host capabilities/i,
+    );
   }
 
   banner("C4 · 校验边界：validateLearnedSkillPackage 接受合法、拒绝非法");
   {
     const valid = {
       slug: "release-runbook",
-      files: { "SKILL.md": validSkillMd("release-runbook", "Release Runbook", "Use when publishing MemFlywheel to npm.") },
+      files: {
+        "SKILL.md": validSkillMd(
+          "release-runbook",
+          "Release Runbook",
+          "Use when publishing MemFlywheel to npm.",
+        ),
+      },
     };
     let okValid = true;
     try {
@@ -532,21 +613,36 @@ async function groupC() {
     }
     check("C4 valid package passes", okValid);
 
-    expectThrows("C4 missing SKILL.md → rejected",
+    expectThrows(
+      "C4 missing SKILL.md → rejected",
       () => validateLearnedSkillPackage({ slug: "x", files: { "references/a.md": "hi" } }),
-      /SKILL\.md/);
-    expectThrows("C4 missing required section → rejected",
-      () => validateLearnedSkillPackage({
+      /SKILL\.md/,
+    );
+    expectThrows("C4 missing required section → rejected", () =>
+      validateLearnedSkillPackage({
         slug: "x",
-        files: { "SKILL.md": "---\nname: memflywheel-learned-x\ndisplay_name: X\ndescription: d\n---\n\n## Use Cases\n- a\n" },
-      }));
-    expectThrows("C4 forbidden public name → rejected",
-      () => validateLearnedSkillPackage({
+        files: {
+          "SKILL.md":
+            "---\nname: memflywheel-learned-x\ndisplay_name: X\ndescription: d\n---\n\n## Use Cases\n- a\n",
+        },
+      }),
+    );
+    expectThrows("C4 forbidden public name → rejected", () =>
+      validateLearnedSkillPackage({
         slug: "y",
         forbiddenPublicNames: ["AcmeInternal"],
-        files: { "SKILL.md": validSkillMd("y", "Y", "desc").replace("第一步。", "参考 AcmeInternal 内部实现。") },
-      }));
-    check("C4 LearnedSkillValidationError is exported", typeof LearnedSkillValidationError === "function");
+        files: {
+          "SKILL.md": validSkillMd("y", "Y", "desc").replace(
+            "第一步。",
+            "参考 AcmeInternal 内部实现。",
+          ),
+        },
+      }),
+    );
+    check(
+      "C4 LearnedSkillValidationError is exported",
+      typeof LearnedSkillValidationError === "function",
+    );
   }
 
   banner("C6 · skillsRoot 可达性：路由 path 相对 skillsRoot 且可解析到真实文件");
@@ -555,7 +651,10 @@ async function groupC() {
     const skillsRoot = path.join(root, "skills");
     const dir = path.join(skillsRoot, "memflywheel-learned-demo-skill");
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, "SKILL.md"), validSkillMd("demo-skill", "Demo Skill", "Use when running the demo."));
+    await writeFile(
+      path.join(dir, "SKILL.md"),
+      validSkillMd("demo-skill", "Demo Skill", "Use when running the demo."),
+    );
     const recall = createLearnedSkillRecallProvider({ skillsRoot });
     const packet = await recall({ sessionId: "x" });
     const prelude = buildLearnedSkillPrelude(packet);
@@ -564,8 +663,14 @@ async function groupC() {
     check("C6 route includes a path", Boolean(m));
     if (m) {
       const abs = path.resolve(skillsRoot, m[1]);
-      const exists = await readFile(abs, "utf8").then(() => true).catch(() => false);
-      check("C6 path is relative + resolves under skillsRoot to a real file", !path.isAbsolute(m[1]) && exists, abs);
+      const exists = await readFile(abs, "utf8")
+        .then(() => true)
+        .catch(() => false);
+      check(
+        "C6 path is relative + resolves under skillsRoot to a real file",
+        !path.isAbsolute(m[1]) && exists,
+        abs,
+      );
     }
   }
 }
@@ -589,7 +694,14 @@ async function groupD() {
   }
   record("D pi packages resolvable", "pass");
 
-  const { createAgentSession, DefaultResourceLoader, AuthStorage, ModelRegistry, SessionManager, SettingsManager } = pic;
+  const {
+    createAgentSession,
+    DefaultResourceLoader,
+    AuthStorage,
+    ModelRegistry,
+    SessionManager,
+    SettingsManager,
+  } = pic;
   const { completeSimple } = pai;
   const root = await mkdtemp(path.join(tmpdir(), "ms-D-"));
   const agentDir = path.join(root, "agent");
@@ -609,9 +721,14 @@ async function groupD() {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 65536,
   };
-  check("D DeepSeek model constructed for Pi", model.api === "openai-completions" && model.baseUrl === ACTIVE_ENDPOINT);
+  check(
+    "D DeepSeek model constructed for Pi",
+    model.api === "openai-completions" && model.baseUrl === ACTIVE_ENDPOINT,
+  );
 
-  let injections = 0, turnEnds = 0, toolEvents = 0;
+  let injections = 0,
+    turnEnds = 0,
+    toolEvents = 0;
 
   const extension = (pi) => {
     const originalOn = pi.on.bind(pi);
@@ -625,27 +742,36 @@ async function groupD() {
     };
     const port = createPiHarnessPort(pi, { completeSimple });
     const runtime = createMemFlywheelHarnessRuntime({ port, root });
-    pi.on("tool_call", async () => { toolEvents += 1; });
-    pi.on("tool_result", async () => { toolEvents += 1; });
+    pi.on("tool_call", async () => {
+      toolEvents += 1;
+    });
+    pi.on("tool_result", async () => {
+      toolEvents += 1;
+    });
     return runtime.dispose;
   };
 
   const resourceLoader = new DefaultResourceLoader({
-    cwd: root, agentDir,
+    cwd: root,
+    agentDir,
     settingsManager: SettingsManager.create(root, agentDir),
     extensionFactories: [extension],
   });
   await resourceLoader.reload();
 
   const { session } = await createAgentSession({
-    cwd: root, agentDir, model,
-    authStorage, modelRegistry, resourceLoader,
+    cwd: root,
+    agentDir,
+    model,
+    authStorage,
+    modelRegistry,
+    resourceLoader,
     sessionManager: SessionManager.inMemory(root),
   });
   try {
     await session.prompt(
       "先使用 Pi 原生 bash 工具执行 `pwd`；" +
-      "然后记住：我叫 Kai，做 MemFlywheel，喝美式不加糖。最后用一句话给我今天的建议。",
+        "然后记住：我叫 Kai，做 MemFlywheel，喝美式不加糖。最后用一句话给我今天的建议。",
     );
   } catch (err) {
     record("D real turn completed", "fail", `session.prompt threw: ${err?.message ?? err}`);
@@ -667,16 +793,27 @@ function verifyProxyCapture() {
   const allToolNames = new Set(proxyLog.flatMap((entry) => entry.summary?.toolNames ?? []));
   const promptText = proxyLog.map((entry) => entry.summary?.promptHead ?? "").join("\n");
   const serialized = JSON.stringify(proxyLog);
-  check("P extraction prompt observed", /memory extraction engine|Recent conversation|Existing memories/i.test(promptText));
-  check("P file tools exposed", ["read", "write", "edit", "bash", "glob", "grep"].every((name) => allToolNames.has(name)),
-    `tools=${[...allToolNames].sort().join(",")}`);
+  check(
+    "P extraction prompt observed",
+    /memory extraction engine|Recent conversation|Existing memories/i.test(promptText),
+  );
+  check(
+    "P file tools exposed",
+    ["read", "write", "edit", "bash", "glob", "grep"].every((name) => allToolNames.has(name)),
+    `tools=${[...allToolNames].sort().join(",")}`,
+  );
   check("P no API key in captured logs", !API_KEY || !serialized.includes(API_KEY));
-  check("P no bearer secret in captured logs", !/Bearer\s+sk-|sk-[A-Za-z0-9._-]{12,}/.test(serialized));
+  check(
+    "P no bearer secret in captured logs",
+    !/Bearer\s+sk-|sk-[A-Za-z0-9._-]{12,}/.test(serialized),
+  );
   for (const [i, entry] of proxyLog.slice(0, 8).entries()) {
     console.log(
       `  #${i + 1} ${entry.method} ${entry.url} status=${entry.status ?? "n/a"} model=${entry.summary?.model ?? "n/a"} tools=${(entry.summary?.toolNames ?? []).join(",") || "(none)"}`,
     );
-    console.log(`     roles=${(entry.summary?.messageRoles ?? []).join(",")} prompt=${(entry.summary?.promptHead ?? "").replace(/\s+/g, " ").slice(0, 180)}`);
+    console.log(
+      `     roles=${(entry.summary?.messageRoles ?? []).join(",")} prompt=${(entry.summary?.promptHead ?? "").replace(/\s+/g, " ").slice(0, 180)}`,
+    );
   }
 }
 
@@ -688,13 +825,15 @@ async function main() {
   if (CAPTURE_PROXY) {
     proxy = await startCaptureProxy();
   }
-  console.log(`MemFlywheel × Pi E2E — model=${MODEL} endpoint=${ACTIVE_ENDPOINT} key=${HAVE_KEY ? "yes" : "NO (only group C runs)"}`);
+  console.log(
+    `MemFlywheel × Pi E2E — model=${MODEL} endpoint=${ACTIVE_ENDPOINT} key=${HAVE_KEY ? "yes" : "NO (only group C runs)"}`,
+  );
   if (proxy) console.log(`Proxy capture enabled: ${proxy.url} -> ${ENDPOINT}`);
 
   try {
-    await groupC();            // boundaries — always (deterministic, no key)
-    a = await groupA();        // memory loop — A1 always, A2+ need key
-    await groupB();            // skill loop — needs key
+    await groupC(); // boundaries — always (deterministic, no key)
+    a = await groupA(); // memory loop — A1 always, A2+ need key
+    await groupB(); // skill loop — needs key
     if (process.env.PI_REAL === "1") await groupD();
   } catch (error) {
     record("fatal", "fail", error?.message ?? String(error));
@@ -706,10 +845,13 @@ async function main() {
   banner("SUMMARY");
   const by = (s) => results.filter((r) => r.status === s).length;
   for (const r of results) {
-    const icon = r.status === "pass" ? "✅" : r.status === "warn" ? "⚠️ " : r.status === "skip" ? "⏭️ " : "❌";
+    const icon =
+      r.status === "pass" ? "✅" : r.status === "warn" ? "⚠️ " : r.status === "skip" ? "⏭️ " : "❌";
     console.log(`  ${icon} ${r.name}`);
   }
-  console.log(`\n  ${by("pass")} pass · ${by("warn")} warn · ${by("skip")} skip · ${by("fail")} fail`);
+  console.log(
+    `\n  ${by("pass")} pass · ${by("warn")} warn · ${by("skip")} skip · ${by("fail")} fail`,
+  );
   if (a) console.log(`  memory root: ${a}`);
   process.exit(by("fail") > 0 ? 1 : 0);
 }

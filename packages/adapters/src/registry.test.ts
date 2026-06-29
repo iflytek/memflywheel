@@ -8,10 +8,14 @@ import type { MemFlywheelHook } from "./adapter.js";
 const REQUIRED_HOOKS: MemFlywheelHook[] = ["onPromptBuild", "onTurnEnd"];
 
 test("registry contains all six built-in adapters with unique ids", () => {
-  assert.deepEqual(
-    adapterIds().sort(),
-    ["claude-code", "codex", "hermes", "openclaw", "opencode", "pi"],
-  );
+  assert.deepEqual(adapterIds().sort(), [
+    "claude-code",
+    "codex",
+    "hermes",
+    "openclaw",
+    "opencode",
+    "pi",
+  ]);
   assert.equal(new Set(adapterIds()).size, ADAPTERS.length);
 });
 

@@ -10,7 +10,7 @@ import {
 } from "./recall.js";
 import { makeRoot, cleanup, writeFixture } from "./test-helpers.js";
 
-function fixedEmbeddingProvider(vector: number[]): EmbeddingProvider {
+function _fixedEmbeddingProvider(vector: number[]): EmbeddingProvider {
   return {
     async embed({ texts }) {
       return { vectors: texts.map(() => vector) };
@@ -61,7 +61,12 @@ test("buildMemoryIndexPrompt wraps index in system-reminder", () => {
 test("buildContext returns two segments and full index", async () => {
   const root = await makeRoot();
   try {
-    await writeFixture(root, "identity", "u.md", { name: "用户称呼", description: "称呼", body: "叫小钟", mtime: 1 });
+    await writeFixture(root, "identity", "u.md", {
+      name: "用户称呼",
+      description: "称呼",
+      body: "叫小钟",
+      mtime: 1,
+    });
     const result = await buildContext({ root });
     assert.equal(result.enabled, true);
     assert.ok(result.systemPrompt.includes("# 记忆"));

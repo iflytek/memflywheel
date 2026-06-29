@@ -29,7 +29,7 @@ place for answer-bearing routing phrases that should influence pre-recall withou
 the body. If no provider is configured, MemFlywheel uses the full/truncated index path. If the
 provider is configured as `required` but absent, setup fails fast.
 
-The index lines are *cues*, not facts — they tell the model what exists so it can decide
+The index lines are _cues_, not facts — they tell the model what exists so it can decide
 whether to open a body with the host's own read tool.
 
 ## Two-segment injection
@@ -81,7 +81,7 @@ The index can grow past the model's useful context, so it is bounded before inje
 - **Line cap:** 200 lines.
 - **Byte cap:** 25 000 UTF-8 bytes.
 - **Marker:** when truncated, a comment is appended telling the model it may `Read MEMORY.md`
-  to see the rest — and the system rules say *not* to re-read it otherwise.
+  to see the rest — and the system rules say _not_ to re-read it otherwise.
 
 Aging hints (30 days, `context`/`ambient` only) are appended to individual lines so the model
 can weigh staleness when deciding whether to act on or re-verify a memory.
@@ -115,7 +115,7 @@ The model:
 
 - Treats each line as a cue and ignores lines that are not relevant to the current request.
 - Opens a body with `Read` only when a memory is clearly relevant — including when it affects
-  *how* to answer (structure, defaults, terminology, collaboration path), not only *whether*
+  _how_ to answer (structure, defaults, terminology, collaboration path), not only _whether_
   it can answer.
 - Applies what it reads, and never tells the user that it consulted memory.
 

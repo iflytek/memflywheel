@@ -180,8 +180,7 @@ export async function buildContext(opts: {
     minRecords,
   });
   const fitsFullIndex =
-    records.length <= minRecords &&
-    Buffer.byteLength(rawIndex, "utf8") <= INDEX_MAX_BYTES;
+    records.length <= minRecords && Buffer.byteLength(rawIndex, "utf8") <= INDEX_MAX_BYTES;
   if (fitsFullIndex) {
     emit({
       stage: "skip",
@@ -207,7 +206,12 @@ export async function buildContext(opts: {
     });
     emit({ stage: "cache-complete", mode, records: cache.records.length });
     stage = "search-start";
-    emit({ stage: "search-start", mode, records: cache.records.length, limit: retrieval.limit ?? 30 });
+    emit({
+      stage: "search-start",
+      mode,
+      records: cache.records.length,
+      limit: retrieval.limit ?? 30,
+    });
     selected = await hybridSearchMemoryIndex({
       query: opts.query,
       records: cache.records,

@@ -100,7 +100,9 @@ export function buildDreamAgentUserMessage(input: {
     lines.push("(none)");
   } else {
     for (const finding of input.health) {
-      lines.push(`- [${finding.severity}] ${finding.code}: ${finding.paths.join(", ")} — ${finding.message}`);
+      lines.push(
+        `- [${finding.severity}] ${finding.code}: ${finding.paths.join(", ")} — ${finding.message}`,
+      );
     }
   }
   lines.push("");

@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { scanAllMemoryFiles, scanMemoryFiles, readAllMemoryContents, formatManifest } from "./scan.js";
+import {
+  scanAllMemoryFiles,
+  scanMemoryFiles,
+  readAllMemoryContents,
+  formatManifest,
+} from "./scan.js";
 import { makeRoot, cleanup, writeFixture, writeRaw } from "./test-helpers.js";
 
 test("scanMemoryFiles finds typed files, skips reserved/hidden/invalid", async () => {

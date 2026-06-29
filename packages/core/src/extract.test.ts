@@ -209,7 +209,8 @@ test("runExtractionSession appends source refs to multiple memories from the sam
     assert.equal(result, ExtractionResult.Completed);
     const release = await readFile(path.join(root, "workflow", "release.md"), "utf8");
     const tone = await readFile(path.join(root, "preference", "tone.md"), "utf8");
-    const sourceRef = release.match(/- (?<ref>\.memflywheel\/sources\/[^#]+\.jsonl#L\d+-L\d+)/)?.groups?.ref;
+    const sourceRef = release.match(/- (?<ref>\.memflywheel\/sources\/[^#]+\.jsonl#L\d+-L\d+)/)
+      ?.groups?.ref;
     assert.ok(sourceRef);
     assert.ok(tone.includes(sourceRef));
 
@@ -286,7 +287,8 @@ test("runExtractionSession writes only new messages to source traces, not cursor
 
     const second = await readFile(path.join(root, "workflow", "second.md"), "utf8");
     assert.match(second, /\.memflywheel\/sources\/session-[a-f0-9]+\.jsonl#L3-L4/);
-    const sourcePath = second.match(/- (?<path>\.memflywheel\/sources\/[^#]+\.jsonl)#L3-L4/)?.groups?.path;
+    const sourcePath = second.match(/- (?<path>\.memflywheel\/sources\/[^#]+\.jsonl)#L3-L4/)?.groups
+      ?.path;
     assert.ok(sourcePath);
     const lines = (await readFile(path.join(root, sourcePath), "utf8")).trimEnd().split("\n");
     assert.equal(lines.length, 4);

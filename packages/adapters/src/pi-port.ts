@@ -108,8 +108,7 @@ export type PiCompleteSimple = (
 ) => Promise<PiAssistantMessage>;
 
 export type PiSessionIdResolver =
-  | string
-  | ((input: { event?: unknown; context?: PiExtensionContextLike }) => string | undefined);
+  string | ((input: { event?: unknown; context?: PiExtensionContextLike }) => string | undefined);
 
 export interface CreatePiModelCompletionOptions {
   completeSimple: PiCompleteSimple;
@@ -173,7 +172,10 @@ function textFromPiContent(content: unknown): string | null {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return null;
   const parts = content
-    .filter((part): part is PiTextContent => isRecord(part) && part.type === "text" && typeof part.text === "string")
+    .filter(
+      (part): part is PiTextContent =>
+        isRecord(part) && part.type === "text" && typeof part.text === "string",
+    )
     .map((part) => part.text);
   return parts.length > 0 ? parts.join("") : null;
 }
@@ -347,7 +349,9 @@ export function memScribeMessagesFromPi(messages: unknown): MemFlywheelMessage[]
           }))
         : [];
     if (!text && toolCalls.length === 0) continue;
-    out.push(toolCalls.length > 0 ? { role: message.role, text, toolCalls } : { role: message.role, text });
+    out.push(
+      toolCalls.length > 0 ? { role: message.role, text, toolCalls } : { role: message.role, text },
+    );
   }
   return out;
 }
@@ -376,14 +380,13 @@ function piContextResultFromPromptBuild(
   return { messages: [piUserMessage(injection), ...(original as PiAgentMessage[])] };
 }
 
-function bindPiEvent(
-  pi: PiExtensionApiLike,
-  event: string,
-  handler: PiExtensionHandler,
-): Dispose {
+function bindPiEvent(pi: PiExtensionApiLike, event: string, handler: PiExtensionHandler): Dispose {
   const dispose = pi.on(event, handler);
   if (typeof dispose === "function") return dispose;
-  if (typeof pi.off === "function") return () => pi.off!(event, handler);
+  if (typeof pi.off === "function") {
+    const off = pi.off;
+    return () => off(event, handler);
+  }
   return () => undefined;
 }
 
@@ -415,7 +418,11 @@ export function createPiModelCompletion(
       const sessionId = options.getSessionId?.();
       if (sessionId) requestOptions.sessionId = sessionId;
 
-      const response = await options.completeSimple(model, piContextFromCanonical(req), requestOptions);
+      const response = await options.completeSimple(
+        model,
+        piContextFromCanonical(req),
+        requestOptions,
+      );
       return canonicalResponseFromPi(response);
     },
   };
@@ -502,7 +509,10 @@ export function createPiHarnessPort(
     onPromptBuild(handler) {
       return bindPiEvent(pi, "context", async (event, ctx) => {
         rememberContext(event, ctx);
-        const result = await handler({ sessionId: lastSessionId, query: promptQueryFromPiEvent(event) });
+        const result = await handler({
+          sessionId: lastSessionId,
+          query: promptQueryFromPiEvent(event),
+        });
         return piContextResultFromPromptBuild(result, event);
       });
     },

@@ -67,7 +67,9 @@ export function parseMemoryIndexRecords(indexContent: string): MemoryIndexRecord
     const rawLine = raw.trim();
     if (!rawLine.startsWith("- [")) continue;
 
-    const match = rawLine.match(/^- \[(?<name>[^\]]+)\]\((?<href>[^)]+)\) - (?<description>.*?)(?: \((?<meta>[^)]*)\))?$/u);
+    const match = rawLine.match(
+      /^- \[(?<name>[^\]]+)\]\((?<href>[^)]+)\) - (?<description>.*?)(?: \((?<meta>[^)]*)\))?$/u,
+    );
     if (!match?.groups) continue;
 
     const meta = match.groups.meta ?? "";
@@ -86,8 +88,12 @@ export function parseMemoryIndexRecords(indexContent: string): MemoryIndexRecord
       .split(";")
       .map((term) => clean(term))
       .filter(Boolean);
-    const embedText = [name, description, occurred_on, ...retrievalTerms].filter(Boolean).join("\n");
-    const bm25Text = [name, description, type, occurred_on, memoryPath, ...retrievalTerms].filter(Boolean).join(" ");
+    const embedText = [name, description, occurred_on, ...retrievalTerms]
+      .filter(Boolean)
+      .join("\n");
+    const bm25Text = [name, description, type, occurred_on, memoryPath, ...retrievalTerms]
+      .filter(Boolean)
+      .join(" ");
 
     records.push({
       lineId: lineId(records.length),
@@ -108,24 +114,40 @@ export function parseMemoryIndexRecords(indexContent: string): MemoryIndexRecord
   return records;
 }
 
-async function readDiskCache(root: string, model: string): Promise<Map<string, { lineHash: string; vector: number[] }>> {
+async function readDiskCache(
+  root: string,
+  model: string,
+): Promise<Map<string, { lineHash: string; vector: number[] }>> {
   try {
     const raw = await readFile(path.join(root, CACHE_DIR, CACHE_FILE), "utf8");
     const parsed = JSON.parse(raw) as DiskCache;
-    if (parsed.version !== 1 || parsed.model !== model || !Array.isArray(parsed.entries)) return new Map();
-    return new Map(parsed.entries.map((entry) => [entry.path, { lineHash: entry.lineHash, vector: entry.vector }]));
+    if (parsed.version !== 1 || parsed.model !== model || !Array.isArray(parsed.entries))
+      return new Map();
+    return new Map(
+      parsed.entries.map((entry) => [
+        entry.path,
+        { lineHash: entry.lineHash, vector: entry.vector },
+      ]),
+    );
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
     throw err;
   }
 }
 
-async function writeDiskCache(root: string, model: string, entries: DiskCache["entries"]): Promise<void> {
+async function writeDiskCache(
+  root: string,
+  model: string,
+  entries: DiskCache["entries"],
+): Promise<void> {
   const dir = path.join(root, CACHE_DIR);
   await mkdir(dir, { recursive: true });
   const payload: DiskCache = { version: 1, model, entries };
   const target = path.join(dir, CACHE_FILE);
-  const temp = path.join(dir, `${CACHE_FILE}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`);
+  const temp = path.join(
+    dir,
+    `${CACHE_FILE}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
+  );
   await writeFile(temp, `${JSON.stringify(payload)}\n`, "utf8");
   await rename(temp, target);
 }
@@ -161,7 +183,9 @@ export async function buildMemoryIndexSearchCache(input: {
     missing.forEach((record, index) => {
       const vector = embedded.vectors[index];
       if (!Array.isArray(vector) || vector.length === 0) {
-        throw new Error(`Memory index embedding provider returned an invalid vector for ${record.path}.`);
+        throw new Error(
+          `Memory index embedding provider returned an invalid vector for ${record.path}.`,
+        );
       }
       vectors.set(record.path, vector);
     });
@@ -200,9 +224,17 @@ function cosine(a: number[], b: number[]): number {
   return dot / (Math.sqrt(a2) * Math.sqrt(b2));
 }
 
-function denseRank(records: MemoryIndexRecord[], vectors: Map<string, number[]>, queryVector: number[], topK: number): RankedPath[] {
+function denseRank(
+  records: MemoryIndexRecord[],
+  vectors: Map<string, number[]>,
+  queryVector: number[],
+  topK: number,
+): RankedPath[] {
   return records
-    .map((record) => ({ path: record.path, score: cosine(vectors.get(record.path) ?? [], queryVector) }))
+    .map((record) => ({
+      path: record.path,
+      score: cosine(vectors.get(record.path) ?? [], queryVector),
+    }))
     .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
     .slice(0, topK)
     .map((row, index) => ({ path: row.path, rank: index + 1 }));
@@ -230,8 +262,11 @@ function bm25Rank(records: MemoryIndexRecord[], query: string, topK: number): Ra
       for (const token of queryTokens) {
         const freq = tf.get(token) ?? 0;
         if (freq === 0) continue;
-        const idf = Math.log(1 + (records.length - (df.get(token) ?? 0) + 0.5) / ((df.get(token) ?? 0) + 0.5));
-        score += idf * ((freq * (k1 + 1)) / (freq + k1 * (1 - b + b * (doc.length / Math.max(avgdl, 1)))));
+        const idf = Math.log(
+          1 + (records.length - (df.get(token) ?? 0) + 0.5) / ((df.get(token) ?? 0) + 0.5),
+        );
+        score +=
+          idf * ((freq * (k1 + 1)) / (freq + k1 * (1 - b + b * (doc.length / Math.max(avgdl, 1)))));
       }
       return { path: record.path, score };
     })
@@ -282,7 +317,10 @@ export async function hybridSearchMemoryIndex(input: {
   signal?: AbortSignal;
 }): Promise<MemoryIndexRecord[]> {
   if (input.records.length === 0) return [];
-  const queryEmbedding = await input.embeddingProvider.embed({ texts: [input.query], signal: input.signal });
+  const queryEmbedding = await input.embeddingProvider.embed({
+    texts: [input.query],
+    signal: input.signal,
+  });
   const queryVector = queryEmbedding.vectors[0];
   if (!Array.isArray(queryVector) || queryVector.length === 0) {
     throw new Error("Memory index embedding provider returned an invalid query vector.");
@@ -293,10 +331,15 @@ export async function hybridSearchMemoryIndex(input: {
   const exact = exactTermRank(input.records, input.query, input.bm25TopK ?? 80);
   const fused = rrfFuse(dense, sparse, exact).slice(0, input.limit);
   const byPath = new Map(input.records.map((record) => [record.path, record]));
-  return fused.map((row) => byPath.get(row.path)).filter((record): record is MemoryIndexRecord => Boolean(record));
+  return fused
+    .map((row) => byPath.get(row.path))
+    .filter((record): record is MemoryIndexRecord => Boolean(record));
 }
 
-export function buildRelevantMemoryIndexPrompt(records: MemoryIndexRecord[], indexPath = INDEX_FILE): string {
+export function buildRelevantMemoryIndexPrompt(
+  records: MemoryIndexRecord[],
+  indexPath = INDEX_FILE,
+): string {
   const lines = records.map((record) => record.rawLine).join("\n");
   return `<system-reminder>\n## 相关记忆条目\n\n以下条目是系统从 MEMORY.md 索引中通过混合检索得到的相关路径线索。它们不是完整事实；需要时读取对应文件。\n\n${lines}\n\n## 全局记忆索引\n\n如果相关条目不足，可以读取完整索引文件：\n\n${indexPath}\n</system-reminder>`;
 }

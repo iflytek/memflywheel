@@ -7,12 +7,12 @@ to Hermes' real hooks.
 
 ## Lifecycle mapping
 
-| Hermes hook         | scribe hook       | what the adapter does                                |
-| ------------------- | --------------- | ---------------------------------------------------- |
-| `on_session_start`  | `onSessionStart`| ensure memory dir + register session                 |
-| `pre_llm_call`      | `onPromptBuild` | inject prelude as `{"context": ...}`; merge rules     |
-| `post_llm_call`     | `onTurnEnd`     | fire-and-forget extraction subagent (`user_message` + reply) |
-| `on_session_end`    | `onIdle`        | gate-checked dream consolidation                     |
+| Hermes hook        | scribe hook      | what the adapter does                                        |
+| ------------------ | ---------------- | ------------------------------------------------------------ |
+| `on_session_start` | `onSessionStart` | ensure memory dir + register session                         |
+| `pre_llm_call`     | `onPromptBuild`  | inject prelude as `{"context": ...}`; merge rules            |
+| `post_llm_call`    | `onTurnEnd`      | fire-and-forget extraction subagent (`user_message` + reply) |
+| `on_session_end`   | `onIdle`         | gate-checked dream consolidation                             |
 
 Because Hermes owns the credentials, **no API key is needed** — the extraction
 subagent runs on Hermes' own model through `ctx.llm.completeWithTools`.

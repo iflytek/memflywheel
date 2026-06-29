@@ -11,7 +11,12 @@ import {
   type DreamAgentRunner,
   type EmbeddingProvider,
 } from "./index.js";
-import { readDreamState, markDreamConsolidated, serializeMemoryFile, type MemoryType } from "@memflywheel/core";
+import {
+  readDreamState,
+  markDreamConsolidated,
+  serializeMemoryFile,
+  type MemoryType,
+} from "@memflywheel/core";
 
 async function tempRoot(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), "memflywheel-sdk-"));
@@ -27,7 +32,12 @@ function userTurn(text: string) {
  * nothing on subsequent calls. Returns the changed paths the tool reported.
  */
 function memorySlug(name: string): string {
-  return `${name.toLowerCase().replace(/[^a-z0-9一-龥]+/g, "-").replace(/^-+|-+$/g, "") || "memory"}.md`;
+  return `${
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9一-龥]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "memory"
+  }.md`;
 }
 
 function writeMemoryArgs(input: {
@@ -177,7 +187,11 @@ test("disabled scribe produces no recall, no writes", async () => {
     assert.equal(turn.skipped, true);
     assert.equal(turn.result, ExtractionResult.Skipped);
 
-    const saved = await scribe.save({ type: "preference", name: "fruit", body: "likes strawberries" });
+    const saved = await scribe.save({
+      type: "preference",
+      name: "fruit",
+      body: "likes strawberries",
+    });
     assert.equal(saved, ExtractionResult.Skipped);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -249,7 +263,9 @@ test("onTurnEnd runs the integrated learning loop and routes skill memory compre
       body: "Run package metadata checks, README checks, and dry-run pack checks.",
     });
     const dreamRunner: DreamAgentRunner = async ({ coordination }) => {
-      events.push(`dream:${coordination?.memoryAction}:${coordination?.topics.join(",")}:${coordination?.targetSkill}`);
+      events.push(
+        `dream:${coordination?.memoryAction}:${coordination?.topics.join(",")}:${coordination?.targetSkill}`,
+      );
       return { changed: [] };
     };
     const scribe = createMemFlywheel({
@@ -421,7 +437,11 @@ test("agent attempting a secret save is gated only when refuseSecrets is on", as
     const fn: ExtractionAgentRunner = async ({ tools, toolCtx }) => {
       const write = tools.find((t) => t.name === "write")!;
       const r = await write.handler(
-        writeMemoryArgs({ type: "context", name: "creds", body: `the api key is ${fakeOpenAiKey}` }),
+        writeMemoryArgs({
+          type: "context",
+          name: "creds",
+          body: `the api key is ${fakeOpenAiKey}`,
+        }),
         toolCtx,
       );
       return { changed: r.changed ?? [] };
@@ -440,7 +460,11 @@ test("agent attempting a secret save is gated only when refuseSecrets is on", as
     const fn: ExtractionAgentRunner = async ({ tools, toolCtx }) => {
       const write = tools.find((t) => t.name === "write")!;
       const r = await write.handler(
-        writeMemoryArgs({ type: "context", name: "creds", body: `the api key is ${fakeOpenAiKey}` }),
+        writeMemoryArgs({
+          type: "context",
+          name: "creds",
+          body: `the api key is ${fakeOpenAiKey}`,
+        }),
         toolCtx,
       );
       assert.equal(r.ok, false, "secret save refused under refuseSecrets");

@@ -6,13 +6,7 @@
  * categories are the canonical VALID_MEMORY_TYPES.
  */
 
-export type MemoryType =
-  | "identity"
-  | "preference"
-  | "style"
-  | "workflow"
-  | "context"
-  | "ambient";
+export type MemoryType = "identity" | "preference" | "style" | "workflow" | "context" | "ambient";
 
 /**
  * Persisted YAML frontmatter. Beyond the core fields only `occurred_on` and

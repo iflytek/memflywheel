@@ -3,7 +3,12 @@
  * line-based parser — NOT a general YAML library.
  */
 
-import { VALID_MEMORY_TYPES, type MemoryFrontmatter, type MemoryDocument, type MemoryType } from "./types.js";
+import {
+  VALID_MEMORY_TYPES,
+  type MemoryFrontmatter,
+  type MemoryDocument,
+  type MemoryType,
+} from "./types.js";
 
 export const FRONTMATTER_READ_BYTES = 2048;
 export const MAX_FRONTMATTER_LINES = 30;
@@ -85,7 +90,10 @@ export function stripFrontmatter(content: string): string {
   const endIndex = lines.indexOf("---", 1);
   if (endIndex === -1 || endIndex > MAX_FRONTMATTER_LINES) return content;
 
-  return lines.slice(endIndex + 1).join("\n").trim();
+  return lines
+    .slice(endIndex + 1)
+    .join("\n")
+    .trim();
 }
 
 /** Split raw content into { frontmatter, body }. null if frontmatter is invalid. */

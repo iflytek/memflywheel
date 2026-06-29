@@ -8,7 +8,16 @@
  */
 
 import { createHash } from "node:crypto";
-import { readdir, stat, mkdir, rename, copyFile, unlink, writeFile, readFile } from "node:fs/promises";
+import {
+  readdir,
+  stat,
+  mkdir,
+  rename,
+  copyFile,
+  unlink,
+  writeFile,
+  readFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import { RESERVED_MEMORY_FILES } from "./types.js";
@@ -146,7 +155,9 @@ const PRELUDE_PATTERNS: RegExp[] = [
 const SYSTEM_REMINDER_BLOCK_RE = /<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/gi;
 
 export function stripSystemReminderBlocks(text: string): string {
-  return String(text || "").replace(SYSTEM_REMINDER_BLOCK_RE, "").trim();
+  return String(text || "")
+    .replace(SYSTEM_REMINDER_BLOCK_RE, "")
+    .trim();
 }
 
 export function isPreludeText(text: string): boolean {
@@ -177,7 +188,10 @@ export function cleanMessages(messages: ExtractionMessage[]): ExtractionMessage[
 }
 
 function sourceFileForSession(sessionId: string): string {
-  const hash = createHash("sha256").update(sessionId || "default").digest("hex").slice(0, 16);
+  const hash = createHash("sha256")
+    .update(sessionId || "default")
+    .digest("hex")
+    .slice(0, 16);
   return `${SOURCE_TRACE_DIR}/session-${hash}.jsonl`;
 }
 
@@ -355,8 +369,7 @@ async function drainPending(): Promise<void> {
   try {
     while (pendingExtractions.size > 0) {
       const next = pendingExtractions.entries().next().value as
-        | [string, () => Promise<ExtractionResult>]
-        | undefined;
+        [string, () => Promise<ExtractionResult>] | undefined;
       if (!next) break;
       const [sessionId, run] = next;
       pendingExtractions.delete(sessionId);
@@ -438,9 +451,11 @@ export async function runExtractionSession(
 
     // Advance cursor only on success (we did not throw / fail).
     cursorStore.set(sessionId, cleaned.length - 1);
-    await writeFile(path.join(ctx.root, ".last-extraction"), new Date().toISOString(), "utf8").catch(
-      () => {},
-    );
+    await writeFile(
+      path.join(ctx.root, ".last-extraction"),
+      new Date().toISOString(),
+      "utf8",
+    ).catch(() => {});
 
     const changedCount = countChanges(before, after);
     return changedCount > 0 ? ExtractionResult.Completed : ExtractionResult.Skipped;

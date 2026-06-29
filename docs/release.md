@@ -7,24 +7,24 @@ checklist for MemFlywheel.
 
 MemFlywheel publishes npm packages from GitHub Actions.
 
-| Channel | Trigger | Workflow | Output |
-|---|---|---|---|
-| Stable npm release | Push a `v*` git tag | `.github/workflows/release.yml` | Public npm packages |
-| Preview package | Push a `v*` git tag | `.github/workflows/preview-release.yml` | `pkg-pr-new` preview output |
-| Pull request validation | Pull request to `main` | `.github/workflows/ci.yml` | Build, test, pack dry run |
+| Channel                 | Trigger                | Workflow                                | Output                      |
+| ----------------------- | ---------------------- | --------------------------------------- | --------------------------- |
+| Stable npm release      | Push a `v*` git tag    | `.github/workflows/release.yml`         | Public npm packages         |
+| Preview package         | Push a `v*` git tag    | `.github/workflows/preview-release.yml` | `pkg-pr-new` preview output |
+| Pull request validation | Pull request to `main` | `.github/workflows/ci.yml`              | Build, test, pack dry run   |
 
 The root `memflywheel` package is private and is not published. Only workspace
 packages under `packages/*` are release candidates.
 
 ## Published packages
 
-| Package | Purpose |
-|---|---|
-| `@memflywheel/core` | File-backed memory kernel |
-| `@memflywheel/model` | Provider-neutral model protocol and OpenAI-compatible mappers |
-| `@memflywheel/sdk` | Host lifecycle SDK and memory/dream/skill loops |
-| `@memflywheel/skills` | Learned-skill package store, validation, finalize, rollback, and recall |
-| `@memflywheel/adapters` | Host lifecycle adapters and harness runtime wiring |
+| Package                 | Purpose                                                                 |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `@memflywheel/core`     | File-backed memory kernel                                               |
+| `@memflywheel/model`    | Provider-neutral model protocol and OpenAI-compatible mappers           |
+| `@memflywheel/sdk`      | Host lifecycle SDK and memory/dream/skill loops                         |
+| `@memflywheel/skills`   | Learned-skill package store, validation, finalize, rollback, and recall |
+| `@memflywheel/adapters` | Host lifecycle adapters and harness runtime wiring                      |
 
 ## Versioning rule
 
@@ -42,8 +42,8 @@ dedicated release manager in a later change.
 
 The stable release workflow requires this GitHub Actions secret:
 
-| Secret | Used by | Purpose |
-|---|---|---|
+| Secret      | Used by                         | Purpose                                |
+| ----------- | ------------------------------- | -------------------------------------- |
 | `NPM_TOKEN` | `.github/workflows/release.yml` | Authenticates `pnpm -r publish` to npm |
 
 The npm token must have publish permission for the `@memflywheel` scope.
@@ -66,14 +66,14 @@ pnpm run pack:dry-run
 
 Before tagging, confirm:
 
-| Check | Expected result |
-|---|---|
-| Package versions | Root and all `packages/*` versions match |
-| Package metadata | Repository URLs point to `iflytek/memflywheel` |
+| Check            | Expected result                                                                 |
+| ---------------- | ------------------------------------------------------------------------------- |
+| Package versions | Root and all `packages/*` versions match                                        |
+| Package metadata | Repository URLs point to `iflytek/memflywheel`                                  |
 | Package contents | Dry-run output contains `dist`, `README.md`, `LICENSE`, and `package.json` only |
-| Secrets | No credentials, private paths, or local-only files are included |
-| Notices | `NOTICE` and `THIRD_PARTY_LICENSES` are current |
-| CI | GitHub PR checks pass before merge |
+| Secrets          | No credentials, private paths, or local-only files are included                 |
+| Notices          | `NOTICE` and `THIRD_PARTY_LICENSES` are current                                 |
+| CI               | GitHub PR checks pass before merge                                              |
 
 ## Release steps
 
@@ -127,11 +127,11 @@ successfully.
 
 ## Failure handling
 
-| Failure | Action |
-|---|---|
-| CI fails before tagging | Fix in a normal PR; do not tag |
-| Release workflow fails before any package publishes | Fix the workflow or token, then rerun the failed workflow |
-| Some packages publish and others fail | Do not delete published versions; fix the cause and publish the missing packages with the same version if npm allows it |
-| Wrong package content is published | Deprecate the bad npm version and publish a corrected patch version |
+| Failure                                             | Action                                                                                                                  |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| CI fails before tagging                             | Fix in a normal PR; do not tag                                                                                          |
+| Release workflow fails before any package publishes | Fix the workflow or token, then rerun the failed workflow                                                               |
+| Some packages publish and others fail               | Do not delete published versions; fix the cause and publish the missing packages with the same version if npm allows it |
+| Wrong package content is published                  | Deprecate the bad npm version and publish a corrected patch version                                                     |
 
 Never rewrite public release tags after a tag has triggered a publish workflow.

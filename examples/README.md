@@ -45,12 +45,12 @@ examples/
 When not using the fake, `createOpenAIChatCompletionsModel` (an OpenAI-compatible
 `/chat/completions` mapper with a `tools` array) reads:
 
-| Variable                       | Meaning                                   |
-| ------------------------------ | ----------------------------------------- |
-| `MEMFLYWHEEL_LLM_ENDPOINT`        | base URL override                         |
-| `MEMFLYWHEEL_LLM_API_KEY`         | key (fallback `OPENAI_API_KEY`)           |
-| `MEMFLYWHEEL_LLM_MODEL`           | model id                                  |
-| `MEMFLYWHEEL_LLM_MAX_TOKENS`      | response cap                              |
+| Variable                     | Meaning                         |
+| ---------------------------- | ------------------------------- |
+| `MEMFLYWHEEL_LLM_ENDPOINT`   | base URL override               |
+| `MEMFLYWHEEL_LLM_API_KEY`    | key (fallback `OPENAI_API_KEY`) |
+| `MEMFLYWHEEL_LLM_MODEL`      | model id                        |
+| `MEMFLYWHEEL_LLM_MAX_TOKENS` | response cap                    |
 
 ## Running
 

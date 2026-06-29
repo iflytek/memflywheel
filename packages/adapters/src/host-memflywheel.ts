@@ -202,7 +202,9 @@ export function canonicalMessagesToMemFlywheelMessages(
           }))
         : [];
     if (text === "" && toolCalls.length === 0) continue;
-    out.push(toolCalls.length > 0 ? { role: message.role, text, toolCalls } : { role: message.role, text });
+    out.push(
+      toolCalls.length > 0 ? { role: message.role, text, toolCalls } : { role: message.role, text },
+    );
   }
   return out;
 }
@@ -214,7 +216,10 @@ export function attachMemFlywheelToHostPort(
   const disposers: Array<() => void> = [];
   disposers.push(
     port.lifecycle.onPromptBuild(async (event) => {
-      const ctx = await scribe.onPromptBuild({ sessionId: event.sessionId ?? "default", query: event.query });
+      const ctx = await scribe.onPromptBuild({
+        sessionId: event.sessionId ?? "default",
+        query: event.query,
+      });
       return {
         systemPrompt: ctx.systemPrompt,
         preludePrompt: ctx.preludePrompt,
@@ -315,7 +320,10 @@ export function adaptSdkMemFlywheel(sdk: SdkMemFlywheel): MemFlywheelHarnessRunt
         enabled: ctx.enabled,
       };
     },
-    async onTurnEnd(input: { sessionId: string; messages: MemFlywheelMessage[] }): Promise<TurnEndResult> {
+    async onTurnEnd(input: {
+      sessionId: string;
+      messages: MemFlywheelMessage[];
+    }): Promise<TurnEndResult> {
       return sdk.onTurnEnd(input.sessionId, toExtractionMessages(input.messages));
     },
     async onSessionEnd(input: { sessionId: string }): Promise<void> {
@@ -368,7 +376,9 @@ export function createMemFlywheelHarnessRuntime(
 
   const agent =
     options.agent ??
-    (requestedMode === "recall-only" || !model ? undefined : createExtractionAgentRunner({ model }));
+    (requestedMode === "recall-only" || !model
+      ? undefined
+      : createExtractionAgentRunner({ model }));
 
   let dreamRunner: DreamAgentRunner | undefined;
   if (options.dreamRunner === null) {
@@ -437,7 +447,9 @@ export function createMemFlywheelHarnessRuntime(
     memoryIndexRetrieval,
   });
   const scribe = adaptSdkMemFlywheel(sdk);
-  const dispose = options.port ? attachMemFlywheelToHostPort(scribe, options.port) : () => undefined;
+  const dispose = options.port
+    ? attachMemFlywheelToHostPort(scribe, options.port)
+    : () => undefined;
   return {
     scribe,
     sdk,

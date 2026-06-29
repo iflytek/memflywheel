@@ -70,11 +70,7 @@ export interface MemFlywheel {
 
 /** The canonical scribe hooks a host event can map to. */
 export type MemFlywheelHook =
-  | "onSessionStart"
-  | "onPromptBuild"
-  | "onTurnEnd"
-  | "onSessionEnd"
-  | "onIdle";
+  "onSessionStart" | "onPromptBuild" | "onTurnEnd" | "onSessionEnd" | "onIdle";
 
 /** One host-event → scribe-hook mapping row (documentation + verification data). */
 export interface LifecycleMapping {
@@ -269,7 +265,10 @@ export function readWiringMarker(config: Record<string, unknown> | null): Wiring
 }
 
 /** Atomically write a host config object as pretty JSON (temp file + rename). */
-export async function writeHostConfig(configPath: string, config: Record<string, unknown>): Promise<void> {
+export async function writeHostConfig(
+  configPath: string,
+  config: Record<string, unknown>,
+): Promise<void> {
   await mkdir(path.dirname(configPath), { recursive: true });
   const tmp = `${configPath}.${randomBytes(6).toString("hex")}.tmp`;
   const body = `${JSON.stringify(config, null, 2)}\n`;
@@ -291,7 +290,10 @@ export async function writeHostConfig(configPath: string, config: Record<string,
  * Pure read; never writes. `satisfied` is true when the on-disk wiring already
  * matches the adapter's current marker exactly.
  */
-export async function planInstall(adapter: HostAdapter, target: InstallTarget): Promise<InstallPlan> {
+export async function planInstall(
+  adapter: HostAdapter,
+  target: InstallTarget,
+): Promise<InstallPlan> {
   const desired = buildWiringMarker(adapter);
   let config: Record<string, unknown> | null;
   let corrupt = false;
@@ -345,7 +347,10 @@ export async function planInstall(adapter: HostAdapter, target: InstallTarget): 
  * Apply an adapter's install: plan, then (if needed) merge the wiring marker
  * into the host config and write it atomically, preserving all other keys.
  */
-export async function applyInstall(adapter: HostAdapter, target: InstallTarget): Promise<InstallResult> {
+export async function applyInstall(
+  adapter: HostAdapter,
+  target: InstallTarget,
+): Promise<InstallResult> {
   const plan = await planInstall(adapter, target);
   if (plan.satisfied) {
     return { adapterId: adapter.id, configPath: target.configPath, applied: [] };
@@ -373,7 +378,10 @@ export async function applyInstall(adapter: HostAdapter, target: InstallTarget):
  * wiring marker is present and exactly matches the adapter's current marker.
  * Never trusts an in-memory write — always re-reads.
  */
-export async function verifyInstall(adapter: HostAdapter, target: InstallTarget): Promise<VerifyResult> {
+export async function verifyInstall(
+  adapter: HostAdapter,
+  target: InstallTarget,
+): Promise<VerifyResult> {
   const desired = buildWiringMarker(adapter);
   const problems: string[] = [];
   let config: Record<string, unknown> | null;
@@ -411,10 +419,7 @@ export async function verifyInstall(adapter: HostAdapter, target: InstallTarget)
  * wins; otherwise the adapter's `defaultConfigRelPath` is resolved under the
  * user's home directory. Throws when neither is available.
  */
-export function resolveInstallTarget(
-  adapter: HostAdapter,
-  configPath?: string,
-): InstallTarget {
+export function resolveInstallTarget(adapter: HostAdapter, configPath?: string): InstallTarget {
   if (configPath && configPath.trim() !== "") {
     return { configPath };
   }
@@ -457,19 +462,29 @@ export async function connect(
 }
 
 /** Diagnose installed state by re-reading the config (shared doctor). */
-export async function doctorInstall(adapter: HostAdapter, target: InstallTarget): Promise<DoctorFinding[]> {
+export async function doctorInstall(
+  adapter: HostAdapter,
+  target: InstallTarget,
+): Promise<DoctorFinding[]> {
   let config: Record<string, unknown> | null;
   try {
     config = await readHostConfig(target.configPath);
   } catch (err) {
-    return [{ code: "corrupt-config", message: `host config is not valid JSON: ${(err as Error).message}` }];
+    return [
+      {
+        code: "corrupt-config",
+        message: `host config is not valid JSON: ${(err as Error).message}`,
+      },
+    ];
   }
   if (config === null) {
     return [{ code: "not-installed", message: `no host config at ${target.configPath}` }];
   }
   const existing = readWiringMarker(config);
   if (!existing) {
-    return [{ code: "not-installed", message: `MemFlywheel wiring not present in ${target.configPath}` }];
+    return [
+      { code: "not-installed", message: `MemFlywheel wiring not present in ${target.configPath}` },
+    ];
   }
   const desired = buildWiringMarker(adapter);
   if (!markersEqual(existing, desired)) {
@@ -528,7 +543,8 @@ export function bindLifecycle(
     if (typeof ret === "function") {
       disposers.push(ret as () => void);
     } else if (typeof host.off === "function") {
-      disposers.push(() => host.off!(event, listener));
+      const off = host.off;
+      disposers.push(() => off(event, listener));
     }
   };
 
@@ -550,7 +566,9 @@ export function bindLifecycle(
       const query = translators.promptQuery?.(payload);
       const result = scribe.onPromptBuild({ sessionId, query });
       // Hosts that need the context attach a `respond` callback to the payload.
-      const respond = (payload as { respond?: (ctx: Promise<MemFlywheelContext>) => void } | undefined)?.respond;
+      const respond = (
+        payload as { respond?: (ctx: Promise<MemFlywheelContext>) => void } | undefined
+      )?.respond;
       if (typeof respond === "function") respond(result);
       else detach(result);
     });

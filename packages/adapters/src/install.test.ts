@@ -50,10 +50,12 @@ test("apply creates the config and writes a correct wiring marker", async () => 
   assert.equal(marker!.adapter, "pi");
   // One binding per scribe hook.
   assert.equal(marker!.bindings.length, 4);
-  assert.deepEqual(
-    marker!.bindings.map((b) => b.hook).sort(),
-    ["onPromptBuild", "onSessionEnd", "onSessionStart", "onTurnEnd"],
-  );
+  assert.deepEqual(marker!.bindings.map((b) => b.hook).sort(), [
+    "onPromptBuild",
+    "onSessionEnd",
+    "onSessionStart",
+    "onTurnEnd",
+  ]);
 });
 
 test("apply preserves unrelated keys in the host config", async () => {

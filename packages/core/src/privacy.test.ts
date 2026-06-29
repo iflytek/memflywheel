@@ -15,10 +15,7 @@ const fakeApiKeyAssignment = "api" + "_key: supersecretvalue123";
 
 test("redactPrivateSpans replaces private spans", () => {
   assert.equal(redactPrivateSpans("a <private>secret</private> b"), "a [REDACTED] b");
-  assert.equal(
-    redactPrivateSpans("x <private>line1\nline2</private> y"),
-    "x [REDACTED] y",
-  );
+  assert.equal(redactPrivateSpans("x <private>line1\nline2</private> y"), "x [REDACTED] y");
 });
 
 test("scanSecrets flags obvious secrets", () => {
@@ -41,10 +38,7 @@ test("enforceWritePrivacy always redacts <private> spans", () => {
 
 test("enforceWritePrivacy secret gate is OFF by default (privacy via prompt)", () => {
   // Default: a surviving secret is written as-is after <private> redaction.
-  assert.equal(
-    enforceWritePrivacy(`my ${fakePasswordAssignment}`),
-    `my ${fakePasswordAssignment}`,
-  );
+  assert.equal(enforceWritePrivacy(`my ${fakePasswordAssignment}`), `my ${fakePasswordAssignment}`);
 });
 
 test("enforceWritePrivacy refuses hard secrets only when the gate is enabled", () => {
