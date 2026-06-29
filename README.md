@@ -108,8 +108,8 @@ and [`docs/dream-regression.md`](docs/dream-regression.md).
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries |
 | [`docs/integrations.md`](docs/integrations.md)                     | Pi package install, SDK hooks, adapter boundary, host capability levels   |
-| [`docs/extraction-regression.md`](docs/extraction-regression.md)         | Extraction subagent real-model regression report                  |
-| [`docs/dream-regression.md`](docs/dream-regression.md)                   | Dream consolidation real-model regression report                  |
+| [`docs/extraction-regression.md`](docs/extraction-regression.md)   | Extraction subagent real-model regression report                          |
+| [`docs/dream-regression.md`](docs/dream-regression.md)             | Dream consolidation real-model regression report                          |
 | [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                        |
 | [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                         |
 

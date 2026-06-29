@@ -102,8 +102,8 @@ MemFlywheel 使用面向 LoCoMo 的回归检查，让长期记忆能力在召回
 | ------------------------------------------------------------------ | ------------------------------------------------------ |
 | [`docs/architecture.md`](docs/architecture.md)                     | 存储布局、召回、提取、dream、技能闭环、包边界          |
 | [`docs/integrations.md`](docs/integrations.md)                     | Pi package 安装、SDK hooks、adapter 边界、宿主能力分级 |
-| [`docs/extraction-regression.md`](docs/extraction-regression.md)         | 提取子代理真实模型回归报告                         |
-| [`docs/dream-regression.md`](docs/dream-regression.md)                   | Dream 整合子代理真实模型回归报告                   |
+| [`docs/extraction-regression.md`](docs/extraction-regression.md)   | 提取子代理真实模型回归报告                             |
+| [`docs/dream-regression.md`](docs/dream-regression.md)             | Dream 整合子代理真实模型回归报告                       |
 | [`docs/release.md`](docs/release.md)                               | 版本规范、npm 发布渠道、发布检查清单                   |
 | [`NOTICE`](NOTICE)、[`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | 项目版权告知和三方 license 披露                        |
 
