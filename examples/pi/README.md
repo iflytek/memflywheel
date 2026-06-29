@@ -15,15 +15,25 @@ writes memory files directly.
 
 ## Install into a real Pi
 
-1. Copy `extension.mjs` to `~/.pi/agent/extensions/memflywheel/index.mjs`.
-2. Add it to `~/.pi/agent/settings.json`:
+Install the published Pi package:
 
-   ```bash
-   node -e "import('@memflywheel/adapters').then(m => m.connect(m.piAdapter, { apply: true }))"
-   ```
+```bash
+pi install npm:@memflywheel/adapters
+```
 
-   This writes the wiring marker into `~/.pi/agent/settings.json` and verifies it
-   round-trips.
+Pi loads the extension declared by `@memflywheel/adapters`:
+
+```json
+{
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./pi-extension/index.mjs"]
+  }
+}
+```
+
+`extension.mjs` in this directory is the readable source equivalent of the
+published package entrypoint.
 
 ## Run the smoke test
 

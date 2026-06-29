@@ -1,68 +1,101 @@
 # Integrations
 
-MemFlywheel is embedded through SDK lifecycle hooks and host adapters. A real
-integration must be owned by the host Agent Harness, because the host owns
+MemFlywheel is embedded through SDK lifecycle hooks and thin host adapters. A
+real integration must be owned by the host Agent Harness because the host owns
 lifecycle events, model access, authentication, prompt assembly, filesystem
 tools, and skill execution policy.
 
 ## Lifecycle Contract
 
-Every host integration maps concrete host events onto the same MemFlywheel calls:
-
-| Host event        | MemFlywheel call                                    | Effect                                                                                                         |
-| ----------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Prompt build      | `onPromptBuild(sessionId)`                          | Return stable memory rules plus the full `MEMORY.md` index prelude, and optionally learned-skill routes.       |
-| Turn end          | `onTurnEnd(sessionId, messages)`                    | Append transcript/tool trajectory, run extraction, then optionally run skill evolution and dream coordination. |
-| Agent/session end | `onAgentEnd(sessionId)` / `onSessionEnd(sessionId)` | Flush not-yet-processed messages and close session state.                                                      |
-| Idle/scheduled    | `onIdle(gate)`                                      | Run gated dream consolidation.                                                                                 |
-
-The host decides where prompt segments go, how messages and tool calls are
-represented, when lifecycle events fire, and which model channel is used.
-MemFlywheel consumes normalized inputs and writes the file-native memory/skill
-state.
-
-## SDK Surface
-
-`@memflywheel/sdk` is the runtime integration surface:
-
-| SDK part                | Responsibility                                                                                                                |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `createMemFlywheel`     | Session state, recall hooks, extraction scheduling, dream scheduling, skill-loop orchestration.                               |
-| `ExtractionAgentRunner` | Host-injected tool-calling subagent that reads the manifest and writes memory files through `read/write/edit/bash/glob/grep`. |
-| `DreamAgentRunner`      | Host-injected tool-calling subagent that consolidates memory files through the same tools.                                    |
-| `learningLoop`          | Optional turn-end skill evolution after successful extraction.                                                                |
-| `skillRecall`           | Optional prompt-build learned-skill route injection.                                                                          |
-
-Core stays deterministic: storage, frontmatter validation, lock handling,
-privacy filtering, audit, cursor advancement, index rebuilds, and structural
-dream pre-pass. The host or `@memflywheel/model` adapter owns all model calls.
-
-## Host Adapter Surface
-
-`@memflywheel/adapters` translates concrete hosts into the SDK contract. The
-adapter layer should stay thin:
-
-| Adapter job           | Boundary                                                                                   |
-| --------------------- | ------------------------------------------------------------------------------------------ |
-| Lifecycle mapping     | Translate host events into prompt-build, turn-end, session-end, agent-end, and idle calls. |
-| Payload normalization | Convert host transcript/tool trajectory into `ExtractionMessage[]`.                        |
-| Model port            | Wrap the host-owned model channel into MemFlywheel's canonical tool-call protocol.         |
-| Capability gate       | Expose whether the host can run recall-only, memory-loop, dream-loop, or full skill-loop.  |
-| Installation          | Apply and verify host-side wiring without changing MemFlywheel semantics.                  |
-
-The adapter must not invent retrieval, silently parse model text as tool calls,
-or execute learned skills inside MemFlywheel. If a host lacks a native structured
-tool-call model port, the integration should fail fast for extraction/dream/skill
-loops rather than pretending to be connected.
+| Host event        | MemFlywheel call                                    | Effect                                                                                          |
+| ----------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Prompt build      | `onPromptBuild(sessionId)`                          | Return stable memory rules, `MEMORY.md` cues, and optional learned-skill routes                 |
+| Turn end          | `onTurnEnd(sessionId, messages)`                    | Append source trace, run extraction, then optionally run skill evolution and dream coordination |
+| Agent/session end | `onAgentEnd(sessionId)` / `onSessionEnd(sessionId)` | Flush not-yet-processed messages and close session state                                        |
+| Idle/scheduled    | `onIdle(gate)`                                      | Run gated dream consolidation                                                                   |
 
 ## Capability Levels
 
-| Level       | Required host capabilities                                      | MemFlywheel behavior                                                                                  |
-| ----------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Recall      | Prompt injection + host filesystem read tools                   | Inject memory/skill indexes; host's main Agent decides what to read.                                  |
-| Memory loop | Recall + canonical structured tool-call model + turn transcript | Turn-end extraction and idle dream can write memory files.                                            |
-| Skill loop  | Memory loop + tool-call trajectory + learned-skill store wiring | Turn-end extraction, skill evolution, dream memory compression, and skill route recall are connected. |
+| Level       | Required host capabilities                                 | Behavior                                                                       |
+| ----------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Recall      | Prompt injection + host filesystem read tools              | Inject indexes; the main Agent reads memory files                              |
+| Memory loop | Recall + structured tool-call model + turn transcript      | Turn-end extraction and idle dream can write memory files                      |
+| Skill loop  | Memory loop + tool trajectory + learned-skill store wiring | Extraction, skill evolution, dream compression, and skill recall are connected |
 
-Pi is the first-class target for the complete path. Other hosts should be wired
-by adding a host adapter and model-port mapper without changing core memory or
-skill semantics.
+If a host lacks a native structured tool-call model port, extraction, dream, and
+skill loops should fail fast instead of parsing free-form model text.
+
+## Host Status
+
+| Host     | Status                       | Notes                                                                                        |
+| -------- | ---------------------------- | -------------------------------------------------------------------------------------------- |
+| Pi       | Implemented first-class path | Adapter, HarnessPort, lifecycle mapping, and canonical model mapping are implemented         |
+| Hermes   | Planned/open target          | Needs a structured model capability such as `completeWithTools` for write-side loops         |
+| OpenClaw | Planned/open target          | Memory injection is the likely first step; full write-side loop needs an OpenClaw model port |
+| OpenCode | Planned/open target          | Suitable for hook-native recall first; full loop needs host-owned tool-call model port       |
+
+## Pi Integration
+
+Pi's public contribution path is a Pi package: an npm or git package that
+declares its extension entry under the `pi` key in `package.json`.
+
+```json
+{
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./pi-extension/index.mjs"]
+  }
+}
+```
+
+Install the published adapter package into Pi:
+
+```sh
+pi install npm:@memflywheel/adapters
+```
+
+Pi then loads `packages/adapters/pi-extension/index.mjs` from the npm package.
+That extension maps Pi lifecycle and tool-calling model access into
+`HostHarnessPort`, then builds the MemFlywheel runtime:
+
+```text
+Pi package
+   |
+   | package.json: pi.extensions
+   v
+pi-extension/index.mjs
+   |
+   | createPiHarnessPort(pi, { completeSimple })
+   v
+createMemFlywheelHarnessRuntime({ port })
+   |
+   +-> context       -> prompt-build recall
+   +-> agent_end     -> turn-end extraction
+   +-> tool events   -> source trace
+   +-> shutdown/idle -> consolidation hooks
+```
+
+Source checkout smoke test:
+
+```sh
+pnpm -r build
+USE_FAKE=1 node examples/pi/run.mjs
+```
+
+`@earendil-works/pi-ai` is declared as a Pi peer dependency because Pi provides
+its own core packages to extensions. The extension imports `completeSimple` from
+`@earendil-works/pi-ai/compat`; MemFlywheel must not bundle Pi core packages into
+its tarball.
+
+## Adapter Rules
+
+| Adapter job           | Boundary                                                           |
+| --------------------- | ------------------------------------------------------------------ |
+| Lifecycle mapping     | Translate host events into SDK hooks                               |
+| Payload normalization | Convert host transcript/tool trajectory into `ExtractionMessage[]` |
+| Model port            | Wrap host-owned model access into the canonical tool-call protocol |
+| Capability gate       | Report recall-only, memory-loop, or skill-loop support             |
+| Installation          | Apply and verify host-side wiring without changing core semantics  |
+
+Adapters must not invent retrieval, silently parse model text as tool calls, or
+execute learned skills inside MemFlywheel.

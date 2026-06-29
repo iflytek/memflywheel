@@ -7,21 +7,13 @@ import type { MemFlywheelHook } from "./adapter.js";
 
 const REQUIRED_HOOKS: MemFlywheelHook[] = ["onPromptBuild", "onTurnEnd"];
 
-test("registry contains all six built-in adapters with unique ids", () => {
-  assert.deepEqual(adapterIds().sort(), [
-    "claude-code",
-    "codex",
-    "hermes",
-    "openclaw",
-    "opencode",
-    "pi",
-  ]);
+test("registry contains the built-in open harness adapters with unique ids", () => {
+  assert.deepEqual(adapterIds().sort(), ["hermes", "openclaw", "opencode", "pi"]);
   assert.equal(new Set(adapterIds()).size, ADAPTERS.length);
 });
 
 test("getAdapter resolves known ids and returns undefined otherwise", () => {
   assert.equal(getAdapter("pi")?.id, "pi");
-  assert.equal(getAdapter("claude-code")?.name, "Claude Code");
   assert.equal(getAdapter("nope"), undefined);
 });
 

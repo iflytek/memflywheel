@@ -13,6 +13,8 @@
     }
   },
   "files": [
+    "NOTICE",
+    "THIRD_PARTY_LICENSES",
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "!dist/**/*.test.js",
@@ -39,7 +41,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b",

@@ -7,7 +7,7 @@
  * events: context / agent_end / session_shutdown / tool_call / tool_result.
  */
 
-import { completeSimple } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@memflywheel/adapters";
 
 /** @param {any} pi - the Pi ExtensionAPI */

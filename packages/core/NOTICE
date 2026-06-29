@@ -1,0 +1,11 @@
+MemFlywheel
+Copyright 2026 iFLYTEK CO., LTD.
+
+This product includes software developed at:
+- TypeBox (https://github.com/sinclairzx81/typebox), licensed under MIT License
+- TypeScript (https://www.typescriptlang.org/), licensed under Apache License 2.0
+- DefinitelyTyped Node.js type definitions (https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node), licensed under MIT License
+- undici-types (https://undici.nodejs.org), licensed under MIT License
+
+Third-party licenses are listed in the THIRD_PARTY_LICENSES file.
+For the main project license, see LICENSE.

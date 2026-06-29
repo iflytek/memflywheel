@@ -2,3 +2,7 @@ dist/
 node_modules/
 *.tsbuildinfo
 pnpm-lock.yaml
+.agents/
+.claude/
+.codex/
+bench/
