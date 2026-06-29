@@ -12,7 +12,12 @@ import {
   runExtractionAgent,
   buildExtractionAgentUserMessage,
 } from "@memflywheel/sdk";
-import { createAuditLogger, createMemoryFileToolContext, formatManifest, scanMemoryFiles } from "@memflywheel/core";
+import {
+  createAuditLogger,
+  createMemoryFileToolContext,
+  formatManifest,
+  scanMemoryFiles,
+} from "@memflywheel/core";
 import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 
 const root = await mkdtemp(path.join(tmpdir(), "memflywheel-rr-"));
@@ -43,7 +48,9 @@ async function listMemoryFiles() {
   const out = [];
   for (const type of ["identity", "preference", "style", "workflow", "context", "ambient"]) {
     let files = [];
-    try { files = await readdir(path.join(root, type)); } catch {}
+    try {
+      files = await readdir(path.join(root, type));
+    } catch {}
     for (const f of files) out.push(`${type}/${f}`);
   }
   return out;
@@ -58,15 +65,31 @@ async function scenario(label, messages, opts = {}) {
     const seed = buildExtractionAgentUserMessage({ messages, manifest: m });
     const convo = seed.slice(seed.indexOf("# Recent conversation"));
     console.log(`\n----- 折叠后喂给模型的提取上下文 (${label}) -----`);
-    console.log(convo.split("\n").map((l) => "  | " + l).join("\n"));
+    console.log(
+      convo
+        .split("\n")
+        .map((l) => "  | " + l)
+        .join("\n"),
+    );
   }
-  const result = await runExtractionAgent({ model, tools, toolCtx, messages, manifest: m, maxSteps: 10 });
+  const result = await runExtractionAgent({
+    model,
+    tools,
+    toolCtx,
+    messages,
+    manifest: m,
+    maxSteps: 10,
+  });
   console.log(`\n===== ${label} =====`);
-  console.log(`steps=${result.steps}  stopped=${result.stoppedReason}  tool-calls=${result.toolCalls.length}`);
+  console.log(
+    `steps=${result.steps}  stopped=${result.stoppedReason}  tool-calls=${result.toolCalls.length}`,
+  );
   for (const c of trace.slice(start)) {
     const args = JSON.stringify(c.args);
     const text = (c.text || "").replace(/\s+/g, " ").slice(0, 110);
-    console.log(`  ${c.ok ? "ok " : "ERR"} ${c.tool}(${args.length > 160 ? args.slice(0, 160) + "…" : args})`);
+    console.log(
+      `  ${c.ok ? "ok " : "ERR"} ${c.tool}(${args.length > 160 ? args.slice(0, 160) + "…" : args})`,
+    );
     console.log(`       -> ${text}`);
   }
   return result;
@@ -117,7 +140,10 @@ await scenario(
       toolCalls: [
         {
           name: "Bash",
-          input: { command: "pnpm install --frozen-lockfile && pnpm run test:all", description: "安装依赖并运行全部测试" },
+          input: {
+            command: "pnpm install --frozen-lockfile && pnpm run test:all",
+            description: "安装依赖并运行全部测试",
+          },
           output: hugeLog,
         },
       ],
@@ -134,7 +160,10 @@ await scenario(
 await scenario(
   "F. 工具调用里的持久事实 + 用户明确要求长期遵循",
   [
-    { role: "user", text: "以后你给我的命令都要符合我们项目的实际配置,先记住我们的工具链,长期按这个来。" },
+    {
+      role: "user",
+      text: "以后你给我的命令都要符合我们项目的实际配置,先记住我们的工具链,长期按这个来。",
+    },
     {
       role: "assistant",
       text: "好的,我读一下项目配置。",
@@ -165,7 +194,8 @@ console.log("\n\n========== 校验 ==========");
 const files = await listMemoryFiles();
 console.log("最终记忆文件:", files);
 
-const drinkFile = files.find((f) => /drink|tea|coffee|beverage|饮/.test(f.toLowerCase())) ||
+const drinkFile =
+  files.find((f) => /drink|tea|coffee|beverage|饮/.test(f.toLowerCase())) ||
   files.find((f) => f.startsWith("preference/"));
 if (drinkFile) {
   const body = await readFile(path.join(root, drinkFile), "utf8");
@@ -173,13 +203,23 @@ if (drinkFile) {
   const hasCoffee = /咖啡|coffee|americano/i.test(body);
   console.log(`\n饮料记忆文件: ${drinkFile}`);
   console.log(`  含绿茶: ${hasTea ? "✅" : "❌"}   含咖啡: ${hasCoffee ? "✅" : "❌"}`);
-  console.log(`  → 追加${hasTea && hasCoffee ? "成功,渐进 update 未丢数据 ✅" : "可能丢数据 ⚠️ (见正文)"}`);
-  console.log("  正文:\n" + body.split(/\n/).filter(Boolean).map((l) => "    " + l).join("\n"));
+  console.log(
+    `  → 追加${hasTea && hasCoffee ? "成功,渐进 update 未丢数据 ✅" : "可能丢数据 ⚠️ (见正文)"}`,
+  );
+  console.log(
+    "  正文:\n" +
+      body
+        .split(/\n/)
+        .filter(Boolean)
+        .map((l) => "    " + l)
+        .join("\n"),
+  );
 }
 
 let leak = false;
 for (const f of files) {
-  if ((await readFile(path.join(root, f), "utf8")).includes(highRiskCardNumber.slice(0, 4))) leak = true;
+  if ((await readFile(path.join(root, f), "utf8")).includes(highRiskCardNumber.slice(0, 4)))
+    leak = true;
 }
 console.log(`\n隐私: 银行卡号 ${leak ? "❌ 泄露!" : "✅ 未进入任何记忆"}`);
 
@@ -190,13 +230,19 @@ let foldFile = null;
 for (const f of files) {
   const body = await readFile(path.join(root, f), "utf8");
   if (/pnpm|vitest|tsup|工具链|包管理|packageManager|node\s*>=?\s*20/i.test(body)) {
-    foldFile = `${f}\n      正文: ${body.split(/\n/).filter((l) => l && !l.startsWith("---") && !/^\w+:/.test(l)).join(" ").trim()}`;
+    foldFile = `${f}\n      正文: ${body
+      .split(/\n/)
+      .filter((l) => l && !l.startsWith("---") && !/^\w+:/.test(l))
+      .join(" ")
+      .trim()}`;
     break;
   }
 }
 console.log(
   `\n折叠(仅工具调用里的事实): ${
-    foldFile ? `✅ 提取到工具链事实 → ${foldFile}` : "⚠️ 未存成记忆(看上面的折叠上下文确认模型是否收到工具链信息)"
+    foldFile
+      ? `✅ 提取到工具链事实 → ${foldFile}`
+      : "⚠️ 未存成记忆(看上面的折叠上下文确认模型是否收到工具链信息)"
   }`,
 );
 // Truncation: the 100k+ char tool log must NOT have leaked verbatim into any memory.

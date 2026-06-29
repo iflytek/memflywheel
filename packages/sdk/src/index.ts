@@ -55,8 +55,6 @@ import {
   deriveMemoryFilename,
 } from "@memflywheel/core";
 
-import { createExtractionAgentRunner } from "./extraction-agent.js";
-import { createDreamAgentRunner } from "./dream-agent.js";
 import {
   type LearningLoopResult,
   type LearningLoopSource,
@@ -181,9 +179,7 @@ export interface SkillRecallPacket {
   entries: SkillRecallEntry[];
 }
 
-export type SkillRecallProvider = (input: {
-  sessionId?: string;
-}) => Promise<SkillRecallPacket>;
+export type SkillRecallProvider = (input: { sessionId?: string }) => Promise<SkillRecallPacket>;
 
 export type SkillPreludeBuilder = (packet: SkillRecallPacket) => string;
 
@@ -481,9 +477,13 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
     const gate = shouldRunDream({
       now: opts?.now,
       lastConsolidatedAt:
-        opts?.lastConsolidatedAt !== undefined ? opts.lastConsolidatedAt : persisted.lastConsolidatedAt,
+        opts?.lastConsolidatedAt !== undefined
+          ? opts.lastConsolidatedAt
+          : persisted.lastConsolidatedAt,
       candidateSessionCount:
-        opts?.candidateSessionCount !== undefined ? opts.candidateSessionCount : persisted.sessionsSince,
+        opts?.candidateSessionCount !== undefined
+          ? opts.candidateSessionCount
+          : persisted.sessionsSince,
       minHours: opts?.minHours,
       minSessions: opts?.minSessions,
       force: force || opts?.force,
@@ -506,7 +506,9 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
     };
   }
 
-  async function buildPromptContext(input?: PromptBuildInput): Promise<MemFlywheelBuildContextResult> {
+  async function buildPromptContext(
+    input?: PromptBuildInput,
+  ): Promise<MemFlywheelBuildContextResult> {
     const memoryContext = await buildContext({
       root,
       enabled,
@@ -521,7 +523,9 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
 
     return {
       ...memoryContext,
-      systemPrompt: [memoryContext.systemPrompt, buildSkillInstructionPrompt()].filter(Boolean).join("\n\n"),
+      systemPrompt: [memoryContext.systemPrompt, buildSkillInstructionPrompt()]
+        .filter(Boolean)
+        .join("\n\n"),
       preludePrompt: [memoryContext.preludePrompt, skillPreludePrompt].filter(Boolean).join("\n\n"),
       skillPreludePrompt,
     };
@@ -534,14 +538,17 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
     let lastExtraction: TurnEndResult | null = null;
     const stateBeforeTurn = ensureSession(sessionId);
     const doneTurns = stateBeforeTurn.turns + (turnMessages.length > 0 ? 1 : 0);
+    const loopToolCalls = learningLoop?.toolCalls;
     const toolCalls =
-      learningLoop!.toolCalls !== undefined
-        ? resolveCounter(learningLoop!.toolCalls)
+      loopToolCalls !== undefined
+        ? resolveCounter(loopToolCalls)
         : countToolCalls([...stateBeforeTurn.messages, ...turnMessages]);
+    const loopTurnsSince = learningLoop?.turnsSinceLastSkillEvolution;
     const turnsSinceLastSkillEvolution =
-      learningLoop!.turnsSinceLastSkillEvolution !== undefined
-        ? resolveCounter(learningLoop!.turnsSinceLastSkillEvolution)
+      loopTurnsSince !== undefined
+        ? resolveCounter(loopTurnsSince)
         : doneTurns - (lastSkillEvolutionTurn.get(sessionId) ?? 0);
+    const skillEvolve = learningLoop?.skillEvolution;
     const loop = await runLearningLoop({
       trigger: "turn-end",
       source: learningLoop?.source ?? "local",
@@ -562,26 +569,32 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
         }
         return { ok: true, reason: "ok" };
       },
-      skillEvolution: learningLoop?.skillEvolution
+      skillEvolution: skillEvolve
         ? async () => {
             if (!lastExtraction) throw new Error("skill learning requires extraction to run first");
-            return learningLoop.skillEvolution!({
+            return skillEvolve({
               sessionId,
               lastExtraction,
-              session: { ...ensureSession(sessionId), messages: [...ensureSession(sessionId).messages] },
+              session: {
+                ...ensureSession(sessionId),
+                messages: [...ensureSession(sessionId).messages],
+              },
             });
           }
         : undefined,
       dream: async (coordination) =>
-        dream({
-          coordination: {
-            reason: coordination.reason,
-            memoryAction: coordination.memoryAction,
-            topics: coordination.topics,
-            targetSkill: coordination.targetSkill,
+        dream(
+          {
+            coordination: {
+              reason: coordination.reason,
+              memoryAction: coordination.memoryAction,
+              topics: coordination.topics,
+              targetSkill: coordination.targetSkill,
+            },
+            force: true,
           },
-          force: true,
-        }, true),
+          true,
+        ),
     });
 
     if (loop.skillEvolution.ran) {
@@ -615,10 +628,7 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
       return buildPromptContext(input);
     },
 
-    async onTurnEnd(
-      sessionId: string,
-      turnMessages: ExtractionMessage[],
-    ): Promise<TurnEndResult> {
+    async onTurnEnd(sessionId: string, turnMessages: ExtractionMessage[]): Promise<TurnEndResult> {
       if (learningLoop) {
         return runTurnEndLearningLoop(sessionId, turnMessages);
       }
@@ -699,6 +709,5 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
     getSession(sessionId: string): SessionState | undefined {
       return sessions.get(sessionId);
     },
-
   };
 }

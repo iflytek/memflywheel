@@ -12,12 +12,12 @@ drive inference itself. So:
 
 ## Lifecycle mapping
 
-| OpenClaw hook          | scribe hook        | what the adapter does                         |
-| ---------------------- | ---------------- | --------------------------------------------- |
-| `before_agent_start`   | `onSessionStart` | register capability + ensure dir              |
-| `context:inject`       | `onPromptBuild`  | return `prependContext = scribe.preludePrompt`  |
-| `agent_end`            | `onTurnEnd`      | no-op in explicit recall-only mode                  |
-| `idle:watch`           | `onIdle`         | gate-checked dream                            |
+| OpenClaw hook        | scribe hook      | what the adapter does                          |
+| -------------------- | ---------------- | ---------------------------------------------- |
+| `before_agent_start` | `onSessionStart` | register capability + ensure dir               |
+| `context:inject`     | `onPromptBuild`  | return `prependContext = scribe.preludePrompt` |
+| `agent_end`          | `onTurnEnd`      | no-op in explicit recall-only mode             |
+| `idle:watch`         | `onIdle`         | gate-checked dream                             |
 
 ## Files
 

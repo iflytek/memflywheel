@@ -84,9 +84,7 @@ export interface CreateDreamAgentRunnerOptions {
  * supplies the bound tools + context (sharing the held lock) and the structural
  * packets; this returns the union of changed paths.
  */
-export function createDreamAgentRunner(
-  options: CreateDreamAgentRunnerOptions,
-): DreamAgentRunner {
+export function createDreamAgentRunner(options: CreateDreamAgentRunnerOptions): DreamAgentRunner {
   return async function dreamRunner(input) {
     const result = await runDreamAgent({
       model: options.model,

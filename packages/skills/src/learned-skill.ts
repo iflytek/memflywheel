@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { copyFile, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createFileTools as createCoreFileTools, type FileTool, type FileToolResult } from "@memflywheel/core";
+import {
+  createFileTools as createCoreFileTools,
+  type FileTool,
+  type FileToolResult,
+} from "@memflywheel/core";
 
 export const LEARNED_SKILL_DIR_PREFIX = "memflywheel-learned-";
 export const MAX_SUPPORTING_FILE_BYTES = 1024 * 1024;
@@ -221,7 +225,9 @@ interface StoreCheckpointManifest {
   beforeFiles: FileFingerprint[];
 }
 
-export function validateLearnedSkillPackage(input: ValidateLearnedSkillPackageInput): ValidatedLearnedSkillPackage {
+export function validateLearnedSkillPackage(
+  input: ValidateLearnedSkillPackageInput,
+): ValidatedLearnedSkillPackage {
   const slug = validateSlug(input.slug);
   const skillName = `${LEARNED_SKILL_DIR_PREFIX}${slug}`;
   const normalizedFiles = normalizeFiles(input.files, input.forbiddenPublicNames ?? []);
@@ -246,7 +252,9 @@ export function validateLearnedSkillPackage(input: ValidateLearnedSkillPackageIn
   };
 }
 
-export async function checkpointLearnedSkill(input: CheckpointLearnedSkillInput): Promise<LearnedSkillCheckpoint> {
+export async function checkpointLearnedSkill(
+  input: CheckpointLearnedSkillInput,
+): Promise<LearnedSkillCheckpoint> {
   const validated = validateLearnedSkillPackage(input);
   const skillsRoot = path.resolve(input.skillsRoot);
   const checkpointRoot = path.resolve(input.checkpointRoot);
@@ -254,7 +262,9 @@ export async function checkpointLearnedSkill(input: CheckpointLearnedSkillInput)
 
   const checkpointId = input.checkpointId ?? randomUUID();
   if (!CHECKPOINT_ID_RE.test(checkpointId)) {
-    throw new LearnedSkillValidationError("checkpointId must contain only letters, digits, dot, underscore, or dash");
+    throw new LearnedSkillValidationError(
+      "checkpointId must contain only letters, digits, dot, underscore, or dash",
+    );
   }
 
   const checkpointDir = path.join(checkpointRoot, checkpointId);
@@ -306,7 +316,9 @@ export async function checkpointLearnedSkill(input: CheckpointLearnedSkillInput)
   };
 }
 
-export async function readLearnedSkillCheckpoint(checkpointDir: string): Promise<LearnedSkillCheckpoint> {
+export async function readLearnedSkillCheckpoint(
+  checkpointDir: string,
+): Promise<LearnedSkillCheckpoint> {
   const manifestPath = path.join(path.resolve(checkpointDir), CHECKPOINT_MANIFEST);
   const manifest = await readCheckpointManifest(manifestPath);
   return {
@@ -319,20 +331,32 @@ export async function readLearnedSkillCheckpoint(checkpointDir: string): Promise
   };
 }
 
-export async function finalizeLearnedSkillCheckpoint(checkpoint: LearnedSkillCheckpoint): Promise<FinalizeLearnedSkillResult> {
+export async function finalizeLearnedSkillCheckpoint(
+  checkpoint: LearnedSkillCheckpoint,
+): Promise<FinalizeLearnedSkillResult> {
   const manifest = await readCheckpointManifest(checkpoint.manifestPath);
   const currentBeforeFinalize = await listFileFingerprints(manifest.skillsRoot);
   const preExistingDiff = diffFingerprints(manifest.beforeFiles, currentBeforeFinalize);
   if (preExistingDiff.deletedPaths.length > 0) {
-    throw new FinalizeSafetyError(`finalize refuses deleted paths: ${preExistingDiff.deletedPaths.join(", ")}`);
+    throw new FinalizeSafetyError(
+      `finalize refuses deleted paths: ${preExistingDiff.deletedPaths.join(", ")}`,
+    );
   }
-  const targetPreExistingChanges = preExistingDiff.changedPaths.filter((relativePath) => isInSkillDir(relativePath, manifest.skillDir));
+  const targetPreExistingChanges = preExistingDiff.changedPaths.filter((relativePath) =>
+    isInSkillDir(relativePath, manifest.skillDir),
+  );
   if (targetPreExistingChanges.length > 0) {
-    throw new FinalizeSafetyError(`finalize refuses target changed after checkpoint: ${targetPreExistingChanges.join(", ")}`);
+    throw new FinalizeSafetyError(
+      `finalize refuses target changed after checkpoint: ${targetPreExistingChanges.join(", ")}`,
+    );
   }
-  const externalPreExistingChanges = preExistingDiff.changedPaths.filter((relativePath) => !isInSkillDir(relativePath, manifest.skillDir));
+  const externalPreExistingChanges = preExistingDiff.changedPaths.filter(
+    (relativePath) => !isInSkillDir(relativePath, manifest.skillDir),
+  );
   if (externalPreExistingChanges.length > 0) {
-    throw new FinalizeSafetyError(`finalize refuses changes outside learned skill directory: ${externalPreExistingChanges.join(", ")}`);
+    throw new FinalizeSafetyError(
+      `finalize refuses changes outside learned skill directory: ${externalPreExistingChanges.join(", ")}`,
+    );
   }
 
   const targetDir = path.join(manifest.skillsRoot, manifest.skillDir);
@@ -341,11 +365,17 @@ export async function finalizeLearnedSkillCheckpoint(checkpoint: LearnedSkillChe
   const currentAfterFinalize = await listFileFingerprints(manifest.skillsRoot);
   const finalDiff = diffFingerprints(manifest.beforeFiles, currentAfterFinalize);
   if (finalDiff.deletedPaths.length > 0) {
-    throw new FinalizeSafetyError(`finalize refuses deleted paths: ${finalDiff.deletedPaths.join(", ")}`);
+    throw new FinalizeSafetyError(
+      `finalize refuses deleted paths: ${finalDiff.deletedPaths.join(", ")}`,
+    );
   }
-  const externalFinalChanges = finalDiff.changedPaths.filter((relativePath) => !isInSkillDir(relativePath, manifest.skillDir));
+  const externalFinalChanges = finalDiff.changedPaths.filter(
+    (relativePath) => !isInSkillDir(relativePath, manifest.skillDir),
+  );
   if (externalFinalChanges.length > 0) {
-    throw new FinalizeSafetyError(`finalize refuses changes outside learned skill directory: ${externalFinalChanges.join(", ")}`);
+    throw new FinalizeSafetyError(
+      `finalize refuses changes outside learned skill directory: ${externalFinalChanges.join(", ")}`,
+    );
   }
 
   return {
@@ -354,7 +384,9 @@ export async function finalizeLearnedSkillCheckpoint(checkpoint: LearnedSkillChe
   };
 }
 
-export async function rollbackLearnedSkillCheckpoint(checkpoint: LearnedSkillCheckpoint): Promise<RollbackLearnedSkillResult> {
+export async function rollbackLearnedSkillCheckpoint(
+  checkpoint: LearnedSkillCheckpoint,
+): Promise<RollbackLearnedSkillResult> {
   const manifest = await readCheckpointManifest(checkpoint.manifestPath);
   const targetDir = path.join(manifest.skillsRoot, manifest.skillDir);
   await rm(targetDir, { recursive: true, force: true });
@@ -371,7 +403,9 @@ export async function validateLearnedSkillDirectory(
   const resolved = path.resolve(skillDir);
   const dirName = path.basename(resolved);
   if (!dirName.startsWith(LEARNED_SKILL_DIR_PREFIX)) {
-    throw new LearnedSkillValidationError(`learned skill directory must start with ${LEARNED_SKILL_DIR_PREFIX}`);
+    throw new LearnedSkillValidationError(
+      `learned skill directory must start with ${LEARNED_SKILL_DIR_PREFIX}`,
+    );
   }
   const slug = dirName.slice(LEARNED_SKILL_DIR_PREFIX.length);
   const files = await readSkillDirectoryFiles(resolved);
@@ -395,7 +429,10 @@ export async function getLearnedSkillsCatalog(input: {
       continue;
     }
     const skillDir = path.join(skillsRoot, entry.name);
-    const validated = await validateLearnedSkillDirectory(skillDir, input.forbiddenPublicNames ?? []);
+    const validated = await validateLearnedSkillDirectory(
+      skillDir,
+      input.forbiddenPublicNames ?? [],
+    );
     const skillContent = input.includeContent
       ? await readFile(path.join(skillDir, "SKILL.md"), "utf8")
       : undefined;
@@ -412,7 +449,9 @@ export async function getLearnedSkillsCatalog(input: {
   return { skillsRoot, learnedSkills, skills: learnedSkills };
 }
 
-export function createLearnedSkillStore(options: CreateLearnedSkillStoreOptions): LearnedSkillStore {
+export function createLearnedSkillStore(
+  options: CreateLearnedSkillStoreOptions,
+): LearnedSkillStore {
   const skillsRoot = path.resolve(options.skillsRoot);
   const checkpointRoot = path.resolve(
     options.checkpointRoot ?? path.join(path.dirname(skillsRoot), ".memflywheel-skill-checkpoints"),
@@ -551,7 +590,10 @@ function commandUsesAbsolutePath(command: string): boolean {
   return /(?:^|[\s"'`=(<>|;&])\/[^\s/]/.test(command);
 }
 
-function bindStageFileTool(tool: FileTool, checkpoint: LearnedSkillStoreCheckpoint): LearnedSkillTool {
+function bindStageFileTool(
+  tool: FileTool,
+  checkpoint: LearnedSkillStoreCheckpoint,
+): LearnedSkillTool {
   return {
     name: tool.name,
     description: tool.description,
@@ -597,28 +639,47 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
   const stagedFiles = await listFileFingerprints(manifest.stageRoot);
   const stagedDiff = diffFingerprints(manifest.beforeFiles, stagedFiles);
   const allowedDeletedSkills = allowedMergedSkills(input.learningSummary);
-  const deletedSkillNames = [...new Set(stagedDiff.deletedPaths.map((relativePath) => relativePath.split("/")[0] ?? ""))]
+  const deletedSkillNames = [
+    ...new Set(stagedDiff.deletedPaths.map((relativePath) => relativePath.split("/")[0] ?? "")),
+  ]
     .filter(Boolean)
     .sort();
   for (const skillName of deletedSkillNames) {
     if (!allowedDeletedSkills.has(skillName)) {
-      throw new FinalizeSafetyError(`finalize refuses deleted learned skill paths outside mergedSkills: ${skillName}`);
+      throw new FinalizeSafetyError(
+        `finalize refuses deleted learned skill paths outside mergedSkills: ${skillName}`,
+      );
     }
-    const beforeSkillFiles = manifest.beforeFiles.filter((file) => isInSkillDir(file.relativePath, skillName));
-    const deletedSkillFiles = stagedDiff.deletedPaths.filter((relativePath) => isInSkillDir(relativePath, skillName));
-    const changedDeletedSkillFiles = stagedDiff.changedPaths.filter((relativePath) => isInSkillDir(relativePath, skillName));
-    if (beforeSkillFiles.length !== deletedSkillFiles.length || changedDeletedSkillFiles.length > 0) {
-      throw new FinalizeSafetyError(`finalize refuses partial learned skill deletion: ${skillName}`);
+    const beforeSkillFiles = manifest.beforeFiles.filter((file) =>
+      isInSkillDir(file.relativePath, skillName),
+    );
+    const deletedSkillFiles = stagedDiff.deletedPaths.filter((relativePath) =>
+      isInSkillDir(relativePath, skillName),
+    );
+    const changedDeletedSkillFiles = stagedDiff.changedPaths.filter((relativePath) =>
+      isInSkillDir(relativePath, skillName),
+    );
+    if (
+      beforeSkillFiles.length !== deletedSkillFiles.length ||
+      changedDeletedSkillFiles.length > 0
+    ) {
+      throw new FinalizeSafetyError(
+        `finalize refuses partial learned skill deletion: ${skillName}`,
+      );
     }
   }
 
   const changedFiles = [...stagedDiff.changedPaths, ...stagedDiff.deletedPaths].sort();
-  const changedSkillNames = [...new Set(changedFiles.map((relativePath) => relativePath.split("/")[0] ?? ""))]
+  const changedSkillNames = [
+    ...new Set(changedFiles.map((relativePath) => relativePath.split("/")[0] ?? "")),
+  ]
     .filter(Boolean)
     .sort();
   const illegalDir = changedSkillNames.find((name) => !isLearnedSkillDirName(name));
   if (illegalDir) {
-    throw new FinalizeSafetyError(`finalize refuses changes outside learned skill directories: ${illegalDir}`);
+    throw new FinalizeSafetyError(
+      `finalize refuses changes outside learned skill directories: ${illegalDir}`,
+    );
   }
 
   const changedSkills: LearnedSkillChange[] = [];
@@ -627,14 +688,19 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
       if (deletedSkillNames.includes(skillName)) {
         changedSkills.push({
           name: skillName,
-          changedFiles: stagedDiff.deletedPaths.filter((relativePath) => isInSkillDir(relativePath, skillName)),
+          changedFiles: stagedDiff.deletedPaths.filter((relativePath) =>
+            isInSkillDir(relativePath, skillName),
+          ),
           supportingFiles: [],
         });
         await rm(path.join(manifest.skillsRoot, skillName), { recursive: true, force: true });
         continue;
       }
       const stagedSkillDir = path.join(manifest.stageRoot, skillName);
-      const validated = await validateLearnedSkillDirectory(stagedSkillDir, input.forbiddenPublicNames);
+      const validated = await validateLearnedSkillDirectory(
+        stagedSkillDir,
+        input.forbiddenPublicNames,
+      );
       const skillChangedFiles = stagedDiff.changedPaths
         .filter((relativePath) => isInSkillDir(relativePath, skillName))
         .sort();
@@ -657,7 +723,9 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
   };
 }
 
-async function rollbackLearnedSkillStoreCheckpoint(checkpoint: LearnedSkillStoreCheckpoint): Promise<void> {
+async function rollbackLearnedSkillStoreCheckpoint(
+  checkpoint: LearnedSkillStoreCheckpoint,
+): Promise<void> {
   const manifest = await readStoreCheckpointManifest(checkpoint.manifestPath);
   await restoreStoreSnapshot(manifest);
 }
@@ -671,7 +739,9 @@ async function restoreStoreSnapshot(manifest: StoreCheckpointManifest): Promise<
   }
 }
 
-async function readSkillDirectoryFiles(skillDir: string): Promise<Record<string, LearnedSkillFileContent>> {
+async function readSkillDirectoryFiles(
+  skillDir: string,
+): Promise<Record<string, LearnedSkillFileContent>> {
   const files: Record<string, LearnedSkillFileContent> = {};
   await collectSkillDirectoryFiles(skillDir, skillDir, files);
   return files;
@@ -684,7 +754,9 @@ async function collectSkillDirectoryFiles(
 ): Promise<void> {
   const stat = await lstat(current);
   if (stat.isSymbolicLink()) {
-    throw new LearnedSkillValidationError(`symbolic links are not allowed in learned skill directories: ${current}`);
+    throw new LearnedSkillValidationError(
+      `symbolic links are not allowed in learned skill directories: ${current}`,
+    );
   }
   if (!stat.isDirectory()) {
     throw new LearnedSkillValidationError(`learned skill path must be a directory: ${current}`);
@@ -695,23 +767,28 @@ async function collectSkillDirectoryFiles(
     const filePath = path.join(current, entry.name);
     const relativePath = toPosixRelative(root, filePath);
     if (entry.isSymbolicLink()) {
-      throw new LearnedSkillValidationError(`symbolic links are not allowed in learned skill directories: ${relativePath}`);
+      throw new LearnedSkillValidationError(
+        `symbolic links are not allowed in learned skill directories: ${relativePath}`,
+      );
     }
     if (entry.isDirectory()) {
       await collectSkillDirectoryFiles(root, filePath, out);
       continue;
     }
     if (!entry.isFile()) {
-      throw new LearnedSkillValidationError(`only regular files are allowed in learned skill directories: ${relativePath}`);
+      throw new LearnedSkillValidationError(
+        `only regular files are allowed in learned skill directories: ${relativePath}`,
+      );
     }
     const bytes = await readFile(filePath);
-    out[relativePath] = relativePath === "SKILL.md"
-      ? new TextDecoder("utf8", { fatal: true }).decode(bytes)
-      : bytes;
+    out[relativePath] =
+      relativePath === "SKILL.md" ? new TextDecoder("utf8", { fatal: true }).decode(bytes) : bytes;
   }
 }
 
-function supportingFilesFromValidated(validated: ValidatedLearnedSkillPackage): LearnedSkillSupportingFile[] {
+function supportingFilesFromValidated(
+  validated: ValidatedLearnedSkillPackage,
+): LearnedSkillSupportingFile[] {
   const fileByPath = new Map(validated.files.map((file) => [file.relativePath, file]));
   return validated.supportingFiles.map((relativePath) => {
     const [kind] = relativePath.split("/");
@@ -759,9 +836,10 @@ async function readStoreCheckpointManifest(manifestPath: string): Promise<StoreC
 }
 
 function allowedMergedSkills(learningSummary: unknown): Set<string> {
-  const coordination = learningSummary && typeof learningSummary === "object"
-    ? (learningSummary as { coordination?: unknown }).coordination
-    : null;
+  const coordination =
+    learningSummary && typeof learningSummary === "object"
+      ? (learningSummary as { coordination?: unknown }).coordination
+      : null;
   if (!coordination || typeof coordination !== "object" || Array.isArray(coordination)) {
     return new Set();
   }
@@ -778,14 +856,18 @@ function allowedMergedSkills(learningSummary: unknown): Set<string> {
   return out;
 }
 
-async function writeStoreCheckpointManifest(manifestPath: string, manifest: StoreCheckpointManifest): Promise<void> {
+async function writeStoreCheckpointManifest(
+  manifestPath: string,
+  manifest: StoreCheckpointManifest,
+): Promise<void> {
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
 function parseStringField(args: unknown, key: string): string {
-  const record = args && typeof args === "object" && !Array.isArray(args)
-    ? args as Record<string, unknown>
-    : null;
+  const record =
+    args && typeof args === "object" && !Array.isArray(args)
+      ? (args as Record<string, unknown>)
+      : null;
   const value = record?.[key];
   if (typeof value !== "string" || value.trim() === "") {
     throw new LearnedSkillValidationError(`${key} must be a non-empty string`);
@@ -793,7 +875,7 @@ function parseStringField(args: unknown, key: string): string {
   return value;
 }
 
-function parseSkillFileArgs(args: unknown): { skillName: string; relativePath: string } {
+function _parseSkillFileArgs(args: unknown): { skillName: string; relativePath: string } {
   const skillName = parseSkillNameField(args, "skillName");
   const relativePath = normalizeSkillRelativePath(parseStringField(args, "relativePath"));
   assertAllowedSkillPath(relativePath);
@@ -809,7 +891,11 @@ function parseSkillNameField(args: unknown, key: string): string {
   return skillName;
 }
 
-function resolveStageSkillFile(stageRoot: string, skillName: string, relativePath: string): string {
+function _resolveStageSkillFile(
+  stageRoot: string,
+  skillName: string,
+  relativePath: string,
+): string {
   const resolvedStageRoot = path.resolve(stageRoot);
   const resolved = path.resolve(resolvedStageRoot, skillName, relativePath);
   if (resolved !== resolvedStageRoot && !resolved.startsWith(resolvedStageRoot + path.sep)) {
@@ -857,7 +943,9 @@ function normalizeFiles(
         throw new LearnedSkillValidationError(`supporting file must be non-empty: ${relativePath}`);
       }
       if (bytes.byteLength > MAX_SUPPORTING_FILE_BYTES) {
-        throw new LearnedSkillValidationError(`supporting file exceeds 1048576 bytes: ${relativePath}`);
+        throw new LearnedSkillValidationError(
+          `supporting file exceeds 1048576 bytes: ${relativePath}`,
+        );
       }
     }
 
@@ -876,11 +964,15 @@ function normalizeSkillRelativePath(rawRelativePath: string): string {
     throw new LearnedSkillValidationError("skill file path must be non-empty and trimmed");
   }
   if (rawRelativePath.startsWith("/") || rawRelativePath.includes("\\")) {
-    throw new LearnedSkillValidationError(`skill file path must be relative POSIX path: ${rawRelativePath}`);
+    throw new LearnedSkillValidationError(
+      `skill file path must be relative POSIX path: ${rawRelativePath}`,
+    );
   }
   const parts = rawRelativePath.split("/");
   if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
-    throw new LearnedSkillValidationError(`skill file path must not contain empty, dot, or parent segments: ${rawRelativePath}`);
+    throw new LearnedSkillValidationError(
+      `skill file path must not contain empty, dot, or parent segments: ${rawRelativePath}`,
+    );
   }
   return rawRelativePath;
 }
@@ -891,7 +983,9 @@ function assertAllowedSkillPath(relativePath: string): void {
   }
   const [top] = relativePath.split("/");
   if (!top || !SUPPORTING_DIRS.includes(top as (typeof SUPPORTING_DIRS)[number])) {
-    throw new LearnedSkillValidationError(`supporting files must live under references/, templates/, scripts/, or assets/: ${relativePath}`);
+    throw new LearnedSkillValidationError(
+      `supporting files must live under references/, templates/, scripts/, or assets/: ${relativePath}`,
+    );
   }
   if (!relativePath.includes("/")) {
     throw new LearnedSkillValidationError(`supporting file must include a file name under ${top}/`);
@@ -901,16 +995,24 @@ function assertAllowedSkillPath(relativePath: string): void {
 function assertSafeFileName(relativePath: string): void {
   const basename = path.posix.basename(relativePath);
   const lower = basename.toLowerCase();
-  if (SENSITIVE_FILE_BASENAMES.has(lower) || SENSITIVE_FILE_NAME_PATTERNS.some((pattern) => pattern.test(lower))) {
+  if (
+    SENSITIVE_FILE_BASENAMES.has(lower) ||
+    SENSITIVE_FILE_NAME_PATTERNS.some((pattern) => pattern.test(lower))
+  ) {
     throw new LearnedSkillValidationError(`sensitive file name is not allowed: ${relativePath}`);
   }
 }
 
-function normalizeContent(relativePath: string, content: LearnedSkillFileContent): { bytes: Uint8Array; text?: string } {
+function normalizeContent(
+  relativePath: string,
+  content: LearnedSkillFileContent,
+): { bytes: Uint8Array; text?: string } {
   if (typeof content === "string") {
     const bytes = new TextEncoder().encode(content);
     if (bytes.byteLength === 0 && relativePath === "SKILL.md") {
-      throw new LearnedSkillValidationError(`required text file must be non-empty: ${relativePath}`);
+      throw new LearnedSkillValidationError(
+        `required text file must be non-empty: ${relativePath}`,
+      );
     }
     return { bytes, text: content };
   }
@@ -921,7 +1023,11 @@ function normalizeContent(relativePath: string, content: LearnedSkillFileContent
   return { bytes: content };
 }
 
-function assertNoForbiddenPublicNames(relativePath: string, text: string, forbiddenPublicNames: readonly string[]): void {
+function assertNoForbiddenPublicNames(
+  relativePath: string,
+  text: string,
+  forbiddenPublicNames: readonly string[],
+): void {
   const lowerText = text.toLowerCase();
   for (const name of forbiddenPublicNames) {
     if (name.length === 0) continue;
@@ -931,7 +1037,10 @@ function assertNoForbiddenPublicNames(relativePath: string, text: string, forbid
   }
 }
 
-function parseStrictSkillFrontmatter(content: string, expectedName: string): LearnedSkillFrontmatter {
+function parseStrictSkillFrontmatter(
+  content: string,
+  expectedName: string,
+): LearnedSkillFrontmatter {
   const lines = content.split("\n");
   if (lines[0] !== "---") {
     throw new LearnedSkillValidationError("SKILL.md must start with strict frontmatter");
@@ -947,25 +1056,35 @@ function parseStrictSkillFrontmatter(content: string, expectedName: string): Lea
   for (const line of lines.slice(1, endIndex)) {
     const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
     if (!match) {
-      throw new LearnedSkillValidationError("SKILL.md strict frontmatter uses key: value lines only");
+      throw new LearnedSkillValidationError(
+        "SKILL.md strict frontmatter uses key: value lines only",
+      );
     }
     const key = match[1] as (typeof REQUIRED_FRONTMATTER_KEYS)[number];
     const value = match[2] ?? "";
     if (!REQUIRED_FRONTMATTER_KEYS.includes(key)) {
-      throw new LearnedSkillValidationError("SKILL.md strict frontmatter keys must be name, display_name, description");
+      throw new LearnedSkillValidationError(
+        "SKILL.md strict frontmatter keys must be name, display_name, description",
+      );
     }
     if (Object.prototype.hasOwnProperty.call(meta, key)) {
-      throw new LearnedSkillValidationError(`SKILL.md strict frontmatter has duplicate key: ${key}`);
+      throw new LearnedSkillValidationError(
+        `SKILL.md strict frontmatter has duplicate key: ${key}`,
+      );
     }
     if (value.trim().length === 0) {
-      throw new LearnedSkillValidationError(`SKILL.md strict frontmatter value must be non-empty: ${key}`);
+      throw new LearnedSkillValidationError(
+        `SKILL.md strict frontmatter value must be non-empty: ${key}`,
+      );
     }
     meta[key] = value.trim();
     keys.push(key);
   }
 
   if (keys.join(",") !== REQUIRED_FRONTMATTER_KEYS.join(",")) {
-    throw new LearnedSkillValidationError("SKILL.md strict frontmatter keys must be name, display_name, description");
+    throw new LearnedSkillValidationError(
+      "SKILL.md strict frontmatter keys must be name, display_name, description",
+    );
   }
   if (meta.name !== expectedName) {
     throw new LearnedSkillValidationError(`SKILL.md name must equal ${expectedName}`);
@@ -988,7 +1107,9 @@ function assertRequiredSections(content: string): void {
       throw new LearnedSkillValidationError(`SKILL.md must include ## ${title}`);
     }
     if (index <= lastIndex) {
-      throw new LearnedSkillValidationError("SKILL.md required sections must be ordered as Use Cases, Procedure, Guardrails");
+      throw new LearnedSkillValidationError(
+        "SKILL.md required sections must be ordered as Use Cases, Procedure, Guardrails",
+      );
     }
     if (sections[index]?.content.trim().length === 0) {
       throw new LearnedSkillValidationError(`SKILL.md section must be non-empty: ${title}`);
@@ -1013,7 +1134,8 @@ function collectSections(body: string): Array<{ title: string; content: string }
   const matches = [...body.matchAll(/^##\s+(.+?)\s*$/gm)];
   return matches.map((match, index) => {
     const start = (match.index ?? 0) + match[0].length;
-    const end = index + 1 < matches.length ? matches[index + 1]?.index ?? body.length : body.length;
+    const end =
+      index + 1 < matches.length ? (matches[index + 1]?.index ?? body.length) : body.length;
     return { title: match[1] ?? "", content: body.slice(start, end) };
   });
 }
@@ -1035,7 +1157,9 @@ function assertNumberedProcedure(content: string): void {
     }
     const step = Number(match[1]);
     if (step !== index + 1) {
-      throw new LearnedSkillValidationError("Procedure numbered steps must start at 1 and be contiguous");
+      throw new LearnedSkillValidationError(
+        "Procedure numbered steps must start at 1 and be contiguous",
+      );
     }
   }
 }
@@ -1050,7 +1174,11 @@ async function readCheckpointManifest(manifestPath: string): Promise<CheckpointM
 }
 
 function assertSeparateRoots(skillsRoot: string, checkpointRoot: string): void {
-  if (skillsRoot === checkpointRoot || isInsidePath(checkpointRoot, skillsRoot) || isInsidePath(skillsRoot, checkpointRoot)) {
+  if (
+    skillsRoot === checkpointRoot ||
+    isInsidePath(checkpointRoot, skillsRoot) ||
+    isInsidePath(skillsRoot, checkpointRoot)
+  ) {
     throw new LearnedSkillValidationError("checkpointRoot must be outside skillsRoot");
   }
 }
@@ -1077,7 +1205,9 @@ async function pathExists(filePath: string): Promise<boolean> {
 async function copyTree(sourceDir: string, targetDir: string): Promise<void> {
   const sourceStat = await lstat(sourceDir);
   if (sourceStat.isSymbolicLink()) {
-    throw new FinalizeSafetyError(`symbolic links are not allowed in learned skill trees: ${sourceDir}`);
+    throw new FinalizeSafetyError(
+      `symbolic links are not allowed in learned skill trees: ${sourceDir}`,
+    );
   }
   if (!sourceStat.isDirectory()) {
     throw new FinalizeSafetyError(`copyTree source must be a directory: ${sourceDir}`);
@@ -1089,14 +1219,18 @@ async function copyTree(sourceDir: string, targetDir: string): Promise<void> {
     const sourcePath = path.join(sourceDir, entry.name);
     const targetPath = path.join(targetDir, entry.name);
     if (entry.isSymbolicLink()) {
-      throw new FinalizeSafetyError(`symbolic links are not allowed in learned skill trees: ${sourcePath}`);
+      throw new FinalizeSafetyError(
+        `symbolic links are not allowed in learned skill trees: ${sourcePath}`,
+      );
     }
     if (entry.isDirectory()) {
       await copyTree(sourcePath, targetPath);
       continue;
     }
     if (!entry.isFile()) {
-      throw new FinalizeSafetyError(`only regular files are allowed in learned skill trees: ${sourcePath}`);
+      throw new FinalizeSafetyError(
+        `only regular files are allowed in learned skill trees: ${sourcePath}`,
+      );
     }
     await mkdir(path.dirname(targetPath), { recursive: true });
     await copyFile(sourcePath, targetPath);
@@ -1110,7 +1244,11 @@ async function listFileFingerprints(root: string): Promise<FileFingerprint[]> {
   return out.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 }
 
-async function collectFileFingerprints(root: string, current: string, out: FileFingerprint[]): Promise<void> {
+async function collectFileFingerprints(
+  root: string,
+  current: string,
+  out: FileFingerprint[],
+): Promise<void> {
   const currentStat = await lstat(current);
   if (currentStat.isSymbolicLink()) {
     throw new FinalizeSafetyError(`symbolic links are not allowed in skillsRoot: ${current}`);
@@ -1145,7 +1283,10 @@ function toPosixRelative(root: string, filePath: string): string {
   return path.relative(root, filePath).split(path.sep).join("/");
 }
 
-function diffFingerprints(before: FileFingerprint[], after: FileFingerprint[]): { changedPaths: string[]; deletedPaths: string[] } {
+function diffFingerprints(
+  before: FileFingerprint[],
+  after: FileFingerprint[],
+): { changedPaths: string[]; deletedPaths: string[] } {
   const beforeMap = new Map(before.map((file) => [file.relativePath, file]));
   const afterMap = new Map(after.map((file) => [file.relativePath, file]));
   const changedPaths: string[] = [];

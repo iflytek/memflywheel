@@ -68,7 +68,12 @@ const STOP_RESPONSE: CanonicalModelResponse = {
 };
 
 function slug(name: string): string {
-  return `${name.toLowerCase().replace(/[^a-z0-9一-龥]+/g, "-").replace(/^-+|-+$/g, "") || "memory"}.md`;
+  return `${
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9一-龥]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "memory"
+  }.md`;
 }
 
 function writeMemoryArgs(input: {
@@ -91,12 +96,15 @@ test("runExtractionAgent: subagent calls write then stops; file is written", asy
   try {
     const ctx: StorageContext = { root, audit: createAuditLogger(root) };
     const { model, requests } = scriptedModel([
-      toolCallResponse("write", writeMemoryArgs({
-        type: "preference",
-        name: "Preferred drink",
-        description: "go-to beverage",
-        body: "The user prefers green tea over coffee.",
-      })),
+      toolCallResponse(
+        "write",
+        writeMemoryArgs({
+          type: "preference",
+          name: "Preferred drink",
+          description: "go-to beverage",
+          body: "The user prefers green tea over coffee.",
+        }),
+      ),
       STOP_RESPONSE,
     ]);
 
@@ -223,7 +231,8 @@ test("runExtractionAgent: retries a transient error (429) then succeeds", async 
     const model: CanonicalModelCompletion = {
       complete: async () => {
         calls += 1;
-        if (calls === 1) throw new Error("MemFlywheel model completion: request failed (429). rate limited");
+        if (calls === 1)
+          throw new Error("MemFlywheel model completion: request failed (429). rate limited");
         return STOP_RESPONSE;
       },
     };
@@ -321,7 +330,10 @@ test("runExtractionAgent: unknown canonical tool calls are reported, not thrown"
   const root = await tempRoot();
   try {
     const ctx: StorageContext = { root, audit: createAuditLogger(root) };
-    const { model } = scriptedModel([toolCallResponse("missing_file_tool", { pattern: "**/*.md" }, "c1"), STOP_RESPONSE]);
+    const { model } = scriptedModel([
+      toolCallResponse("missing_file_tool", { pattern: "**/*.md" }, "c1"),
+      STOP_RESPONSE,
+    ]);
     const result = await runExtractionAgent({
       model,
       tools: createFileTools(),
@@ -342,17 +354,22 @@ test("createExtractionAgentRunner: turn-end writes a memory via the agent loop",
   const root = await tempRoot();
   try {
     const { model } = scriptedModel([
-      toolCallResponse("write", writeMemoryArgs({
-        type: "preference",
-        name: "fruit",
-        body: "The user likes strawberries.",
-      })),
+      toolCallResponse(
+        "write",
+        writeMemoryArgs({
+          type: "preference",
+          name: "fruit",
+          body: "The user likes strawberries.",
+        }),
+      ),
       STOP_RESPONSE,
     ]);
     const scribe = createMemFlywheel({ root, agent: createExtractionAgentRunner({ model }) });
     await scribe.onSessionStart("s1");
 
-    const turn = await scribe.onTurnEnd("s1", [{ role: "user", text: "I love strawberries, remember that." }]);
+    const turn = await scribe.onTurnEnd("s1", [
+      { role: "user", text: "I love strawberries, remember that." },
+    ]);
     assert.equal(turn.skipped, false);
     assert.equal(turn.result, ExtractionResult.Completed);
 
@@ -374,7 +391,12 @@ test("createDreamAgentRunner: drives the dream subagent over ordinary file tools
     const { model, requests } = scriptedModel([
       toolCallResponse(
         "write",
-        writeMemoryArgs({ type: "ambient", name: "Team", description: "team roles", body: "Mara leads backend." }),
+        writeMemoryArgs({
+          type: "ambient",
+          name: "Team",
+          description: "team roles",
+          body: "Mara leads backend.",
+        }),
         "d1",
       ),
       STOP_RESPONSE,
@@ -385,8 +407,12 @@ test("createDreamAgentRunner: drives the dream subagent over ordinary file tools
       root,
       toolCtx: createMemoryFileToolContext({ ctx }),
       tools: createFileTools(),
-      health: [{ severity: "warn", code: "duplicate-content", paths: ["ambient/a.md"], message: "dup" }],
-      typeReview: [{ path: "ambient/a.md", type: "ambient", name: "a", description: "d", excerpt: "x" }],
+      health: [
+        { severity: "warn", code: "duplicate-content", paths: ["ambient/a.md"], message: "dup" },
+      ],
+      typeReview: [
+        { path: "ambient/a.md", type: "ambient", name: "a", description: "d", excerpt: "x" },
+      ],
       manifest: "ambient/a.md",
       index: "# MEMORY",
       coordination: { reason: "idle", memoryAction: "consolidate", topics: ["team"] },

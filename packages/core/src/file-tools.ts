@@ -92,11 +92,16 @@ function normalizePositiveInt(value: unknown, fallback: number, label: string): 
 function normalizeTimeout(value: unknown): number {
   const next = asNumber(value);
   if (next === undefined) return BASH_DEFAULT_TIMEOUT_MS;
-  if (next < 0) throw new Error(`Invalid timeout value: ${next}. Timeout must be a positive number.`);
+  if (next < 0)
+    throw new Error(`Invalid timeout value: ${next}. Timeout must be a positive number.`);
   return Math.trunc(next);
 }
 
-function resolveUnderRoot(root: string, rawPath: string, label: string): { relativePath: string; absolutePath: string } {
+function resolveUnderRoot(
+  root: string,
+  rawPath: string,
+  label: string,
+): { relativePath: string; absolutePath: string } {
   const inputPath = String(rawPath || "").trim();
   if (!inputPath) throw new Error(`${label} is required`);
   if (inputPath.includes("\0")) throw new Error(`${label} must not contain NUL`);
@@ -116,7 +121,10 @@ function resolveUnderRoot(root: string, rawPath: string, label: string): { relat
   return { relativePath, absolutePath: checked };
 }
 
-function resolveDirectory(root: string, rawPath?: string): { relativePath: string; absolutePath: string } {
+function resolveDirectory(
+  root: string,
+  rawPath?: string,
+): { relativePath: string; absolutePath: string } {
   if (!rawPath || !String(rawPath).trim()) {
     return { relativePath: ".", absolutePath: path.resolve(root) };
   }
@@ -150,7 +158,8 @@ function parseMemoryWritePath(relativePath: string): { type: MemoryType; filenam
   if (!filename || filename.includes("/")) {
     throw new Error(`memory writes must target a flat typed Markdown file: ${normalized}`);
   }
-  if (!filename.endsWith(".md")) throw new Error(`memory writes must target Markdown files: ${normalized}`);
+  if (!filename.endsWith(".md"))
+    throw new Error(`memory writes must target Markdown files: ${normalized}`);
   return { type, filename };
 }
 
@@ -160,11 +169,15 @@ function formatSourceRef(ref: MemorySourceRef): string {
 
 function validateRetrievalTerms(terms: string[] | undefined): void {
   if (terms === undefined) return;
-  if (!Array.isArray(terms)) throw new Error("frontmatter.retrieval_terms must be a YAML string list");
-  if (terms.length > 12) throw new Error("frontmatter.retrieval_terms must contain at most 12 items");
+  if (!Array.isArray(terms))
+    throw new Error("frontmatter.retrieval_terms must be a YAML string list");
+  if (terms.length > 12)
+    throw new Error("frontmatter.retrieval_terms must contain at most 12 items");
   for (const term of terms) {
     if (!term || !isSingleLineValue(term) || term.length > 80) {
-      throw new Error("frontmatter.retrieval_terms items must be non-empty single-line values up to 80 chars");
+      throw new Error(
+        "frontmatter.retrieval_terms items must be non-empty single-line values up to 80 chars",
+      );
     }
   }
 }
@@ -180,7 +193,11 @@ function appendSourceRef(body: string, ref: MemorySourceRef | undefined): string
   return `${trimmed}\n\n## Sources\n\n${sourceLine}`;
 }
 
-async function writeByPolicy(toolCtx: FileToolContext, rawPath: string, content: string): Promise<FileToolResult> {
+async function writeByPolicy(
+  toolCtx: FileToolContext,
+  rawPath: string,
+  content: string,
+): Promise<FileToolResult> {
   const { relativePath, absolutePath } = resolveUnderRoot(toolCtx.root, rawPath, "filePath");
   if (toolCtx.mode === "memory") {
     const { type, filename } = parseMemoryWritePath(relativePath);
@@ -215,7 +232,11 @@ async function writeByPolicy(toolCtx: FileToolContext, rawPath: string, content:
   await mkdir(path.dirname(absolutePath), { recursive: true });
   await atomicWriteFile(absolutePath, content);
   if (toolCtx.audit) {
-    await toolCtx.audit.append({ ts: new Date().toISOString(), action: "write", path: relativePath });
+    await toolCtx.audit.append({
+      ts: new Date().toISOString(),
+      action: "write",
+      path: relativePath,
+    });
   }
   await afterMutation(toolCtx);
   return { ok: true, text: "Wrote file successfully.", changed: [relativePath] };
@@ -229,13 +250,16 @@ function formatFileLines(content: string, offset: number, limit: number): string
   }
   const selected = lines.slice(start, start + limit);
   const out = selected.map((line, index) => {
-    const text = line.length > MAX_LINE_LENGTH
-      ? `${line.slice(0, MAX_LINE_LENGTH)}... (line truncated to ${MAX_LINE_LENGTH} chars)`
-      : line;
+    const text =
+      line.length > MAX_LINE_LENGTH
+        ? `${line.slice(0, MAX_LINE_LENGTH)}... (line truncated to ${MAX_LINE_LENGTH} chars)`
+        : line;
     return `${start + index + 1}: ${text}`;
   });
   if (start + selected.length < lines.length) {
-    out.push(`(Showing ${selected.length} of ${lines.length} lines. Use offset=${start + selected.length + 1} to read more.)`);
+    out.push(
+      `(Showing ${selected.length} of ${lines.length} lines. Use offset=${start + selected.length + 1} to read more.)`,
+    );
   }
   return out.join("\n");
 }
@@ -267,8 +291,14 @@ function convertLineEnding(text: string, ending: "\n" | "\r\n"): string {
   return ending === "\n" ? text : text.replace(/\n/g, "\r\n");
 }
 
-function replaceContent(current: string, oldString: string, newString: string, replaceAll: boolean): string {
-  if (oldString === newString) throw new Error("No changes to apply: oldString and newString are identical.");
+function replaceContent(
+  current: string,
+  oldString: string,
+  newString: string,
+  replaceAll: boolean,
+): string {
+  if (oldString === newString)
+    throw new Error("No changes to apply: oldString and newString are identical.");
   if (oldString === "") return newString;
   const ending = detectLineEnding(current);
   const oldNeedle = convertLineEnding(normalizeLineEndings(oldString), ending);
@@ -276,9 +306,13 @@ function replaceContent(current: string, oldString: string, newString: string, r
   const hits = current.split(oldNeedle).length - 1;
   if (hits === 0) throw new Error("oldString not found in content");
   if (hits > 1 && !replaceAll) {
-    throw new Error("Found multiple matches for oldString. Provide more surrounding lines or set replaceAll=true.");
+    throw new Error(
+      "Found multiple matches for oldString. Provide more surrounding lines or set replaceAll=true.",
+    );
   }
-  return replaceAll ? current.split(oldNeedle).join(replacement) : current.replace(oldNeedle, replacement);
+  return replaceAll
+    ? current.split(oldNeedle).join(replacement)
+    : current.replace(oldNeedle, replacement);
 }
 
 function escapeRegexChar(ch: string): string {
@@ -330,7 +364,8 @@ async function fileMtime(absolutePath: string): Promise<number> {
 }
 
 function outputPath(root: string, absolutePath: string): string {
-  return path.resolve(absolutePath).startsWith(path.resolve(root) + path.sep) || path.resolve(absolutePath) === path.resolve(root)
+  return path.resolve(absolutePath).startsWith(path.resolve(root) + path.sep) ||
+    path.resolve(absolutePath) === path.resolve(root)
     ? path.resolve(absolutePath)
     : absolutePath;
 }
@@ -346,13 +381,20 @@ function errorResult(tool: string, error: unknown): FileToolResult {
 
 const readTool: FileTool = {
   name: "read",
-  description: "Read a file or directory. filePath may be absolute or relative to the tool root. Supports offset and limit.",
+  description:
+    "Read a file or directory. filePath may be absolute or relative to the tool root. Supports offset and limit.",
   inputSchema: {
     type: "object",
     properties: {
-      filePath: { type: "string", description: "Absolute path, or path relative to the tool root." },
+      filePath: {
+        type: "string",
+        description: "Absolute path, or path relative to the tool root.",
+      },
       offset: { type: "number", description: "Line or directory-entry offset, 1-indexed." },
-      limit: { type: "number", description: "Maximum lines or directory entries to read. Defaults to 2000." },
+      limit: {
+        type: "number",
+        description: "Maximum lines or directory entries to read. Defaults to 2000.",
+      },
     },
     required: ["filePath"],
     additionalProperties: false,
@@ -361,14 +403,22 @@ const readTool: FileTool = {
     const record = asRecord(args);
     if (!record) return { ok: false, text: "read: arguments must be an object" };
     try {
-      const { absolutePath } = resolveUnderRoot(toolCtx.root, asString(record.filePath), "filePath");
+      const { absolutePath } = resolveUnderRoot(
+        toolCtx.root,
+        asString(record.filePath),
+        "filePath",
+      );
       const offset = normalizePositiveInt(record.offset, 1, "offset");
       const limit = normalizePositiveInt(record.limit, DEFAULT_READ_LIMIT, "limit");
       const stat = await statSafe(absolutePath);
       if (!stat) return { ok: false, text: `File not found: ${absolutePath}` };
-      if (stat.isDirectory()) return { ok: true, text: await listDirectory(absolutePath, offset, limit) };
+      if (stat.isDirectory())
+        return { ok: true, text: await listDirectory(absolutePath, offset, limit) };
       if (!stat.isFile()) return { ok: false, text: `Path is not a regular file: ${absolutePath}` };
-      return { ok: true, text: formatFileLines(await readFile(absolutePath, "utf8"), offset, limit) };
+      return {
+        ok: true,
+        text: formatFileLines(await readFile(absolutePath, "utf8"), offset, limit),
+      };
     } catch (error) {
       return errorResult("read", error);
     }
@@ -377,11 +427,15 @@ const readTool: FileTool = {
 
 const writeTool: FileTool = {
   name: "write",
-  description: "Write a file. filePath may be absolute or relative to the tool root. Existing files are overwritten.",
+  description:
+    "Write a file. filePath may be absolute or relative to the tool root. Existing files are overwritten.",
   inputSchema: {
     type: "object",
     properties: {
-      filePath: { type: "string", description: "Absolute path, or path relative to the tool root." },
+      filePath: {
+        type: "string",
+        description: "Absolute path, or path relative to the tool root.",
+      },
       content: { type: "string", description: "Full file content." },
     },
     required: ["filePath", "content"],
@@ -400,12 +454,19 @@ const writeTool: FileTool = {
 
 const editTool: FileTool = {
   name: "edit",
-  description: "Perform exact string replacement in a file. oldString=\"\" writes newString as the full file content.",
+  description:
+    'Perform exact string replacement in a file. oldString="" writes newString as the full file content.',
   inputSchema: {
     type: "object",
     properties: {
-      filePath: { type: "string", description: "Absolute path, or path relative to the tool root." },
-      oldString: { type: "string", description: "Exact string to replace. Empty string means write a whole file." },
+      filePath: {
+        type: "string",
+        description: "Absolute path, or path relative to the tool root.",
+      },
+      oldString: {
+        type: "string",
+        description: "Exact string to replace. Empty string means write a whole file.",
+      },
       newString: { type: "string", description: "Replacement text." },
       replaceAll: { type: "boolean", description: "Replace all occurrences. Defaults to false." },
     },
@@ -420,9 +481,10 @@ const editTool: FileTool = {
       const { absolutePath } = resolveUnderRoot(toolCtx.root, filePath, "filePath");
       const oldString = asString(record.oldString);
       const newString = asString(record.newString);
-      const current = oldString === ""
-        ? (await readFile(absolutePath, "utf8").catch(() => ""))
-        : await readFile(absolutePath, "utf8");
+      const current =
+        oldString === ""
+          ? await readFile(absolutePath, "utf8").catch(() => "")
+          : await readFile(absolutePath, "utf8");
       const next = replaceContent(current, oldString, newString, record.replaceAll === true);
       return await writeByPolicy(toolCtx, filePath, next);
     } catch (error) {
@@ -433,7 +495,8 @@ const editTool: FileTool = {
 
 const bashTool: FileTool = {
   name: "bash",
-  description: "Run a shell command from the tool root, with optional workdir, timeout, and description.",
+  description:
+    "Run a shell command from the tool root, with optional workdir, timeout, and description.",
   inputSchema: {
     type: "object",
     properties: {
@@ -467,11 +530,17 @@ const bashTool: FileTool = {
         });
       }
       await afterMutation(toolCtx);
-      const text = [result.stdout, result.stderr].map((item) => String(item || "").trimEnd()).filter(Boolean).join("\n");
+      const text = [result.stdout, result.stderr]
+        .map((item) => String(item || "").trimEnd())
+        .filter(Boolean)
+        .join("\n");
       return { ok: true, text: truncateBashOutput(text || "(no output)") };
     } catch (error) {
       const err = error as { stdout?: unknown; stderr?: unknown; message?: string };
-      const text = [err.stdout, err.stderr, err.message].map((item) => String(item || "").trimEnd()).filter(Boolean).join("\n");
+      const text = [err.stdout, err.stderr, err.message]
+        .map((item) => String(item || "").trimEnd())
+        .filter(Boolean)
+        .join("\n");
       return { ok: false, text: `bash: ${truncateBashOutput(text)}` };
     }
   },
@@ -479,12 +548,16 @@ const bashTool: FileTool = {
 
 const globTool: FileTool = {
   name: "glob",
-  description: "Match files by glob pattern. Supports optional path directory. Results are sorted by modification time.",
+  description:
+    "Match files by glob pattern. Supports optional path directory. Results are sorted by modification time.",
   inputSchema: {
     type: "object",
     properties: {
       pattern: { type: "string", description: 'Glob pattern, e.g. "**/*.md".' },
-      path: { type: "string", description: "Optional directory under the tool root. Defaults to the tool root." },
+      path: {
+        type: "string",
+        description: "Optional directory under the tool root. Defaults to the tool root.",
+      },
     },
     required: ["pattern"],
     additionalProperties: false,
@@ -512,7 +585,11 @@ const globTool: FileTool = {
       const final = truncated ? matches.slice(0, GLOB_LIMIT) : matches;
       if (final.length === 0) return { ok: true, text: "No files found" };
       const out = final.map((item) => outputPath(toolCtx.root, item.path));
-      if (truncated) out.push("", `(Results are truncated: showing first ${GLOB_LIMIT} results. Consider using a more specific path or pattern.)`);
+      if (truncated)
+        out.push(
+          "",
+          `(Results are truncated: showing first ${GLOB_LIMIT} results. Consider using a more specific path or pattern.)`,
+        );
       return { ok: true, text: out.join("\n") };
     } catch (error) {
       return errorResult("glob", error);
@@ -522,12 +599,16 @@ const globTool: FileTool = {
 
 const grepTool: FileTool = {
   name: "grep",
-  description: "Search file contents using a regular expression. Supports optional path and include glob.",
+  description:
+    "Search file contents using a regular expression. Supports optional path and include glob.",
   inputSchema: {
     type: "object",
     properties: {
       pattern: { type: "string", description: "Regular expression pattern to search for." },
-      path: { type: "string", description: "Optional file or directory under the tool root. Defaults to the tool root." },
+      path: {
+        type: "string",
+        description: "Optional file or directory under the tool root. Defaults to the tool root.",
+      },
       include: { type: "string", description: 'Optional file pattern, e.g. "*.ts" or "**/*.md".' },
     },
     required: ["pattern"],
@@ -552,7 +633,11 @@ const grepTool: FileTool = {
       for (const file of candidates) {
         if (includeRe && !includeRe.test(file)) continue;
         const absolutePath = path.resolve(cwd, file);
-        if (!absolutePath.startsWith(path.resolve(toolCtx.root) + path.sep) && absolutePath !== path.resolve(toolCtx.root)) continue;
+        if (
+          !absolutePath.startsWith(path.resolve(toolCtx.root) + path.sep) &&
+          absolutePath !== path.resolve(toolCtx.root)
+        )
+          continue;
         let text: string;
         try {
           text = await readFile(absolutePath, "utf8");
@@ -562,14 +647,17 @@ const grepTool: FileTool = {
         const mtime = await fileMtime(absolutePath);
         const lines = text.split(/\r?\n/);
         for (let i = 0; i < lines.length; i += 1) {
-          if (regex.test(lines[i] ?? "")) rows.push({ file: absolutePath, line: i + 1, text: lines[i] ?? "", mtime });
+          if (regex.test(lines[i] ?? ""))
+            rows.push({ file: absolutePath, line: i + 1, text: lines[i] ?? "", mtime });
         }
       }
       rows.sort((a, b) => b.mtime - a.mtime || a.file.localeCompare(b.file) || a.line - b.line);
       if (rows.length === 0) return { ok: true, text: "No files found" };
       const truncated = rows.length > GREP_LIMIT;
       const final = truncated ? rows.slice(0, GREP_LIMIT) : rows;
-      const out = [`Found ${rows.length} matches${truncated ? ` (showing first ${GREP_LIMIT})` : ""}`];
+      const out = [
+        `Found ${rows.length} matches${truncated ? ` (showing first ${GREP_LIMIT})` : ""}`,
+      ];
       let current = "";
       for (const row of final) {
         const fileLabel = outputPath(toolCtx.root, row.file);
@@ -578,10 +666,15 @@ const grepTool: FileTool = {
           current = fileLabel;
           out.push(`${fileLabel}:`);
         }
-        const line = row.text.length > MAX_LINE_LENGTH ? `${row.text.slice(0, MAX_LINE_LENGTH)}...` : row.text;
+        const line =
+          row.text.length > MAX_LINE_LENGTH ? `${row.text.slice(0, MAX_LINE_LENGTH)}...` : row.text;
         out.push(`  Line ${row.line}: ${line}`);
       }
-      if (truncated) out.push("", `(Results truncated: showing ${GREP_LIMIT} of ${rows.length} matches (${rows.length - GREP_LIMIT} hidden). Consider using a more specific path or pattern.)`);
+      if (truncated)
+        out.push(
+          "",
+          `(Results truncated: showing ${GREP_LIMIT} of ${rows.length} matches (${rows.length - GREP_LIMIT} hidden). Consider using a more specific path or pattern.)`,
+        );
       return { ok: true, text: out.join("\n") };
     } catch (error) {
       return errorResult("grep", error);

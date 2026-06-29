@@ -15,13 +15,13 @@ MemFlywheel 是一个**文件型长期记忆运行层**:把一套文件型长期
 
 pnpm workspace,5 个包,零运行时依赖(仅 TypeScript/@types/node 为 devDep):
 
-| 包 | 职责 | 规模 |
-| --- | --- | --- |
-| `@memflywheel/core` | 记忆内核:存储/索引/召回/提取/整理/隐私/锁/审计 | 36 源文件 |
-| `@memflywheel/model` | provider-neutral 结构化 tool-call 模型协议与 provider mapper | 2 源文件 |
-| `@memflywheel/sdk` | 宿主生命周期集成层、提取/dream runner 装配、学习闭环编排 | 10 源文件 |
-| `@memflywheel/skills` | 文件型 learned skill store、staging、校验、召回索引 | 3 源文件 |
-| `@memflywheel/adapters` | 各宿主生命周期映射与 HostHarnessPort 接入 | 22 源文件 |
+| 包                      | 职责                                                         | 规模      |
+| ----------------------- | ------------------------------------------------------------ | --------- |
+| `@memflywheel/core`     | 记忆内核:存储/索引/召回/提取/整理/隐私/锁/审计               | 36 源文件 |
+| `@memflywheel/model`    | provider-neutral 结构化 tool-call 模型协议与 provider mapper | 2 源文件  |
+| `@memflywheel/sdk`      | 宿主生命周期集成层、提取/dream runner 装配、学习闭环编排     | 10 源文件 |
+| `@memflywheel/skills`   | 文件型 learned skill store、staging、校验、召回索引          | 3 源文件  |
+| `@memflywheel/adapters` | 各宿主生命周期映射与 HostHarnessPort 接入                    | 22 源文件 |
 
 依赖关系:`sdk → core + skills`,`model` 独立提供模型协议与 provider mapper,`adapters → sdk + model`。
 
@@ -36,9 +36,9 @@ pnpm workspace,5 个包,零运行时依赖(仅 TypeScript/@types/node 为 devDep
 ```yaml
 name: 显示名
 description: 一句话描述
-type: preference        # 六类之一
+type: preference # 六类之一
 occurred_on: 2026-06-15 # 可选,事实发生/开始日期
-retrieval_terms:        # 可选旧文件,新提取/更新时要求写;只做索引召回路由
+retrieval_terms: # 可选旧文件,新提取/更新时要求写;只做索引召回路由
   - 用户称呼
   - preferred name
 created_at: 2026-06-15T...
@@ -53,18 +53,22 @@ updated_at: 2026-06-15T...
 ## 三大流程
 
 ### 召回(recall)
+
 `buildContext` 产出**两段注入**:
+
 1. **稳定规则**(进 systemPrompt,前缀稳定、缓存友好):一段固定的中文 prompt——召回规则 / 保存规则 / 禁止事项 / "不要暴露记忆机制"。
 2. **动态前导**(每轮注入):`MEMORY.md` 全索引,用 `<system-reminder>` 包裹。
 
 主模型据此自选,需要细节时才 `Read` 具体文件。
 
 ### 提取(extract)
+
 - 默认在 **turn end** 触发(after-turn):锁 → 游标窗口 → 跑提取子代理(子代理用写工具直接落盘)→ 索引同步 → 推进游标。
 - **核心不调 LLM**:注入点是 `ExtractionAgentRunner`;核心把记忆工具(`glob` / `grep` / `read` / `write` / `edit` / `bash`,均绑定在持有的写锁内)、对话窗口、现有记忆 manifest 交给它,子代理多轮自主调工具直接写文件,返回 `{ changed }`。可用自带默认子代理(`createExtractionAgentRunner({ model })` + `@memflywheel/model` canonical model),也可宿主自供;没配就显式 recall-only 或构造失败。
 - 冲突:子代理可先 `glob` 再决定 add 还是 update;仅在用户显式纠正时 `bash` 旧记忆、写新记忆。
 
 ### 整理(dream)
+
 - idle/scheduled 的 consolidation,不是普通总结:health / type / path / duplicate / conflict / compress。
 - 确定性结构预处理先行(删除正文完全相同的重复、把放错目录的文件搬迁回声明类型,无 LLM);随后由 `dreamRunner`(`DreamAgentRunner`,tool-calling 子代理)读全文后用记忆工具(`glob` / `grep` / `read` / `write` / `edit` / `bash`)直接整理落盘——工具调用本身即改动,无 JSON ops、无 parser;每步原子写 + 审计。不再有 frontmatter 稳定化那一套(工具自带校验,且 `edit` 默认保留 frontmatter)。
 
@@ -76,10 +80,10 @@ updated_at: 2026-06-15T...
 
 ## 接入方式
 
-| 入口 | 形态 | 说明 |
-| --- | --- | --- |
-| **SDK** | `createMemFlywheel(config)` | 生命周期 hooks:`onSessionStart` / `onPromptBuild` / `onTurnEnd` / `onSessionEnd` / `onAgentEnd` / `onIdle`;两个注入点 `agent`(ExtractionAgentRunner)、`dreamRunner`(DreamAgentRunner) |
-| **adapters** | 宿主生命周期映射 | `hermes` / `opencode` / `openclaw` / `pi` / `codex` / `claude-code`,install 走 plan/apply + 真 round-trip verify |
+| 入口         | 形态                        | 说明                                                                                                                                                                                  |
+| ------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SDK**      | `createMemFlywheel(config)` | 生命周期 hooks:`onSessionStart` / `onPromptBuild` / `onTurnEnd` / `onSessionEnd` / `onAgentEnd` / `onIdle`;两个注入点 `agent`(ExtractionAgentRunner)、`dreamRunner`(DreamAgentRunner) |
+| **adapters** | 宿主生命周期映射            | `hermes` / `opencode` / `openclaw` / `pi` / `codex` / `claude-code`,install 走 plan/apply + 真 round-trip verify                                                                      |
 
 ## 工程现状(2026-06-15)
 

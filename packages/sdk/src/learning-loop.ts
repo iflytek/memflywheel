@@ -103,7 +103,9 @@ function skipped<T>(reason: string): LearningLoopStepResult<T> {
   return { ran: false, reason };
 }
 
-async function maybeRunExtraction(options: RunLearningLoopOptions): Promise<LearningLoopStepResult> {
+async function maybeRunExtraction(
+  options: RunLearningLoopOptions,
+): Promise<LearningLoopStepResult> {
   if (!options.enabled) return skipped("disabled");
   if (!options.extraction) return skipped("no-extraction-runner");
   return { ran: true, reason: "ok", value: await options.extraction() };
@@ -130,7 +132,8 @@ async function maybeRunDream(
   if (!skillEvolution.ran || !skillEvolution.value) return skipped("no-skill-coordination");
   const packet = skillEvolution.value.coordination;
   if (packet.memoryAction === "noop") return skipped("memory-action-noop");
-  if (!packet.targetSkill) throw new Error("compress-memory skill coordination requires targetSkill");
+  if (!packet.targetSkill)
+    throw new Error("compress-memory skill coordination requires targetSkill");
   if (!options.dream) return skipped("no-dream-runner");
   return {
     ran: true,
@@ -144,7 +147,9 @@ async function maybeRunDream(
   };
 }
 
-export async function runLearningLoop(options: RunLearningLoopOptions): Promise<LearningLoopResult> {
+export async function runLearningLoop(
+  options: RunLearningLoopOptions,
+): Promise<LearningLoopResult> {
   if (options.trigger === "error") {
     return {
       extraction: await maybeRunExtraction(options),

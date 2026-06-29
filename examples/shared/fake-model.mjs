@@ -42,20 +42,28 @@ export function createFakeModel() {
             role: "assistant",
             content: null,
             toolCalls: [
-              toolCall("c-save-1", "write", writeMemoryArgs({
-                type: "preference",
-                filename: "preferred-drink.md",
-                name: "Preferred drink",
-                description: "User's go-to beverage",
-                body: "The user prefers green tea over coffee.",
-              })),
-              toolCall("c-save-2", "write", writeMemoryArgs({
-                type: "style",
-                filename: "reply-tone.md",
-                name: "Reply tone",
-                description: "How the user likes replies",
-                body: "The user appreciates short, direct acknowledgements.",
-              })),
+              toolCall(
+                "c-save-1",
+                "write",
+                writeMemoryArgs({
+                  type: "preference",
+                  filename: "preferred-drink.md",
+                  name: "Preferred drink",
+                  description: "User's go-to beverage",
+                  body: "The user prefers green tea over coffee.",
+                }),
+              ),
+              toolCall(
+                "c-save-2",
+                "write",
+                writeMemoryArgs({
+                  type: "style",
+                  filename: "reply-tone.md",
+                  name: "Reply tone",
+                  description: "How the user likes replies",
+                  body: "The user appreciates short, direct acknowledgements.",
+                }),
+              ),
             ],
           },
           finishReason: "tool-calls",

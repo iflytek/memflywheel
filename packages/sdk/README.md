@@ -11,7 +11,7 @@ The SDK owns:
 - the **two pluggable LLM injection points** (`agent`, `dreamRunner`),
 - the default subagent loops that consume `@memflywheel/model`'s canonical model protocol,
 - optional learned-skill prompt routing,
-- the host lifecycle hooks that decide *when* core runs.
+- the host lifecycle hooks that decide _when_ core runs.
 
 The SDK does not execute learned skills. It can expose routing metadata and
 capture tool-call facts in the session transcript, while the host owns skill
@@ -92,11 +92,11 @@ await scribe.onSessionEnd("session-1");
 
 `onPromptBuild()` returns `{ systemPrompt, preludePrompt, enabled, skillPreludePrompt? }`:
 
-| Segment | Content | Cadence |
-| --- | --- | --- |
-| `systemPrompt` | Stable memory **rules** — constant text, identical every turn | inject once / cache as a stable prefix |
-| `preludePrompt` | Full/truncated `MEMORY.md` index, or an optional index-layer hybrid retrieval subset, plus optional learned-skill routes wrapped in `<system-reminder>` | inject every turn |
-| `skillPreludePrompt` | Optional learned-skill route index | inject when `skillRecall` is configured |
+| Segment              | Content                                                                                                                                                 | Cadence                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `systemPrompt`       | Stable memory **rules** — constant text, identical every turn                                                                                           | inject once / cache as a stable prefix  |
+| `preludePrompt`      | Full/truncated `MEMORY.md` index, or an optional index-layer hybrid retrieval subset, plus optional learned-skill routes wrapped in `<system-reminder>` | inject every turn                       |
+| `skillPreludePrompt` | Optional learned-skill route index                                                                                                                      | inject when `skillRecall` is configured |
 
 Retrieval is only over `MEMORY.md` index lines when `memoryIndexRetrieval` is configured
 and the index is large enough to need it. Memory bodies are not embedded or searched; the
@@ -113,25 +113,25 @@ the cursor; the host owns only the LLM call.
 ```ts
 // 1) Extraction — a tool-calling subagent that WRITES the memory files itself.
 type ExtractionAgentRunner = (input: {
-  toolCtx: FileToolContext;     // bound inside the held write lock
-  tools: FileTool[];            // read / write / edit / bash / glob / grep
+  toolCtx: FileToolContext; // bound inside the held write lock
+  tools: FileTool[]; // read / write / edit / bash / glob / grep
   messages: { role: "user" | "assistant"; text: string }[];
-  manifest: string;   // formatManifest(existing entries)
+  manifest: string; // formatManifest(existing entries)
   root: string;
-}) => Promise<{ changed: string[] }>;   // the relative paths it touched
+}) => Promise<{ changed: string[] }>; // the relative paths it touched
 
 // 2) Dream — the SAME kind of tool-calling subagent, seeded for consolidation. It
 //    reads full bodies and merges / compresses / retires memories via the tools.
 type DreamAgentRunner = (input: {
   root: string;
-  toolCtx: FileToolContext;     // bound inside the held write lock
-  tools: FileTool[];            // same ordinary file tools as extraction
+  toolCtx: FileToolContext; // bound inside the held write lock
+  tools: FileTool[]; // same ordinary file tools as extraction
   health: HealthFinding[];
   typeReview: TypeReviewItem[];
   manifest: string;
   index: string;
   coordination?: { reason: string; memoryAction: string; topics: string[]; targetSkill?: string };
-}) => Promise<{ changed: string[] }>;   // the relative paths it touched
+}) => Promise<{ changed: string[] }>; // the relative paths it touched
 ```
 
 Each subagent decides add vs. update on its own — it can call `glob` / `grep`
@@ -141,15 +141,15 @@ file, `edit` to refine a same-topic file, or `bash` to move retired files under
 
 ## Lifecycle hooks
 
-| Hook | When the host calls it | What the scribe does |
-| --- | --- | --- |
-| `onSessionStart(id)` | session opens | ensure memory dir, register session state |
-| `onTurnStart(id)` | new turn begins | register session state |
-| `onPromptBuild({sessionId?, query?})` | assembling the prompt | return the two recall segments |
-| `onTurnEnd(id, msgs)` | turn finished | append turn -> run extraction; with an opt-in `learningLoop`, host/adapters can also run skill evolution and forced dream coordination |
-| `onSessionEnd(id)` | session closes | drop session state |
-| `onAgentEnd(id)` | auxiliary/agent run ends | final extraction sweep over not-yet-processed messages |
-| `onIdle(gate?)` | idle / scheduled | gate-check then `runDreamSession`: deterministic pre-pass, then the consolidation subagent via `dreamRunner` |
+| Hook                                  | When the host calls it   | What the scribe does                                                                                                                   |
+| ------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `onSessionStart(id)`                  | session opens            | ensure memory dir, register session state                                                                                              |
+| `onTurnStart(id)`                     | new turn begins          | register session state                                                                                                                 |
+| `onPromptBuild({sessionId?, query?})` | assembling the prompt    | return the two recall segments                                                                                                         |
+| `onTurnEnd(id, msgs)`                 | turn finished            | append turn -> run extraction; with an opt-in `learningLoop`, host/adapters can also run skill evolution and forced dream coordination |
+| `onSessionEnd(id)`                    | session closes           | drop session state                                                                                                                     |
+| `onAgentEnd(id)`                      | auxiliary/agent run ends | final extraction sweep over not-yet-processed messages                                                                                 |
+| `onIdle(gate?)`                       | idle / scheduled         | gate-check then `runDreamSession`: deterministic pre-pass, then the consolidation subagent via `dreamRunner`                           |
 
 ### Explicit host operations
 

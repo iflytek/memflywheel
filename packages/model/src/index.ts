@@ -137,7 +137,8 @@ function resolveEmbeddingModel(config: OpenAIEmbeddingsModelConfig): string {
 }
 
 function resolveEmbeddingBatchSize(config: OpenAIEmbeddingsModelConfig): number | undefined {
-  if (typeof config.batchSize === "number") return config.batchSize > 0 ? config.batchSize : undefined;
+  if (typeof config.batchSize === "number")
+    return config.batchSize > 0 ? config.batchSize : undefined;
   const fromEnv = env("MEMFLYWHEEL_EMBEDDING_BATCH_SIZE");
   const parsed = fromEnv ? Number.parseInt(fromEnv, 10) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
@@ -195,7 +196,9 @@ function toWireMessage(message: CanonicalModelMessage): Record<string, unknown> 
 function parseToolInput(raw: unknown, id: string): unknown {
   if (raw === undefined || raw === null || raw === "") return {};
   if (typeof raw !== "string") {
-    throw new Error(`MemFlywheel OpenAI chat model: tool call ${id} arguments must be a JSON string.`);
+    throw new Error(
+      `MemFlywheel OpenAI chat model: tool call ${id} arguments must be a JSON string.`,
+    );
   }
   try {
     return JSON.parse(raw);

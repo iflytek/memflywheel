@@ -67,7 +67,7 @@ function validFiles(): Record<string, string> {
     "references/source.md": "Reference notes.\n",
     "templates/report.md": "# Report\n",
     "scripts/check.mjs": "export function check() { return true; }\n",
-    "assets/schema.json": "{\"type\":\"object\"}\n",
+    "assets/schema.json": '{"type":"object"}\n',
   };
 }
 
@@ -107,7 +107,11 @@ test("validateLearnedSkillPackage rejects loose frontmatter and unnumbered proce
     "description: Captures durable editor workflow habits.\nversion: 1\n",
   );
   assert.throws(
-    () => validateLearnedSkillPackage({ slug: "editor-workflow", files: { ...validFiles(), "SKILL.md": extraFrontmatterKey } }),
+    () =>
+      validateLearnedSkillPackage({
+        slug: "editor-workflow",
+        files: { ...validFiles(), "SKILL.md": extraFrontmatterKey },
+      }),
     (error: unknown) =>
       error instanceof LearnedSkillValidationError &&
       error.message.includes("strict frontmatter keys"),
@@ -118,7 +122,11 @@ test("validateLearnedSkillPackage rejects loose frontmatter and unnumbered proce
     "- Inspect the current workflow evidence.\n- Record the durable rule and its trigger.",
   );
   assert.throws(
-    () => validateLearnedSkillPackage({ slug: "editor-workflow", files: { ...validFiles(), "SKILL.md": unnumberedProcedure } }),
+    () =>
+      validateLearnedSkillPackage({
+        slug: "editor-workflow",
+        files: { ...validFiles(), "SKILL.md": unnumberedProcedure },
+      }),
     (error: unknown) =>
       error instanceof LearnedSkillValidationError &&
       error.message.includes("Procedure must use numbered steps"),
@@ -127,24 +135,33 @@ test("validateLearnedSkillPackage rejects loose frontmatter and unnumbered proce
 
 test("validateLearnedSkillPackage rejects invalid supporting files and configured public naming residues", () => {
   assert.throws(
-    () => validateLearnedSkillPackage({ slug: "editor-workflow", files: { ...validFiles(), "references/.env": "TOKEN=1\n" } }),
+    () =>
+      validateLearnedSkillPackage({
+        slug: "editor-workflow",
+        files: { ...validFiles(), "references/.env": "TOKEN=1\n" },
+      }),
     (error: unknown) =>
-      error instanceof LearnedSkillValidationError &&
-      error.message.includes("sensitive file name"),
-  );
-
-  assert.throws(
-    () => validateLearnedSkillPackage({ slug: "editor-workflow", files: { ...validFiles(), "assets/empty.json": "" } }),
-    (error: unknown) =>
-      error instanceof LearnedSkillValidationError &&
-      error.message.includes("must be non-empty"),
+      error instanceof LearnedSkillValidationError && error.message.includes("sensitive file name"),
   );
 
   assert.throws(
     () =>
       validateLearnedSkillPackage({
         slug: "editor-workflow",
-        files: { ...validFiles(), "assets/large.bin": new Uint8Array(MAX_SUPPORTING_FILE_BYTES + 1) },
+        files: { ...validFiles(), "assets/empty.json": "" },
+      }),
+    (error: unknown) =>
+      error instanceof LearnedSkillValidationError && error.message.includes("must be non-empty"),
+  );
+
+  assert.throws(
+    () =>
+      validateLearnedSkillPackage({
+        slug: "editor-workflow",
+        files: {
+          ...validFiles(),
+          "assets/large.bin": new Uint8Array(MAX_SUPPORTING_FILE_BYTES + 1),
+        },
       }),
     (error: unknown) =>
       error instanceof LearnedSkillValidationError &&
@@ -190,7 +207,13 @@ test("checkpointLearnedSkill stages files outside the skills root and finalize w
     });
 
     const stagedSkill = await readFile(
-      path.join(checkpointRoot, "cp-write", "staged", "memflywheel-learned-editor-workflow", "SKILL.md"),
+      path.join(
+        checkpointRoot,
+        "cp-write",
+        "staged",
+        "memflywheel-learned-editor-workflow",
+        "SKILL.md",
+      ),
       "utf8",
     );
     assert.equal(stagedSkill, validSkill);
@@ -228,8 +251,7 @@ test("finalizeLearnedSkillCheckpoint refuses deletions and external changes afte
     await assert.rejects(
       finalizeLearnedSkillCheckpoint(checkpoint),
       (error: unknown) =>
-        error instanceof FinalizeSafetyError &&
-        error.message.includes("refuses deleted paths"),
+        error instanceof FinalizeSafetyError && error.message.includes("refuses deleted paths"),
     );
 
     await writeRaw(skillsRoot, "unrelated.md", "modified\n");
@@ -259,7 +281,11 @@ test("finalizeLearnedSkillCheckpoint refuses target changes after checkpoint", a
       files: validFiles(),
     });
 
-    await writeRaw(skillsRoot, "memflywheel-learned-editor-workflow/references/interloper.md", "changed after checkpoint\n");
+    await writeRaw(
+      skillsRoot,
+      "memflywheel-learned-editor-workflow/references/interloper.md",
+      "changed after checkpoint\n",
+    );
     await assert.rejects(
       finalizeLearnedSkillCheckpoint(checkpoint),
       (error: unknown) =>
@@ -276,7 +302,11 @@ test("rollbackLearnedSkillCheckpoint restores a full target snapshot", async () 
   const skillsRoot = await makeRoot("memflywheel-skills-root-");
   const checkpointRoot = await makeRoot("memflywheel-skill-checkpoints-");
   try {
-    await writeRaw(skillsRoot, "memflywheel-learned-editor-workflow/SKILL.md", validSkill.replace("durable editor", "original editor"));
+    await writeRaw(
+      skillsRoot,
+      "memflywheel-learned-editor-workflow/SKILL.md",
+      validSkill.replace("durable editor", "original editor"),
+    );
     await writeRaw(skillsRoot, "memflywheel-learned-editor-workflow/assets/kept.txt", "keep me\n");
 
     const checkpoint = await checkpointLearnedSkill({
@@ -289,11 +319,23 @@ test("rollbackLearnedSkillCheckpoint restores a full target snapshot", async () 
     await finalizeLearnedSkillCheckpoint(checkpoint);
     await rollbackLearnedSkillCheckpoint(checkpoint);
 
-    const restoredSkill = await readFile(path.join(skillsRoot, "memflywheel-learned-editor-workflow", "SKILL.md"), "utf8");
+    const restoredSkill = await readFile(
+      path.join(skillsRoot, "memflywheel-learned-editor-workflow", "SKILL.md"),
+      "utf8",
+    );
     assert.match(restoredSkill, /original editor/);
-    assert.equal(await readFile(path.join(skillsRoot, "memflywheel-learned-editor-workflow", "assets", "kept.txt"), "utf8"), "keep me\n");
+    assert.equal(
+      await readFile(
+        path.join(skillsRoot, "memflywheel-learned-editor-workflow", "assets", "kept.txt"),
+        "utf8",
+      ),
+      "keep me\n",
+    );
     await assert.rejects(
-      readFile(path.join(skillsRoot, "memflywheel-learned-editor-workflow", "templates", "report.md"), "utf8"),
+      readFile(
+        path.join(skillsRoot, "memflywheel-learned-editor-workflow", "templates", "report.md"),
+        "utf8",
+      ),
       (error: unknown) => error instanceof Error && "code" in error && error.code === "ENOENT",
     );
   } finally {
@@ -322,9 +364,7 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
       sessionId: "session-1",
     });
     assert.deepEqual(result.changedSkills, ["memflywheel-learned-editor-workflow"]);
-    assert.deepEqual(result.changedFiles.sort(), [
-      "memflywheel-learned-editor-workflow/SKILL.md",
-    ]);
+    assert.deepEqual(result.changedFiles.sort(), ["memflywheel-learned-editor-workflow/SKILL.md"]);
 
     const catalog = await store.getLearnedSkillsCatalog({ includeContent: true });
     assert.equal(catalog.learnedSkills.length, 1);
@@ -346,8 +386,16 @@ test("createLearnedSkillStore can merge by updating one skill and archiving a du
   const target = "memflywheel-learned-editor-workflow";
   const duplicate = "memflywheel-learned-editor-shortcuts";
   try {
-    await writeRaw(skillsRoot, `${target}/SKILL.md`, skillContent(target, "Editor Workflow", "Captures durable editor workflow habits."));
-    await writeRaw(skillsRoot, `${duplicate}/SKILL.md`, skillContent(duplicate, "Editor Shortcuts", "Captures duplicate editor workflow shortcuts."));
+    await writeRaw(
+      skillsRoot,
+      `${target}/SKILL.md`,
+      skillContent(target, "Editor Workflow", "Captures durable editor workflow habits."),
+    );
+    await writeRaw(
+      skillsRoot,
+      `${duplicate}/SKILL.md`,
+      skillContent(duplicate, "Editor Shortcuts", "Captures duplicate editor workflow shortcuts."),
+    );
 
     const store = createLearnedSkillStore({ skillsRoot, checkpointRoot });
     const checkpoint = await store.createSkillCheckpoint();
@@ -355,7 +403,11 @@ test("createLearnedSkillStore can merge by updating one skill and archiving a du
 
     await tools.get("write")!.handler({
       filePath: `${target}/SKILL.md`,
-      content: skillContent(target, "Editor Workflow", "Merged editor workflow and shortcut procedure."),
+      content: skillContent(
+        target,
+        "Editor Workflow",
+        "Merged editor workflow and shortcut procedure.",
+      ),
     });
     await tools.get("bash")!.handler({
       command: `rm -rf ${duplicate}`,
@@ -373,13 +425,13 @@ test("createLearnedSkillStore can merge by updating one skill and archiving a du
       },
     });
     assert.deepEqual(result.changedSkills.sort(), [duplicate, target]);
-    assert.deepEqual(result.changedFiles.sort(), [
-      `${duplicate}/SKILL.md`,
-      `${target}/SKILL.md`,
-    ]);
+    assert.deepEqual(result.changedFiles.sort(), [`${duplicate}/SKILL.md`, `${target}/SKILL.md`]);
 
     const catalog = await store.getLearnedSkillsCatalog({ includeContent: true });
-    assert.deepEqual(catalog.learnedSkills.map((skill) => skill.name), [target]);
+    assert.deepEqual(
+      catalog.learnedSkills.map((skill) => skill.name),
+      [target],
+    );
     assert.match(catalog.learnedSkills[0]?.skillContent ?? "", /Merged editor workflow/);
 
     await store.rollbackSkillCheckpoint(checkpoint);
@@ -409,7 +461,10 @@ test("createLearnedSkillRecallProvider exposes learned skill routes for prompt b
 
     assert.equal(packet.entries.length, 1);
     assert.equal(packet.entries[0]?.name, "memflywheel-learned-editor-workflow");
-    assert.deepEqual(packet.entries[0]?.triggerHints, ["editor workflow", "durable editor workflow"]);
+    assert.deepEqual(packet.entries[0]?.triggerHints, [
+      "editor workflow",
+      "durable editor workflow",
+    ]);
     assert.match(
       buildLearnedSkillPrelude(packet),
       /memflywheel-learned-editor-workflow[\s\S]*editor workflow/,

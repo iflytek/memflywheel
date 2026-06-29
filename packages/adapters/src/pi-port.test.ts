@@ -25,7 +25,10 @@ test("createPiHarnessPort maps Pi native tool calls into canonical model respons
           type: "toolCall" as const,
           id: "pi_call_1",
           name: "write",
-          arguments: { filePath: "preference/tea.md", content: "---\ntype: preference\nname: Tea\n---\n\nGreen tea\n" },
+          arguments: {
+            filePath: "preference/tea.md",
+            content: "---\ntype: preference\nname: Tea\n---\n\nGreen tea\n",
+          },
         },
       ],
       stopReason: "toolUse",
@@ -66,7 +69,10 @@ test("createPiHarnessPort maps Pi native tool calls into canonical model respons
     {
       id: "pi_call_1",
       name: "write",
-      input: { filePath: "preference/tea.md", content: "---\ntype: preference\nname: Tea\n---\n\nGreen tea\n" },
+      input: {
+        filePath: "preference/tea.md",
+        content: "---\ntype: preference\nname: Tea\n---\n\nGreen tea\n",
+      },
     },
   ]);
 
@@ -76,9 +82,7 @@ test("createPiHarnessPort maps Pi native tool calls into canonical model respons
 });
 
 test("createPiHarnessPort forwards Pi context prompt as retrieval query", async () => {
-  let contextHandler:
-    | ((event: unknown, ctx: unknown) => Promise<unknown> | unknown)
-    | undefined;
+  let contextHandler: ((event: unknown, ctx: unknown) => Promise<unknown> | unknown) | undefined;
   const pi = {
     on(event: string, handler: unknown) {
       if (event === "context") {

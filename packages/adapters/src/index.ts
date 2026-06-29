@@ -50,12 +50,7 @@ export {
 } from "./adapter.js";
 
 // Factory + translator helpers (for building custom adapters).
-export {
-  type AdapterSpec,
-  makeAdapter,
-  readString,
-  normalizeMessages,
-} from "./make-adapter.js";
+export { type AdapterSpec, makeAdapter, readString, normalizeMessages } from "./make-adapter.js";
 
 // Host harness port: stable host boundary + capability gates.
 export {

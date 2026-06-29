@@ -9,14 +9,14 @@ Zero runtime dependencies (Node stdlib + TypeScript only).
 
 ## Built-in adapters
 
-| id            | host        | session start          | prompt build            | turn end             | idle/scheduled    | integration  |
-| ------------- | ----------- | ---------------------- | ----------------------- | -------------------- | ----------------- | ------------ |
-| `pi`          | Pi kernel   | `session:ensure`       | `turn:build`            | `agent_end`          | `learning:idle`   | real         |
-| `hermes`      | Hermes      | `on_session_start`     | `pre_llm_call`          | `post_llm_call`      | `on_session_end`  | real         |
-| `openclaw`    | OpenClaw    | `before_agent_start`   | `context:inject`        | `agent_end`          | `idle:watch`      | recall-only¹ |
-| `opencode`    | OpenCode    | `session.init`         | `message.build`         | `response.complete`  | `timer.background`| usable       |
-| `codex`       | Codex       | `task:start`           | `instructions:assemble` | `task:complete`      | `job:scheduled`   | usable       |
-| `claude-code` | Claude Code | `SessionStart`         | `UserPromptSubmit`      | `Stop`               | `Idle`            | usable       |
+| id            | host        | session start        | prompt build            | turn end            | idle/scheduled     | integration  |
+| ------------- | ----------- | -------------------- | ----------------------- | ------------------- | ------------------ | ------------ |
+| `pi`          | Pi kernel   | `session:ensure`     | `turn:build`            | `agent_end`         | `learning:idle`    | real         |
+| `hermes`      | Hermes      | `on_session_start`   | `pre_llm_call`          | `post_llm_call`     | `on_session_end`   | real         |
+| `openclaw`    | OpenClaw    | `before_agent_start` | `context:inject`        | `agent_end`         | `idle:watch`       | recall-only¹ |
+| `opencode`    | OpenCode    | `session.init`       | `message.build`         | `response.complete` | `timer.background` | usable       |
+| `codex`       | Codex       | `task:start`         | `instructions:assemble` | `task:complete`     | `job:scheduled`    | usable       |
+| `claude-code` | Claude Code | `SessionStart`       | `UserPromptSubmit`      | `Stop`              | `Idle`             | usable       |
 
 ¹ **recall-only until a native model port exists.** OpenClaw exposes no in-process
 model-call API in this adapter layer, so a plugin cannot drive inference itself.
@@ -45,11 +45,11 @@ an `integrationNote` describing how the host actually consumes the scribe.
 interface HostAdapter {
   readonly id: string;
   readonly name: string;
-  readonly lifecycle: LifecycleMap;        // host event → scribe hook, per hook
+  readonly lifecycle: LifecycleMap; // host event → scribe hook, per hook
 
-  attach(scribe: MemFlywheel, host: HostRuntime): () => void;   // wire events, returns disposer
+  attach(scribe: MemFlywheel, host: HostRuntime): () => void; // wire events, returns disposer
   install(target: InstallTarget, opts?: { apply?: boolean }): Promise<InstallPlan | InstallResult>;
-  verify(target: InstallTarget): Promise<VerifyResult>;      // real round-trip from disk
+  verify(target: InstallTarget): Promise<VerifyResult>; // real round-trip from disk
   doctor(target: InstallTarget): Promise<DoctorFinding[]>;
 }
 ```
@@ -83,7 +83,7 @@ Passing `{ apply: true }` then merges a versioned wiring marker into the host
 config and writes it atomically (temp file + rename), preserving all other keys.
 
 ```ts
-const plan = await piAdapter.install({ configPath });   // no writes
+const plan = await piAdapter.install({ configPath }); // no writes
 if (!plan.satisfied) {
   await piAdapter.install({ configPath }, { apply: true });
 }
@@ -124,9 +124,9 @@ export const myAdapter = makeAdapter({
   name: "My Host",
   lifecycle: {
     onSessionStart: { hook: "onSessionStart", hostEvent: "start", note: "..." },
-    onPromptBuild:  { hook: "onPromptBuild",  hostEvent: "build", note: "..." },
-    onTurnEnd:      { hook: "onTurnEnd",      hostEvent: "done",  note: "..." },
-    onIdle:         { hook: "onIdle",         hostEvent: "idle",  note: "..." },
+    onPromptBuild: { hook: "onPromptBuild", hostEvent: "build", note: "..." },
+    onTurnEnd: { hook: "onTurnEnd", hostEvent: "done", note: "..." },
+    onIdle: { hook: "onIdle", hostEvent: "idle", note: "..." },
   },
   translators: {
     sessionId: (p) => readString(p, "sessionId"),
@@ -159,13 +159,17 @@ const model = {
 };
 
 const { scribe, sdk } = createMemFlywheelHarnessRuntime({ model });
-const dispose = hermesAdapter.attach(scribe, host);   // session/prompt/turn-end/idle
+const dispose = hermesAdapter.attach(scribe, host); // session/prompt/turn-end/idle
 ```
 
 Pi phase-1 native integration uses a host port:
 
 ```ts
-import { createMemFlywheelHarnessRuntime, createPiHarnessPort, piAdapter } from "@memflywheel/adapters";
+import {
+  createMemFlywheelHarnessRuntime,
+  createPiHarnessPort,
+  piAdapter,
+} from "@memflywheel/adapters";
 
 export default function memScribeExtension(pi) {
   const port = createPiHarnessPort(pi);
@@ -223,8 +227,8 @@ applies it and immediately re-reads from disk to verify the marker round-trips:
 ```ts
 import { connect, piAdapter } from "@memflywheel/adapters";
 
-const plan = await connect(piAdapter);                 // plan only, no writes
-const res  = await connect(piAdapter, { apply: true }); // write + verify
+const plan = await connect(piAdapter); // plan only, no writes
+const res = await connect(piAdapter, { apply: true }); // write + verify
 if (!res.verify!.ok) console.error(res.verify!.problems);
 ```
 

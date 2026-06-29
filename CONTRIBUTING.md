@@ -19,13 +19,13 @@ pnpm run ci
 
 Please keep changes inside the public MemFlywheel scope:
 
-| Area | Rule |
-|---|---|
-| Storage | Markdown files plus YAML frontmatter are the source of truth. |
-| Index | `MEMORY.md` is a rebuildable index. Do not hand-edit it. |
-| Recall | Full-index recall only. Do not add embeddings, BM25, top-k, or vector search. |
+| Area      | Rule                                                                                                                 |
+| --------- | -------------------------------------------------------------------------------------------------------------------- |
+| Storage   | Markdown files plus YAML frontmatter are the source of truth.                                                        |
+| Index     | `MEMORY.md` is a rebuildable index. Do not hand-edit it.                                                             |
+| Recall    | Full-index recall only. Do not add embeddings, BM25, top-k, or vector search.                                        |
 | LLM calls | `@memflywheel/core` must not call LLMs directly. Use injected runners or `@memflywheel/model` canonical model ports. |
-| Naming | Use `MemFlywheel`, `memflywheel`, `@memflywheel/*`, and `MEMFLYWHEEL_*`. |
+| Naming    | Use `MemFlywheel`, `memflywheel`, `@memflywheel/*`, and `MEMFLYWHEEL_*`.                                             |
 
 ## Pull Requests
 

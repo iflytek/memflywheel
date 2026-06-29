@@ -47,7 +47,10 @@ test("getTypedMemoryDir maps known types only", () => {
 });
 
 test("getTypedMemoryPath rejects nested filenames", () => {
-  assert.equal(getTypedMemoryPath(ROOT, "identity", "user.md"), path.join(ROOT, "identity", "user.md"));
+  assert.equal(
+    getTypedMemoryPath(ROOT, "identity", "user.md"),
+    path.join(ROOT, "identity", "user.md"),
+  );
   assert.equal(getTypedMemoryPath(ROOT, "identity", "sub/user.md"), null);
   assert.equal(getTypedMemoryPath(ROOT, "bogus", "user.md"), null);
 });

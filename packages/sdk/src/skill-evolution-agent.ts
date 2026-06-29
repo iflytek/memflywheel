@@ -115,12 +115,14 @@ export interface SkillEvolutionToolResult {
 export interface SkillEvolutionTool {
   name: string;
   description: string;
-  inputSchema: JsonSchemaObject | {
-    type: "object";
-    properties: Record<string, unknown>;
-    required?: string[];
-    additionalProperties?: boolean;
-  };
+  inputSchema:
+    | JsonSchemaObject
+    | {
+        type: "object";
+        properties: Record<string, unknown>;
+        required?: string[];
+        additionalProperties?: boolean;
+      };
   handler: (args: unknown) => Promise<SkillEvolutionToolResult>;
 }
 
@@ -190,11 +192,7 @@ function assertRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function assertExactKeys(
-  value: Record<string, unknown>,
-  keys: string[],
-  label: string,
-): void {
+function assertExactKeys(value: Record<string, unknown>, keys: string[], label: string): void {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   if (actual.length !== expected.length || actual.some((key, i) => key !== expected[i])) {
@@ -212,18 +210,29 @@ function assertStringArray(value: unknown, label: string): string[] {
   return [...value];
 }
 
-export function validateSkillEvolutionCoordination(
-  value: unknown,
-): SkillEvolutionCoordination {
+export function validateSkillEvolutionCoordination(value: unknown): SkillEvolutionCoordination {
   const record = assertRecord(value, "skill coordination");
   assertExactKeys(
     record,
-    ["decision", "targetSkill", "mergedSkills", "why", "memoryAction", "memoryTopics", "supportingFiles"],
+    [
+      "decision",
+      "targetSkill",
+      "mergedSkills",
+      "why",
+      "memoryAction",
+      "memoryTopics",
+      "supportingFiles",
+    ],
     "skill coordination",
   );
 
   const decision = record.decision;
-  if (decision !== "create" && decision !== "update" && decision !== "merge" && decision !== "noop") {
+  if (
+    decision !== "create" &&
+    decision !== "update" &&
+    decision !== "merge" &&
+    decision !== "noop"
+  ) {
     throw new Error("skill coordination decision must be create, update, merge, or noop");
   }
 
@@ -258,7 +267,10 @@ export function validateSkillEvolutionCoordination(
   }
 
   const memoryTopics = assertStringArray(record.memoryTopics, "skill coordination memoryTopics");
-  const supportingFiles = assertStringArray(record.supportingFiles, "skill coordination supportingFiles");
+  const supportingFiles = assertStringArray(
+    record.supportingFiles,
+    "skill coordination supportingFiles",
+  );
   if (decision === "noop") {
     if (memoryAction !== "noop") {
       throw new Error("skill coordination noop decision must use memoryAction=noop");
@@ -271,7 +283,9 @@ export function validateSkillEvolutionCoordination(
     }
   } else {
     if (memoryAction !== "compress-memory") {
-      throw new Error("skill coordination create/update/merge decision must use memoryAction=compress-memory");
+      throw new Error(
+        "skill coordination create/update/merge decision must use memoryAction=compress-memory",
+      );
     }
     if (memoryTopics.length === 0) {
       throw new Error("skill coordination create/update/merge decision must declare memoryTopics");
@@ -293,7 +307,10 @@ function validateChangeSet(value: unknown): LearnedSkillChangeSet {
   const record = assertRecord(value, "learned skill change set");
   assertExactKeys(record, ["changedSkills", "changedFiles"], "learned skill change set");
   return {
-    changedSkills: assertStringArray(record.changedSkills, "learned skill change set changedSkills"),
+    changedSkills: assertStringArray(
+      record.changedSkills,
+      "learned skill change set changedSkills",
+    ),
     changedFiles: assertStringArray(record.changedFiles, "learned skill change set changedFiles"),
   };
 }
@@ -439,7 +456,10 @@ const NOOP_COORDINATION: SkillEvolutionCoordination = {
 
 /** A human-readable topic derived from a skill directory name, for memory compression. */
 function humanizeSkillSlug(skillName: string): string {
-  const slug = skillName.replace(/^memflywheel-learned-/, "").replace(/[-_]+/g, " ").trim();
+  const slug = skillName
+    .replace(/^memflywheel-learned-/, "")
+    .replace(/[-_]+/g, " ")
+    .trim();
   return slug || skillName;
 }
 
@@ -497,7 +517,9 @@ async function runSkillToolLoop(input: {
   finalContent: string | null;
   stoppedReason: "no-tool-calls" | "max-steps" | "aborted";
 }> {
-  const maxSteps = clampSteps(typeof input.maxSteps === "number" ? input.maxSteps : DEFAULT_MAX_STEPS);
+  const maxSteps = clampSteps(
+    typeof input.maxSteps === "number" ? input.maxSteps : DEFAULT_MAX_STEPS,
+  );
   const lookup = new Map(input.tools.map((tool) => [tool.name, tool]));
   const messages: CanonicalModelMessage[] = [
     { role: "system", content: input.systemPrompt },
@@ -508,7 +530,8 @@ async function runSkillToolLoop(input: {
   let steps = 0;
 
   for (let step = 0; step < maxSteps; step += 1) {
-    if (input.signal?.aborted) return { steps, toolCalls, finalContent: null, stoppedReason: "aborted" };
+    if (input.signal?.aborted)
+      return { steps, toolCalls, finalContent: null, stoppedReason: "aborted" };
 
     const response = await input.model.complete({
       messages,
@@ -523,7 +546,8 @@ async function runSkillToolLoop(input: {
       return {
         steps,
         toolCalls,
-        finalContent: typeof response.message.content === "string" ? response.message.content : null,
+        finalContent:
+          typeof response.message.content === "string" ? response.message.content : null,
         stoppedReason: "no-tool-calls",
       };
     }
@@ -561,7 +585,9 @@ export async function runSkillEvolutionAgent<TCheckpoint>(
   });
   const catalogNames = new Set(
     (learnedSkillIndex.skills ?? [])
-      .map((skill) => (skill && typeof skill === "object" ? (skill as { name?: unknown }).name : undefined))
+      .map((skill) =>
+        skill && typeof skill === "object" ? (skill as { name?: unknown }).name : undefined,
+      )
       .filter((name): name is string => typeof name === "string"),
   );
   const checkpoint = await options.store.createSkillCheckpoint();

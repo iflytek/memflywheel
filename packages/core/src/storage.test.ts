@@ -26,7 +26,10 @@ test("writeMemoryDocument stamps timestamps and preserves created_at", async () 
     const rel = await writeMemoryDocument(ctx, {
       type: "identity",
       filename: "user-name.md",
-      doc: { frontmatter: { name: "用户称呼", description: "称呼", type: "identity" }, body: "叫小钟" },
+      doc: {
+        frontmatter: { name: "用户称呼", description: "称呼", type: "identity" },
+        body: "叫小钟",
+      },
     });
     assert.equal(rel, "identity/user-name.md");
 
@@ -38,7 +41,10 @@ test("writeMemoryDocument stamps timestamps and preserves created_at", async () 
     await writeMemoryDocument(ctx, {
       type: "identity",
       filename: "user-name.md",
-      doc: { frontmatter: { name: "用户称呼", description: "新称呼", type: "identity" }, body: "叫小钟2" },
+      doc: {
+        frontmatter: { name: "用户称呼", description: "新称呼", type: "identity" },
+        body: "叫小钟2",
+      },
     });
     const second = await readMemoryDocument(ctx, rel);
     assert.equal(second?.frontmatter.created_at, createdAt);
@@ -57,7 +63,12 @@ test("writeMemoryDocument preserves model-authored occurred_on alongside write t
       type: "context",
       filename: "team-reorg.md",
       doc: {
-        frontmatter: { name: "Team Reorg", description: "merge", type: "context", occurred_on: "2024-11-05" },
+        frontmatter: {
+          name: "Team Reorg",
+          description: "merge",
+          type: "context",
+          occurred_on: "2024-11-05",
+        },
         body: "The team merged into Infra on 2024-11-05.",
       },
     });

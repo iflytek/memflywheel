@@ -36,11 +36,19 @@ async function seed(relativePath, frontmatter, body) {
 // --- a realistic, messy developer memory store that genuinely needs cleanup ---
 
 // Stable identity (should be left alone).
-await seed("identity/role.md", { name: "Role", type: "identity" }, "A backend engineer who mainly writes Go.");
+await seed(
+  "identity/role.md",
+  { name: "Role", type: "identity" },
+  "A backend engineer who mainly writes Go.",
+);
 
 // Two same-topic beverage preferences accumulated on different days — the subagent
 // should MERGE these into one drinks preference, keeping BOTH items (no data loss).
-await seed("preference/tea.md", { name: "Green tea", type: "preference" }, "Prefers green tea as the daily drink.");
+await seed(
+  "preference/tea.md",
+  { name: "Green tea", type: "preference" },
+  "Prefers green tea as the daily drink.",
+);
 await seed(
   "preference/coffee.md",
   { name: "Coffee", type: "preference" },
@@ -49,14 +57,30 @@ await seed(
 
 // Two same-topic team notes — candidates to merge into one roster, keeping both people.
 await seed("ambient/mara.md", { name: "Mara", type: "ambient" }, "Mara is the backend team lead.");
-await seed("ambient/jin.md", { name: "Jin", type: "ambient" }, "Jin runs the infrastructure and the on-call rotation.");
+await seed(
+  "ambient/jin.md",
+  { name: "Jin", type: "ambient" },
+  "Jin runs the infrastructure and the on-call rotation.",
+);
 
 // Exact-duplicate bodies -> deterministic delete-duplicate (LLM-free).
-await seed("style/brevity.md", { name: "Brevity", type: "style" }, "Keep replies short and to the point.");
-await seed("style/short.md", { name: "Be concise", type: "style" }, "Keep replies short and to the point.");
+await seed(
+  "style/brevity.md",
+  { name: "Brevity", type: "style" },
+  "Keep replies short and to the point.",
+);
+await seed(
+  "style/short.md",
+  { name: "Be concise", type: "style" },
+  "Keep replies short and to the point.",
+);
 
 // Misfiled: lives in identity/ but declares type preference -> deterministic relocate.
-await seed("identity/editor.md", { name: "Editor", type: "preference" }, "Uses Neovim as the main editor.");
+await seed(
+  "identity/editor.md",
+  { name: "Editor", type: "preference" },
+  "Uses Neovim as the main editor.",
+);
 
 // An over-long workflow note holding a full numbered SOP — complete methods belong
 // in a skill, so the subagent should compress this to a short trigger signal.
@@ -119,16 +143,24 @@ async function listFiles() {
 console.log("库:", root);
 console.log("整理前文件:", await listFiles());
 
-const result = await scribe.runDream({ reason: "idle", memoryAction: "consolidate", topics: ["drinks", "team"] });
+const result = await scribe.runDream({
+  reason: "idle",
+  memoryAction: "consolidate",
+  topics: ["drinks", "team"],
+});
 console.log(`\n===== dream pass =====`);
 console.log(`ran=${result.ran}  reason=${result.reason}`);
-console.log(`deterministic changed=${result.changed?.length ?? 0}  deleted=${result.deleted?.length ?? 0}`);
+console.log(
+  `deterministic changed=${result.changed?.length ?? 0}  deleted=${result.deleted?.length ?? 0}`,
+);
 
 console.log(`\n----- subagent 真实 tool calls (${trace.length}) -----`);
 for (const c of trace) {
   const args = JSON.stringify(c.args);
   const text = (c.text || "").replace(/\s+/g, " ").slice(0, 120);
-  console.log(`  ${c.ok ? "ok " : "ERR"} ${c.tool}(${args.length > 180 ? args.slice(0, 180) + "…" : args})`);
+  console.log(
+    `  ${c.ok ? "ok " : "ERR"} ${c.tool}(${args.length > 180 ? args.slice(0, 180) + "…" : args})`,
+  );
   console.log(`       -> ${text}`);
 }
 
@@ -138,10 +170,15 @@ const files = await listFiles();
 console.log("整理后文件:", files);
 
 const styleCount = files.filter((f) => f.startsWith("style/")).length;
-console.log(`\n[确定性] 重复 style 去重: ${styleCount === 1 ? "✅ 仅剩 1 个" : `❌ 剩 ${styleCount} 个`}`);
+console.log(
+  `\n[确定性] 重复 style 去重: ${styleCount === 1 ? "✅ 仅剩 1 个" : `❌ 剩 ${styleCount} 个`}`,
+);
 
-const relocated = !files.includes("identity/editor.md") && files.some((f) => f === "preference/editor.md");
-console.log(`[确定性] 放错目录搬迁 (identity/editor→preference/editor): ${relocated ? "✅" : "❌"}`);
+const relocated =
+  !files.includes("identity/editor.md") && files.some((f) => f === "preference/editor.md");
+console.log(
+  `[确定性] 放错目录搬迁 (identity/editor→preference/editor): ${relocated ? "✅" : "❌"}`,
+);
 
 async function bodyOfDir(prefix) {
   let text = "";
@@ -171,7 +208,11 @@ console.log(
 
 const wf = files.find((f) => f.startsWith("workflow/"));
 if (wf) {
-  const body = (await readFile(path.join(root, wf), "utf8")).split(/---/).slice(2).join("---").trim();
+  const body = (await readFile(path.join(root, wf), "utf8"))
+    .split(/---/)
+    .slice(2)
+    .join("---")
+    .trim();
   const hasNumberedSteps = /\b[3-9]\)/.test(body);
   console.log(
     `[语义] 超长 workflow 压缩: ${wf} 正文 ${body.length} 字符; ${hasNumberedSteps ? "仍含多步编号 ⚠️" : "已压成短触发 ✅"}`,

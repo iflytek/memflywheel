@@ -20,6 +20,11 @@ updates:
         patterns:
           - "typescript"
           - "@types/*"
+          - "@typescript-eslint/*"
+          - "eslint"
+          - "eslint-config-prettier"
+          - "eslint-plugin-prettier"
+          - "prettier"
       dev-deps:
         dependency-type: "development"
         update-types:

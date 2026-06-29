@@ -42,9 +42,13 @@ import {
 // ───────────────────────────── config ──────────────────────────────────────
 
 const ENDPOINT =
-  process.env.MEMFLYWHEEL_LLM_ENDPOINT ?? process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com/v1";
-const MODEL = process.env.MEMFLYWHEEL_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
-const API_KEY = process.env.MEMFLYWHEEL_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
+  process.env.MEMFLYWHEEL_LLM_ENDPOINT ??
+  process.env.DEEPSEEK_BASE_URL ??
+  "https://api.deepseek.com/v1";
+const MODEL =
+  process.env.MEMFLYWHEEL_LLM_MODEL ?? process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash";
+const API_KEY =
+  process.env.MEMFLYWHEEL_LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENAI_API_KEY;
 const HAVE_KEY = Boolean(API_KEY);
 
 let ACTIVE_ENDPOINT = ENDPOINT;
@@ -85,8 +89,7 @@ function summarize(body) {
   return {
     model: body?.model,
     roles: messages.map((m) => m?.role),
-    systemHead: (messages.find((m) => m?.role === "system")?.content ?? "")
-      .slice(0, 400),
+    systemHead: (messages.find((m) => m?.role === "system")?.content ?? "").slice(0, 400),
     toolNames: tools.map((t) => t?.function?.name ?? t?.name).filter(Boolean),
     toolSchemas: tools.map((t) => ({
       name: t?.function?.name ?? t?.name,
@@ -190,8 +193,14 @@ async function readSkillPackage(skillsRoot, slug) {
 // ──────────────────────────── transcripts ──────────────────────────────────
 
 const factsTranscript = [
-  { role: "user", text: "我叫 Kai，是后端工程师。咖啡只喝美式。回复请尽量简洁。我们的项目部署在 ap-singapore 区域。" },
-  { role: "assistant", text: "记下了，Kai：后端工程师、只喝美式、偏好简洁回复、部署在 ap-singapore。" },
+  {
+    role: "user",
+    text: "我叫 Kai，是后端工程师。咖啡只喝美式。回复请尽量简洁。我们的项目部署在 ap-singapore 区域。",
+  },
+  {
+    role: "assistant",
+    text: "记下了，Kai：后端工程师、只喝美式、偏好简洁回复、部署在 ap-singapore。",
+  },
 ];
 
 const secretTranscript = [
@@ -209,12 +218,20 @@ const procedureTranscript = [
   {
     role: "assistant",
     text: "开始执行标准发布流程。先构建。",
-    toolCalls: [{ name: "bash", input: { command: "pnpm -r build" }, output: "all 8 packages built, 0 errors" }],
+    toolCalls: [
+      {
+        name: "bash",
+        input: { command: "pnpm -r build" },
+        output: "all 8 packages built, 0 errors",
+      },
+    ],
   },
   {
     role: "assistant",
     text: "构建通过，跑全量测试。",
-    toolCalls: [{ name: "bash", input: { command: "pnpm -r test" }, output: "240 passed, 0 failed" }],
+    toolCalls: [
+      { name: "bash", input: { command: "pnpm -r test" }, output: "240 passed, 0 failed" },
+    ],
   },
   {
     role: "assistant",
@@ -228,8 +245,16 @@ const procedureTranscript = [
     role: "assistant",
     text: "发布到 registry 并打 tag。",
     toolCalls: [
-      { name: "bash", input: { command: "pnpm -r publish --access public" }, output: "published 8 packages" },
-      { name: "bash", input: { command: "git tag v0.2.0 && git push --tags" }, output: "tag pushed" },
+      {
+        name: "bash",
+        input: { command: "pnpm -r publish --access public" },
+        output: "published 8 packages",
+      },
+      {
+        name: "bash",
+        input: { command: "git tag v0.2.0 && git push --tags" },
+        output: "tag pushed",
+      },
     ],
   },
   { role: "user", text: "完美，这个流程以后每次发版都这样走。" },
@@ -299,7 +324,8 @@ const VALID_TYPES = ["identity", "preference", "style", "workflow", "context", "
 
 async function groupMemory() {
   if (!HAVE_KEY) {
-    for (const n of ["M1 extraction", "M2 recall", "M3 privacy", "M4 dream"]) record(n, "skip", "no key");
+    for (const n of ["M1 extraction", "M2 recall", "M3 privacy", "M4 dream"])
+      record(n, "skip", "no key");
     return;
   }
   const root = await mkdtemp(path.join(tmpdir(), "ms-strict-M-"));
@@ -312,7 +338,11 @@ async function groupMemory() {
   console.log("  onTurnEnd:", JSON.stringify(turn).slice(0, 160));
   const dump = await dumpRoot(root);
   const memFiles = dump.files.filter((f) => f.rel.endsWith(".md") && f.rel !== "MEMORY.md");
-  check("M1 at least one memory file written", memFiles.length > 0, `files=${dump.files.map((f) => f.rel).join(",")}`);
+  check(
+    "M1 at least one memory file written",
+    memFiles.length > 0,
+    `files=${dump.files.map((f) => f.rel).join(",")}`,
+  );
   // each written memory file must sit in a valid typed dir AND declare a valid frontmatter type
   let typedOk = memFiles.length > 0;
   for (const f of memFiles) {
@@ -326,26 +356,48 @@ async function groupMemory() {
     }
   }
   check("M1 every memory file is in a valid typed dir with valid frontmatter.type", typedOk);
-  check("M1 MEMORY.md non-empty and indexes the file", dump.index.trim().length > 0 && memFiles.some((f) => dump.index.includes(f.rel.split("/").pop().replace(/\.md$/, "")) || dump.index.includes(f.rel)));
+  check(
+    "M1 MEMORY.md non-empty and indexes the file",
+    dump.index.trim().length > 0 &&
+      memFiles.some(
+        (f) =>
+          dump.index.includes(f.rel.split("/").pop().replace(/\.md$/, "")) ||
+          dump.index.includes(f.rel),
+      ),
+  );
 
   banner("M2 · 跨轮召回：上轮事实出现在下轮 prompt-build");
   const ctx = await scribe.onPromptBuild({ sessionId });
   const recall = `${ctx.systemPrompt ?? ""}\n${ctx.preludePrompt ?? ""}`;
-  const signals = [/美式|coffee|preference|偏好/i, /简洁|style|风格|tone/i, /Kai|identity|身份/i, /singapore|ap-singapore|部署|context/i]
-    .filter((re) => re.test(recall)).length;
+  const signals = [
+    /美式|coffee|preference|偏好/i,
+    /简洁|style|风格|tone/i,
+    /Kai|identity|身份/i,
+    /singapore|ap-singapore|部署|context/i,
+  ].filter((re) => re.test(recall)).length;
   console.log("  prelude(head):", (ctx.preludePrompt ?? "").slice(0, 220).replace(/\n/g, " "));
-  check("M2 prior memory recalled into next prompt (>=2 signals)", signals >= 2, `signals=${signals}`);
+  check(
+    "M2 prior memory recalled into next prompt (>=2 signals)",
+    signals >= 2,
+    `signals=${signals}`,
+  );
   // recall injects INDEX, not full bodies
-  check("M2 prelude looks like an index (not raw bodies dump)", /可用记忆|Available memories|MEMORY\.md|- \[/i.test(recall));
+  check(
+    "M2 prelude looks like an index (not raw bodies dump)",
+    /可用记忆|Available memories|MEMORY\.md|- \[/i.test(recall),
+  );
 
   banner("M3 · 隐私：transcript 里的 secret 永不落盘");
   await scribe.onTurnEnd({ sessionId, messages: secretTranscript });
   const dump3 = await dumpRoot(root);
-  const allText = (await Promise.all(dump3.files.map((f) => readSafe(f.abs)))).join("\n") + dump3.index;
+  const allText =
+    (await Promise.all(dump3.files.map((f) => readSafe(f.abs)))).join("\n") + dump3.index;
   check("M3 secret NOT persisted to disk", !new RegExp("sk-" + "LEAKTEST0123456789").test(allText));
 
   banner("M4 · idle → dream 整理后索引仍可用，且记忆未丢");
-  const before = (await dumpRoot(root)).files.filter((f) => f.rel.endsWith(".md") && f.rel !== "MEMORY.md").length;
+  const before = (await dumpRoot(root)).files.filter(
+    (f) => f.rel.endsWith(".md") && f.rel !== "MEMORY.md",
+  ).length;
   let dreamErr = null;
   try {
     await scribe.onIdle({ force: true });
@@ -353,10 +405,19 @@ async function groupMemory() {
     dreamErr = e?.message ?? String(e);
   }
   const after = await dumpRoot(root);
-  const afterCount = after.files.filter((f) => f.rel.endsWith(".md") && f.rel !== "MEMORY.md").length;
+  const afterCount = after.files.filter(
+    (f) => f.rel.endsWith(".md") && f.rel !== "MEMORY.md",
+  ).length;
   check("M4 dream ran without throwing", dreamErr === null, dreamErr ?? "");
-  check("M4 index still parseable after dream", typeof after.index === "string" && after.index.length >= 0);
-  check("M4 dream did not destroy memories", afterCount >= 1 && afterCount <= before, `before=${before} after=${afterCount}`);
+  check(
+    "M4 index still parseable after dream",
+    typeof after.index === "string" && after.index.length >= 0,
+  );
+  check(
+    "M4 dream did not destroy memories",
+    afterCount >= 1 && afterCount <= before,
+    `before=${before} after=${afterCount}`,
+  );
 
   await scribe.onSessionEnd({ sessionId });
 }
@@ -380,7 +441,9 @@ async function attemptEvolution(i) {
   await scribe.onSessionStart({ sessionId });
   try {
     const t1 = await scribe.onTurnEnd({ sessionId, messages: procedureTranscript });
-    const slugs = (await readdir(skillsRoot, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name);
+    const slugs = (await readdir(skillsRoot, { withFileTypes: true }))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
     if (slugs.length === 1) {
       return { ok: true, slug: slugs[0], skillsRoot, loop: t1?.learningLoop, scribe, sessionId };
     }
@@ -392,7 +455,8 @@ async function attemptEvolution(i) {
 
 async function groupSkill() {
   if (!HAVE_KEY) {
-    for (const n of ["K1 evolve", "K2 valid package", "K3 recall", "K4 decision", "K5 leak"]) record(n, "skip", "no key");
+    for (const n of ["K1 evolve", "K2 valid package", "K3 recall", "K4 decision", "K5 leak"])
+      record(n, "skip", "no key");
     return;
   }
   const MAX = Number(process.env.K_ATTEMPTS ?? 4); // K_ATTEMPTS=1 => single-shot, production-like (no retry softening)
@@ -415,9 +479,12 @@ async function groupSkill() {
     success ? "" : `all ${MAX} attempts failed: ${failures.join(" | ")}`,
   );
   const attemptsMade = failures.length + (success ? 1 : 0);
-  console.log(`  ◇ reliability: succeeded=${success ? "yes" : "no"} after ${attemptsMade} attempt(s); ${failures.length} threw before success`);
+  console.log(
+    `  ◇ reliability: succeeded=${success ? "yes" : "no"} after ${attemptsMade} attempt(s); ${failures.length} threw before success`,
+  );
   if (!success) {
-    for (const n of ["K2 valid package", "K3 recall", "K4 decision", "K5 leak"]) record(n, "fail", "no successful evolution to inspect");
+    for (const n of ["K2 valid package", "K3 recall", "K4 decision", "K5 leak"])
+      record(n, "fail", "no successful evolution to inspect");
     return;
   }
   const { slug, skillsRoot, loop, scribe, sessionId } = success;
@@ -441,20 +508,36 @@ async function groupSkill() {
   const ctx = await scribe.onPromptBuild({ sessionId });
   const sp = ctx.skillPreludePrompt ?? "";
   console.log("  skillPrelude:\n" + (sp ? sp.replace(/^/gm, "    ") : "    (empty)"));
-  check("K3 skill recalled with name + path in skillPrelude", sp.includes(slug) && /path:/i.test(sp), "skillPrelude missing slug or path:");
+  check(
+    "K3 skill recalled with name + path in skillPrelude",
+    sp.includes(slug) && /path:/i.test(sp),
+    "skillPrelude missing slug or path:",
+  );
 
   banner("K4 · 协调决策是 create（真的演化，不是 noop）");
   const decision = loop?.skillEvolution?.value?.coordination?.decision;
   console.log("  coordination decision:", decision);
-  check("K4 coordination decision is create (not noop)", decision === "create", `decision=${decision}`);
+  check(
+    "K4 coordination decision is create (not noop)",
+    decision === "create",
+    `decision=${decision}`,
+  );
 
   banner("K5 · 卫生：发布技能包不含根级隐藏元数据文件");
   const leaked = Object.keys(files).some((f) => f.startsWith("."));
-  check("K5 no root hidden metadata files in published package", !leaked, "root hidden metadata file shipped inside the published skill");
+  check(
+    "K5 no root hidden metadata files in published package",
+    !leaked,
+    "root hidden metadata file shipped inside the published skill",
+  );
 
   banner("K6 · 记忆↔技能联动：技能创建后自动触发 dream 压缩记忆");
   console.log("  dream:", JSON.stringify(loop?.dream ?? null).slice(0, 200));
-  check("K6 skill creation auto-triggered memory dream (联动)", loop?.dream?.ran === true, `dream=${JSON.stringify(loop?.dream)}`);
+  check(
+    "K6 skill creation auto-triggered memory dream (联动)",
+    loop?.dream?.ran === true,
+    `dream=${JSON.stringify(loop?.dream)}`,
+  );
 
   await scribe.onSessionEnd({ sessionId });
 }
@@ -467,18 +550,28 @@ function groupProxyAssertions() {
     return;
   }
   banner("P · 代理抓到的 DeepSeek 原始请求符合预期（断言，非打印）");
-  check("P captured at least one upstream request", proxyLog.length > 0, `captured=${proxyLog.length}`);
+  check(
+    "P captured at least one upstream request",
+    proxyLog.length > 0,
+    `captured=${proxyLog.length}`,
+  );
 
   // an extraction/skill request must carry a MemFlywheel system prompt
   const sawMemSystem = proxyLog.some((e) =>
-    /memory extraction|learned-skill|file tools|MEMORY\.md|记忆|技能/i.test(e.summary?.systemHead ?? ""),
+    /memory extraction|learned-skill|file tools|MEMORY\.md|记忆|技能/i.test(
+      e.summary?.systemHead ?? "",
+    ),
   );
   check("P a MemFlywheel system prompt reached the model", sawMemSystem);
 
   // some request must expose the six file tools WITH schemas (not just names)
   const SIX = ["read", "write", "edit", "bash", "glob", "grep"];
   const withSix = proxyLog.find((e) => SIX.every((n) => (e.summary?.toolNames ?? []).includes(n)));
-  check("P the six file tools were advertised to the model", Boolean(withSix), `toolSets=${proxyLog.map((e) => (e.summary?.toolNames ?? []).length).join(",")}`);
+  check(
+    "P the six file tools were advertised to the model",
+    Boolean(withSix),
+    `toolSets=${proxyLog.map((e) => (e.summary?.toolNames ?? []).length).join(",")}`,
+  );
   if (withSix) {
     const schemasOk = SIX.every((n) => {
       const s = withSix.summary.toolSchemas.find((x) => x.name === n);
@@ -486,17 +579,26 @@ function groupProxyAssertions() {
     });
     check("P each of the six tools carries a parameters schema", schemasOk);
   } else {
-    check("P each of the six tools carries a parameters schema", false, "no request had all six tools");
+    check(
+      "P each of the six tools carries a parameters schema",
+      false,
+      "no request had all six tools",
+    );
   }
 
   // a real tool-call round-trip must have happened in at least one captured request
-  const sawRoundTrip = proxyLog.some((e) => e.summary?.hasAssistantToolCall) && proxyLog.some((e) => e.summary?.hasToolResult);
+  const sawRoundTrip =
+    proxyLog.some((e) => e.summary?.hasAssistantToolCall) &&
+    proxyLog.some((e) => e.summary?.hasToolResult);
   check("P a real tool_call/tool_result round-trip was observed", sawRoundTrip);
 
   // secret hygiene: the real key must never appear in the capture log
   const serialized = JSON.stringify(proxyLog);
   check("P no API key in capture log", !API_KEY || !serialized.includes(API_KEY));
-  check("P no bearer/sk- secret in capture log", !/Bearer\s+sk-|sk-[A-Za-z0-9._-]{12,}/.test(serialized));
+  check(
+    "P no bearer/sk- secret in capture log",
+    !/Bearer\s+sk-|sk-[A-Za-z0-9._-]{12,}/.test(serialized),
+  );
 }
 
 // ──────────────────────────────── main ─────────────────────────────────────
@@ -520,7 +622,8 @@ async function main() {
   console.log(`\n  ${by("pass")} pass · ${by("skip")} skip · ${by("fail")} fail`);
   if (by("fail") > 0) {
     console.log("\n  FAILURES:");
-    for (const r of results.filter((r) => r.status === "fail")) console.log(`   ❌ ${r.name} — ${r.detail}`);
+    for (const r of results.filter((r) => r.status === "fail"))
+      console.log(`   ❌ ${r.name} — ${r.detail}`);
   }
   process.exit(by("fail") > 0 ? 1 : 0);
 }

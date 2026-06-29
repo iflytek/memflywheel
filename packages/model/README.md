@@ -20,7 +20,11 @@ const model: CanonicalModelCompletion = {
       message: {
         role: "assistant",
         toolCalls: [
-          { id: "call-1", name: "write", input: { filePath: "preference/example.md", content: "..." } },
+          {
+            id: "call-1",
+            name: "write",
+            input: { filePath: "preference/example.md", content: "..." },
+          },
         ],
       },
       finishReason: "tool-calls",
@@ -47,12 +51,12 @@ const model = createOpenAIChatCompletionsModel({
 
 Environment variables:
 
-| Variable | Meaning |
-| --- | --- |
-| `MEMFLYWHEEL_LLM_ENDPOINT` | Base URL without `/chat/completions` |
-| `MEMFLYWHEEL_LLM_API_KEY` | API key, with `OPENAI_API_KEY` as fallback |
-| `MEMFLYWHEEL_LLM_MODEL` | Model id |
-| `MEMFLYWHEEL_LLM_MAX_TOKENS` | Output token cap |
+| Variable                     | Meaning                                    |
+| ---------------------------- | ------------------------------------------ |
+| `MEMFLYWHEEL_LLM_ENDPOINT`   | Base URL without `/chat/completions`       |
+| `MEMFLYWHEEL_LLM_API_KEY`    | API key, with `OPENAI_API_KEY` as fallback |
+| `MEMFLYWHEEL_LLM_MODEL`      | Model id                                   |
+| `MEMFLYWHEEL_LLM_MAX_TOKENS` | Output token cap                           |
 
 ## OpenAI-Compatible Embeddings Mapper
 
@@ -69,11 +73,11 @@ const embeddings = createOpenAIEmbeddingsModel({
 This mapper is for optional `MEMORY.md` index-layer retrieval. It does not embed
 memory bodies and it does not make MemFlywheel a vector database.
 
-| Variable | Meaning |
-| --- | --- |
-| `MEMFLYWHEEL_EMBEDDING_ENDPOINT` / `MEMFLYWHEEL_EMBEDDING_BASE_URL` | Base URL without `/embeddings` |
-| `MEMFLYWHEEL_EMBEDDING_API_KEY` | API key, with `OPENAI_API_KEY` as fallback |
-| `MEMFLYWHEEL_EMBEDDING_MODEL` | Embedding model id |
+| Variable                                                            | Meaning                                    |
+| ------------------------------------------------------------------- | ------------------------------------------ |
+| `MEMFLYWHEEL_EMBEDDING_ENDPOINT` / `MEMFLYWHEEL_EMBEDDING_BASE_URL` | Base URL without `/embeddings`             |
+| `MEMFLYWHEEL_EMBEDDING_API_KEY`                                     | API key, with `OPENAI_API_KEY` as fallback |
+| `MEMFLYWHEEL_EMBEDDING_MODEL`                                       | Embedding model id                         |
 
 OpenAI-compatible HTTP is just one mapper. Native host adapters should prefer
 the host-owned model/auth/lifecycle channel.

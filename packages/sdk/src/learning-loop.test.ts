@@ -68,7 +68,9 @@ test("runLearningLoop: normal turn runs extraction, then skill evolution, then d
       };
     },
     dream: async (coordination) => {
-      events.push(`dream:${coordination.memoryAction}:${coordination.topics.join(",")}:${coordination.targetSkill}`);
+      events.push(
+        `dream:${coordination.memoryAction}:${coordination.topics.join(",")}:${coordination.targetSkill}`,
+      );
       return { ran: true, reason: "ok" };
     },
   });

@@ -43,7 +43,10 @@ test("shouldRunDream: threshold boundaries are inclusive (>=)", () => {
   const now = 1_000_000_000_000;
   const H = 60 * 60 * 1000;
   // Time exactly at the 24h threshold fires; one ms short does not.
-  assert.equal(shouldRunDream({ now, lastConsolidatedAt: now - 24 * H, candidateSessionCount: 0 }), true);
+  assert.equal(
+    shouldRunDream({ now, lastConsolidatedAt: now - 24 * H, candidateSessionCount: 0 }),
+    true,
+  );
   assert.equal(
     shouldRunDream({ now, lastConsolidatedAt: now - (24 * H - 1), candidateSessionCount: 0 }),
     false,
@@ -238,8 +241,16 @@ test("archived memories stay out of scan/health/index and are NOT resurrected by
   const root = await makeRoot();
   try {
     const ctx = ctxFor(root);
-    await writeFixture(root, "preference", "coffee.md", { name: "Coffee", body: "Likes americano.", mtime: 1 });
-    await writeFixture(root, "preference", "tea.md", { name: "Tea", body: "Likes green tea.", mtime: 2 });
+    await writeFixture(root, "preference", "coffee.md", {
+      name: "Coffee",
+      body: "Likes americano.",
+      mtime: 1,
+    });
+    await writeFixture(root, "preference", "tea.md", {
+      name: "Tea",
+      body: "Likes green tea.",
+      mtime: 2,
+    });
 
     // What a dream merge does to a folded-in source.
     const archived = await archiveMemoryDocument(ctx, "preference/coffee.md");
@@ -247,12 +258,18 @@ test("archived memories stay out of scan/health/index and are NOT resurrected by
 
     // The archived file does not re-enter the scan...
     const entries = await scanMemoryFiles(root);
-    assert.ok(!entries.some((e) => e.relativePath.startsWith(".archive/")), "scan excludes .archive");
+    assert.ok(
+      !entries.some((e) => e.relativePath.startsWith(".archive/")),
+      "scan excludes .archive",
+    );
     assert.equal(entries.length, 1);
 
     // ...nor health (no path-type-mismatch on the archived copy)...
     const findings = await buildHealthFindings(root);
-    assert.ok(!findings.some((f) => f.paths.some((p) => p.startsWith(".archive/"))), "health ignores .archive");
+    assert.ok(
+      !findings.some((f) => f.paths.some((p) => p.startsWith(".archive/"))),
+      "health ignores .archive",
+    );
 
     // ...so a later dream's deterministic plan does NOT relocate it back to life.
     assert.deepEqual(await planDream({ root }), []);

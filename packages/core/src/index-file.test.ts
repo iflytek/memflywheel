@@ -30,10 +30,7 @@ function entry(over: Partial<MemoryEntry>): MemoryEntry {
 
 test("buildIndexContent formats the index line", () => {
   const out = buildIndexContent([entry({})]);
-  assert.equal(
-    out,
-    `- [Name](identity/u.md) - Desc (type: identity, path: identity/u.md)`,
-  );
+  assert.equal(out, `- [Name](identity/u.md) - Desc (type: identity, path: identity/u.md)`);
 });
 
 test("buildIndexContent uses （无描述） placeholder", () => {
@@ -92,7 +89,12 @@ test("applyAgingHints only ages context/ambient past threshold", () => {
 test("syncMemoryIndex writes MEMORY.md and readMemoryIndex reads it", async () => {
   const root = await makeRoot();
   try {
-    await writeFixture(root, "identity", "u.md", { name: "N", description: "D", body: "b", mtime: 1 });
+    await writeFixture(root, "identity", "u.md", {
+      name: "N",
+      description: "D",
+      body: "b",
+      mtime: 1,
+    });
     const content = await syncMemoryIndex(root);
     assert.ok(content.includes("- [N]("));
     const onDisk = await readFile(path.join(root, "MEMORY.md"), "utf8");

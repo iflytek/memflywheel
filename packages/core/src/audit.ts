@@ -10,13 +10,7 @@ import { appendFileLine } from "./atomic.js";
 export const AUDIT_FILE = ".audit.log";
 
 export type AuditAction =
-  | "write"
-  | "delete"
-  | "extract"
-  | "dream-apply"
-  | "relocate"
-  | "archive"
-  | "secret-refused";
+  "write" | "delete" | "extract" | "dream-apply" | "relocate" | "archive" | "secret-refused";
 
 export interface AuditRecord {
   ts: string;

@@ -24,9 +24,7 @@ assignees: ""
 
 ## Expected Behavior
 
-
 ## Actual Behavior
-
 
 ## Notes
 

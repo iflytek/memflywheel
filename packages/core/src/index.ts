@@ -205,10 +205,7 @@ export {
 } from "./dream.js";
 
 // Default dream-consolidation subagent prompt + seed builder (pure; no LLM)
-export {
-  DEFAULT_DREAM_SYSTEM_PROMPT,
-  buildDreamAgentUserMessage,
-} from "./dream-prompt.js";
+export { DEFAULT_DREAM_SYSTEM_PROMPT, buildDreamAgentUserMessage } from "./dream-prompt.js";
 
 // Dream gate bookkeeping (.dream-state.json)
 export {

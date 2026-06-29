@@ -86,11 +86,13 @@ packages/<pkg>/
 ```
 
 Each package `package.json` scripts:
+
 - `build`: `tsc -b`
 - `test`: `tsc -b && node --test dist/**/*.test.js`
 - `clean`: `rm -rf dist`
 
 Dependency edges (workspace-internal only, via `workspace:*`):
+
 - `sdk` → `core`
 - `model` → no workspace package
 - `skills` → no workspace package
@@ -104,40 +106,34 @@ Only the **minimal** fields. `name` + `type` are required by the parser; `descri
 
 ```ts
 // The six categories (VALID_MEMORY_TYPES).
-export type MemoryType =
-  | "identity"
-  | "preference"
-  | "style"
-  | "workflow"
-  | "context"
-  | "ambient";
+export type MemoryType = "identity" | "preference" | "style" | "workflow" | "context" | "ambient";
 
 // Persisted YAML frontmatter. NOTHING beyond these fields.
 // (No scope / origin / source_ref / confidence / status / agent / project / session.)
 export interface MemoryFrontmatter {
-  name: string;          // required, unique display name
-  description: string;   // optional in file; normalized to "" when absent
-  type: MemoryType;      // required, must be one of the six
-  occurred_on?: string;  // optional event date, YYYY-MM-DD
+  name: string; // required, unique display name
+  description: string; // optional in file; normalized to "" when absent
+  type: MemoryType; // required, must be one of the six
+  occurred_on?: string; // optional event date, YYYY-MM-DD
   retrieval_terms?: string[]; // optional old files; required for new/updated extraction writes
-  created_at?: string;   // ISO 8601, minimal-necessary
-  updated_at?: string;   // ISO 8601, minimal-necessary
+  created_at?: string; // ISO 8601, minimal-necessary
+  updated_at?: string; // ISO 8601, minimal-necessary
 }
 
 // A parsed memory file (frontmatter + body).
 export interface MemoryDocument {
   frontmatter: MemoryFrontmatter;
-  body: string;          // markdown after the closing "---", trimmed
+  body: string; // markdown after the closing "---", trimmed
 }
 
 // Scan entry — the scanMemoryFiles() output shape.
 export interface MemoryEntry {
-  filename: string;       // basename, e.g. "user-name.md"
-  relativePath: string;   // forward-slash, e.g. "identity/user-name.md"
+  filename: string; // basename, e.g. "user-name.md"
+  relativePath: string; // forward-slash, e.g. "identity/user-name.md"
   name: string;
-  description: string;    // "" when absent
+  description: string; // "" when absent
   type: MemoryType;
-  mtime: number;          // stat.mtimeMs
+  mtime: number; // stat.mtimeMs
 }
 
 export const VALID_MEMORY_TYPES: ReadonlySet<MemoryType>;
@@ -238,18 +234,21 @@ Single-document CRUD over typed dirs, atomic.
 ```ts
 export interface StorageContext {
   root: string;
-  audit: AuditLogger;        // §3.10
+  audit: AuditLogger; // §3.10
 }
 
 // Read+parse one doc by relativePath. null on ENOENT / invalid.
-export function readMemoryDocument(ctx: StorageContext, relativePath: string): Promise<MemoryDocument | null>;
+export function readMemoryDocument(
+  ctx: StorageContext,
+  relativePath: string,
+): Promise<MemoryDocument | null>;
 
 // Write/overwrite a doc into its typed dir (atomic). Stamps updated_at; created_at on first write.
 // Validates filename + frontmatter + privacy BEFORE writing (throws on secret/invalid).
 // Returns the relativePath actually written.
 export function writeMemoryDocument(
   ctx: StorageContext,
-  input: { type: MemoryType; filename: string; doc: MemoryDocument }
+  input: { type: MemoryType; filename: string; doc: MemoryDocument },
 ): Promise<string>;
 
 // Delete a doc (used by dream apply). Append audit.
@@ -335,7 +334,7 @@ export interface BuildContextResult {
 //   → preludePrompt = buildMemoryIndexPrompt(hintedIndex)
 export function buildContext(opts: {
   root: string;
-  enabled?: boolean;        // false ⇒ both strings "", enabled:false (no scan/inject)
+  enabled?: boolean; // false ⇒ both strings "", enabled:false (no scan/inject)
 }): Promise<BuildContextResult>;
 
 // Stable rules text. buildMemoryInstructionPrompt (recall + save + 禁止事项).
@@ -361,7 +360,7 @@ export function redactPrivateSpans(text: string): string;
 
 export interface SecretFinding {
   kind: "token" | "password" | "api-key" | "cookie" | "ssh-key";
-  excerpt: string;   // masked, for audit only — never the raw secret
+  excerpt: string; // masked, for audit only — never the raw secret
 }
 
 // Heuristic scan for obvious secrets (token/password/api key/cookie/ssh key).
@@ -381,10 +380,13 @@ export function enforceWritePrivacy(text: string): string;
 Per-root mutex: `acquireLock` / `releaseLock`.
 
 ```ts
-export const LOCK_TIMEOUT_MS = 3 * 60 * 1000;  // 180s
+export const LOCK_TIMEOUT_MS = 3 * 60 * 1000; // 180s
 export const LOCK_FILE = ".memory-task-lock";
 
-export interface LockHandle { acquired: boolean; lockPath: string; }
+export interface LockHandle {
+  acquired: boolean;
+  lockPath: string;
+}
 
 // Read existing lock JSON { pid, owner, startedAt }.
 // Stale if process.kill(pid,0) throws OR (now - startedAt) > LOCK_TIMEOUT_MS → unlink & retake.
@@ -413,10 +415,10 @@ Append-only audit trail (CONTEXT: append-only audit).
 export type AuditAction = "write" | "delete" | "extract" | "dream-apply" | "relocate" | "archive";
 
 export interface AuditRecord {
-  ts: string;            // ISO 8601
+  ts: string; // ISO 8601
   action: AuditAction;
   path?: string;
-  detail?: string;       // never contains raw secrets
+  detail?: string; // never contains raw secrets
 }
 
 export interface AuditLogger {
@@ -437,17 +439,20 @@ Core owns the full `runExtractionSession` lifecycle **except the LLM call**, whi
 
 ```ts
 // Minimal transcript shape handed to the subagent.
-export interface ExtractionMessage { role: "user" | "assistant"; text: string; }
+export interface ExtractionMessage {
+  role: "user" | "assistant";
+  text: string;
+}
 
 // THE pluggable injection point. The SDK supplies a tool-calling agent loop here;
 // core calls it inside the held write lock. The runner writes memories itself via
 // the supplied tools (bound to the same context, so they share the lock). Core
 // never calls an LLM — it calls this.
 export type ExtractionAgentRunner = (input: {
-  toolCtx: FileToolContext;      // bound to the held write lock
-  tools: FileTool[];             // from createFileTools()
-  messages: ExtractionMessage[];   // selected window (see selection below)
-  manifest: string;                // formatManifest(existing entries)
+  toolCtx: FileToolContext; // bound to the held write lock
+  tools: FileTool[]; // from createFileTools()
+  messages: ExtractionMessage[]; // selected window (see selection below)
+  manifest: string; // formatManifest(existing entries)
   root: string;
 }) => Promise<{ changed: string[] }>;
 ```
@@ -473,7 +478,7 @@ export function buildExtractionAgentUserMessage(input: {
 // The memory write tools the subagent drives. Each tool is JSON-schema-described
 // with a handler that does path-safety validation + atomic write + audit append +
 // index resync. glob is read-only.
-export function createFileTools(): FileTool[];   // file-tools.ts
+export function createFileTools(): FileTool[]; // file-tools.ts
 ```
 
 > Core holds the prompt string, the seed-message builder, and the write tools only — it never makes an LLM call. The SDK's `createExtractionAgentRunner({ model })` drives a tool-calling loop over them into a full `ExtractionAgentRunner` (§4.3).
@@ -487,7 +492,7 @@ export const EXTRACTION_MAX_MESSAGES = 40;
 // selectMessagesForExtraction: cursor-based windowing.
 export function selectMessagesForExtraction(
   messages: ExtractionMessage[],
-  cursorIndex: number | null
+  cursorIndex: number | null,
 ): ExtractionMessage[];
 
 // Strip <system-reminder> blocks + prelude patterns from user turns;
@@ -509,7 +514,12 @@ export interface FileTool {
   handler: (args: unknown, toolCtx: FileToolContext) => Promise<FileToolResult>;
 }
 
-export enum ExtractionResult { Queued = "queued", Completed = "completed", Skipped = "skipped", Failed = "failed" }
+export enum ExtractionResult {
+  Queued = "queued",
+  Completed = "completed",
+  Skipped = "skipped",
+  Failed = "failed",
+}
 
 // FULL lifecycle, LLM via injected ExtractionAgentRunner:
 //  1 acquireLock (else enqueue → Queued)
@@ -527,7 +537,7 @@ export function runExtractionSession(opts: {
   agent: ExtractionAgentRunner;
   messages: ExtractionMessage[];
   sessionId: string;
-  cursorStore: CursorStore;      // §3.11a
+  cursorStore: CursorStore; // §3.11a
 }): Promise<ExtractionResult>;
 ```
 
@@ -571,10 +581,16 @@ export type DreamAgentRunner = (input: {
   root: string;
   toolCtx: FileToolContext;
   tools: FileTool[];
-  health: HealthFinding[];                 // §3.13
-  typeReview: { path: string; type: MemoryType; name: string; description: string; excerpt: string }[];
+  health: HealthFinding[]; // §3.13
+  typeReview: {
+    path: string;
+    type: MemoryType;
+    name: string;
+    description: string;
+    excerpt: string;
+  }[];
   manifest: string;
-  index: string;                           // current MEMORY.md
+  index: string; // current MEMORY.md
   coordination?: { reason: string; memoryAction: string; topics: string[] };
 }) => Promise<{ changed: string[] }>;
 
@@ -586,7 +602,13 @@ export type DreamAgentRunner = (input: {
 export const DEFAULT_DREAM_SYSTEM_PROMPT: string;
 export function buildDreamAgentUserMessage(input: {
   health: HealthFinding[];
-  typeReview: { path: string; type: MemoryType; name: string; description: string; excerpt: string }[];
+  typeReview: {
+    path: string;
+    type: MemoryType;
+    name: string;
+    description: string;
+    excerpt: string;
+  }[];
   manifest: string;
   index: string;
   coordination?: { reason: string; memoryAction: string; topics: string[] };
@@ -617,7 +639,13 @@ export function runDreamSession(opts: {
   runner?: DreamAgentRunner;
   coordination?: { reason: string; memoryAction: string; topics: string[] };
   refuseSecrets?: boolean;
-}): Promise<{ ran: boolean; reason: string; deterministic: DreamOp[]; changed: string[]; deleted: string[] }>;
+}): Promise<{
+  ran: boolean;
+  reason: string;
+  deterministic: DreamOp[];
+  changed: string[];
+  deleted: string[];
+}>;
 
 export const DREAM_DEFAULT_MIN_HOURS = 24;
 export const DREAM_DEFAULT_MIN_SESSIONS = 5;
@@ -646,7 +674,7 @@ export type HealthCode =
 export interface HealthFinding {
   severity: "error" | "warn";
   code: HealthCode;
-  paths: string[];     // sorted, deduped
+  paths: string[]; // sorted, deduped
   message: string;
 }
 
@@ -674,11 +702,11 @@ sdk/src/
 
 ```ts
 export interface MemFlywheelConfig {
-  root?: string;                 // default getMemoryRoot()
-  enabled?: boolean;             // default true
+  root?: string; // default getMemoryRoot()
+  enabled?: boolean; // default true
   agent?: ExtractionAgentRunner; // §3.11 — extraction subagent injection point (optional)
   dreamRunner?: DreamAgentRunner; // §3.12 — dream consolidation subagent injection point (optional)
-  refuseSecrets?: boolean;       // optional hard-secret gate (default off)
+  refuseSecrets?: boolean; // optional hard-secret gate (default off)
   dream?: { minHours?: number; minSessions?: number; auto?: boolean };
 }
 
@@ -697,7 +725,12 @@ export interface MemFlywheel {
   // ---- Explicit host operations ----
   getContext(): Promise<BuildContextResult>;
   readMemory(relativePath: string): Promise<MemoryDocument | null>;
-  saveMemory(input: { type: MemoryType; name: string; description?: string; body: string }): Promise<{ changed: string[] }>;
+  saveMemory(input: {
+    type: MemoryType;
+    name: string;
+    description?: string;
+    body: string;
+  }): Promise<{ changed: string[] }>;
   runDream(opts?: { force?: boolean }): Promise<{ changed: string[]; deleted: string[] }>;
   doctor(): Promise<HealthFinding[]>;
   rebuildIndex(): Promise<string>;
@@ -708,16 +741,16 @@ export function createMemFlywheel(config: MemFlywheelConfig): MemFlywheel;
 
 ### 4.2 Hook → core mapping
 
-| Hook | Core calls |
-|---|---|
-| `onSessionStart` | init cursor entry; `ensureMemoryDir` |
-| `onPromptBuild` | `recall.buildContext({ root, enabled })` |
-| `onTurnEnd` | `extract.runExtractionSession({ ctx, agent, messages, sessionId, cursorStore })` (skipped if no `agent`) |
-| `onIdle` | gate check → `dream.runDreamSession({ ctx, runner: dreamRunner })` (deterministic pre-pass always; the subagent only if a `dreamRunner` is configured) |
-| `onSessionEnd` | flush pending extraction queue |
-| `saveMemory` | `memory-tools.write` handler → `index-file.syncMemoryIndex` |
+| Hook             | Core calls                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `onSessionStart` | init cursor entry; `ensureMemoryDir`                                                                                                                   |
+| `onPromptBuild`  | `recall.buildContext({ root, enabled })`                                                                                                               |
+| `onTurnEnd`      | `extract.runExtractionSession({ ctx, agent, messages, sessionId, cursorStore })` (skipped if no `agent`)                                               |
+| `onIdle`         | gate check → `dream.runDreamSession({ ctx, runner: dreamRunner })` (deterministic pre-pass always; the subagent only if a `dreamRunner` is configured) |
+| `onSessionEnd`   | flush pending extraction queue                                                                                                                         |
+| `saveMemory`     | `memory-tools.write` handler → `index-file.syncMemoryIndex`                                                                                            |
 
-> **Injection-point exposure:** the host passes `agent` and `dreamRunner` into `createMemFlywheel`. These are the *only* places an LLM enters the system. If omitted, MemFlywheel still runs (recall, the deterministic dream pre-pass, health, explicit save) — it just won't auto-extract or run the semantic dream subagent.
+> **Injection-point exposure:** the host passes `agent` and `dreamRunner` into `createMemFlywheel`. These are the _only_ places an LLM enters the system. If omitted, MemFlywheel still runs (recall, the deterministic dream pre-pass, health, explicit save) — it just won't auto-extract or run the semantic dream subagent.
 
 ### 4.3 Default extraction / dream subagent factories + canonical model protocol
 
@@ -732,14 +765,18 @@ export interface CanonicalModelCompletion {
 // tools + canonical model into a full ExtractionAgentRunner. The subagent writes
 // memory files itself via the tools. Pass a custom prompt/maxSteps to override.
 export function createExtractionAgentRunner(opts: {
-  model: CanonicalModelCompletion; systemPrompt?: string; maxSteps?: number;
+  model: CanonicalModelCompletion;
+  systemPrompt?: string;
+  maxSteps?: number;
 }): ExtractionAgentRunner;
 
 // Dream consolidation subagent: DEFAULT_DREAM_SYSTEM_PROMPT + buildDreamAgentUserMessage
 // over the SAME tool-calling loop. Reads full bodies, then merges/compresses/retires
 // via the ordinary file tools. Same canonical model channel as extraction.
 export function createDreamAgentRunner(opts: {
-  model: CanonicalModelCompletion; systemPrompt?: string; maxSteps?: number;
+  model: CanonicalModelCompletion;
+  systemPrompt?: string;
+  maxSteps?: number;
 }): DreamAgentRunner;
 
 // Provider mapper in @memflywheel/model. Targets an OpenAI-compatible
@@ -752,7 +789,7 @@ export interface OpenAIChatCompletionsModelConfig {
   fetchImpl?: typeof fetch; // injectable for tests (fake tool_calls)
 }
 export function createOpenAIChatCompletionsModel(
-  config?: OpenAIChatCompletionsModelConfig
+  config?: OpenAIChatCompletionsModelConfig,
 ): CanonicalModelCompletion;
 ```
 
@@ -788,14 +825,14 @@ export interface HostAdapter {
 
 ### 7.2 Lifecycle mapping table (host event → scribe hook)
 
-| Host | session start | prompt assembly | turn done | idle/scheduled |
-|---|---|---|---|---|
-| **Pi** | session create | `buildPiTurn`/system-prompt assembly → inject `systemPrompt` + prelude | `onTurnDone` (fire-and-forget) | learning-loop idle tick |
-| **Hermes** | conversation open | pre-completion prompt hook | post-completion callback | scheduler tick |
-| **OpenCode** | session init | message build middleware | response complete event | background timer |
-| **OpenClaw** | agent start | system + context injection point | turn end signal | idle watcher |
-| **Codex** | task start | instruction assembly | task complete | scheduled job |
-| **Claude Code** | session start hook | UserPromptSubmit-style hook → prelude | Stop/turn-end hook | idle/cron |
+| Host            | session start      | prompt assembly                                                        | turn done                      | idle/scheduled          |
+| --------------- | ------------------ | ---------------------------------------------------------------------- | ------------------------------ | ----------------------- |
+| **Pi**          | session create     | `buildPiTurn`/system-prompt assembly → inject `systemPrompt` + prelude | `onTurnDone` (fire-and-forget) | learning-loop idle tick |
+| **Hermes**      | conversation open  | pre-completion prompt hook                                             | post-completion callback       | scheduler tick          |
+| **OpenCode**    | session init       | message build middleware                                               | response complete event        | background timer        |
+| **OpenClaw**    | agent start        | system + context injection point                                       | turn end signal                | idle watcher            |
+| **Codex**       | task start         | instruction assembly                                                   | task complete                  | scheduled job           |
+| **Claude Code** | session start hook | UserPromptSubmit-style hook → prelude                                  | Stop/turn-end hook             | idle/cron               |
 
 For each: `onSessionStart` ↔ start, `onPromptBuild` (returns both segments) ↔ prompt assembly, `onTurnEnd` ↔ turn-done (async, non-blocking), `onIdle` ↔ idle/scheduled. The adapter is responsible only for (a) extracting `ExtractionMessage[]` from the host's transcript shape, (b) placing `systemPrompt`/`preludePrompt` where that host expects them (the prelude must remain `<system-reminder>`-wrapped), and (c) exposing the host's own tool-calling LLM channel as `CanonicalModelCompletion` or `HostHarnessPort` that drives both `createExtractionAgentRunner` and `createDreamAgentRunner`.
 
@@ -857,6 +894,7 @@ updated_at: 2026-06-15T10:30:00.000Z
 ## 8. Privacy Pipeline (cross-cutting)
 
 Order on any inbound body (a subagent tool write or an explicit save):
+
 1. `redactPrivateSpans` — `<private>…</private>` → `[REDACTED]` (always on, deterministic).
 2. `scanSecrets` — **optional** (`refuseSecrets` gate, default off): if a hard secret (token/password/api-key/cookie/ssh-key) survives → **refuse write**, audit a masked finding.
 3. Only then `writeMemoryDocument` (the write tool's atomic write + audit + index resync).
@@ -911,4 +949,7 @@ These are **out of scope by design** — reviewers and future contributors must 
 - Locked constants: `MAX_SCAN_ENTRIES=200`, `FRONTMATTER_READ_BYTES=2048`, `INDEX_MAX_LINES=200`, `INDEX_MAX_BYTES=25000`, aging `context`/`ambient = 30d` (others `null`), `LOCK_TIMEOUT_MS=180000`, `EXTRACTION_CONTEXT_WINDOW_SIZE=6`, `EXTRACTION_MAX_MESSAGES=40`, dream `minHours=24` / `minSessions=5`.
 - Two-segment injection (`buildMemoryInstructionPrompt` stable rules + `buildMemoryIndexPrompt` `<system-reminder>` prelude) lives in `recall.ts`.
 - No desktop-framework coupling: root resolves via the `MEMFLYWHEEL_HOME` env or an OS data dir helper in `paths.ts` (pure Node, fully portable). The index uses relative paths.
+
+```
+
 ```

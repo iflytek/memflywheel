@@ -3,7 +3,12 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { HostRuntime, MemFlywheel, MemFlywheelContext, MemFlywheelMessage } from "./adapter.js";
+import type {
+  HostRuntime,
+  MemFlywheel,
+  MemFlywheelContext,
+  MemFlywheelMessage,
+} from "./adapter.js";
 
 /** A scribe that records every hook call instead of touching disk. */
 export interface RecordingMemFlywheel extends MemFlywheel {
@@ -16,7 +21,9 @@ export interface RecordingMemFlywheel extends MemFlywheel {
   };
 }
 
-export function createRecordingMemFlywheel(context?: Partial<MemFlywheelContext>): RecordingMemFlywheel {
+export function createRecordingMemFlywheel(
+  context?: Partial<MemFlywheelContext>,
+): RecordingMemFlywheel {
   const calls: RecordingMemFlywheel["calls"] = {
     sessionStart: [],
     promptBuild: [],
@@ -66,7 +73,8 @@ export function createFakeHost(): FakeHost {
         listeners.set(event, set);
       }
       set.add(listener);
-      return () => set!.delete(listener);
+      const captured = set;
+      return () => captured.delete(listener);
     },
     emit(event, payload) {
       const set = listeners.get(event);

@@ -71,93 +71,99 @@ function createFakeLearningModel() {
       const toolNames = new Set(req.tools.map((tool) => tool.name));
       const system = req.messages.find((message) => message.role === "system")?.content ?? "";
 
-    if (system.includes("memory extraction engine")) {
-      extractionStep += 1;
-      if (extractionStep === 1) {
-        return {
-          message: {
-            role: "assistant",
-            content: null,
-            toolCalls: [
-              toolCall("memory-save", "write", writeMemoryArgs({
-                type: "workflow",
-                filename: "release-prep-workflow.md",
-                name: "release prep workflow",
-                description: "Reusable release preparation procedure that should become a learned skill.",
-                body: [
-                  "Step 1: inspect package metadata, package files, and publish configuration.",
-                  "Step 2: inspect README, SECURITY, SUPPORT, CHANGELOG, and examples for release consistency.",
-                  "Step 3: run the repository CI command and package dry-run.",
-                  "Step 4: scan for old names, private paths, credentials, and AI-signature footers.",
-                  "Step 5: summarize release blockers before opening a pull request.",
-                ].join("\n"),
-              })),
-            ],
-          },
-          finishReason: "tool-calls",
-        };
+      if (system.includes("memory extraction engine")) {
+        extractionStep += 1;
+        if (extractionStep === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [
+                toolCall(
+                  "memory-save",
+                  "write",
+                  writeMemoryArgs({
+                    type: "workflow",
+                    filename: "release-prep-workflow.md",
+                    name: "release prep workflow",
+                    description:
+                      "Reusable release preparation procedure that should become a learned skill.",
+                    body: [
+                      "Step 1: inspect package metadata, package files, and publish configuration.",
+                      "Step 2: inspect README, SECURITY, SUPPORT, CHANGELOG, and examples for release consistency.",
+                      "Step 3: run the repository CI command and package dry-run.",
+                      "Step 4: scan for old names, private paths, credentials, and AI-signature footers.",
+                      "Step 5: summarize release blockers before opening a pull request.",
+                    ].join("\n"),
+                  }),
+                ),
+              ],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
       }
-      return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
-    }
 
-    if (system.includes("learned-skill evolution agent") || system.includes("learned-skill regression")) {
-      skillStep += 1;
-      if (skillStep === 1) {
-        return {
-          message: {
-            role: "assistant",
-            content: null,
-            toolCalls: [
-              toolCall("skill-write", "write", {
-                filePath: `${TARGET_SKILL}/SKILL.md`,
-                content: VALID_SKILL,
-              }),
-            ],
-          },
-          finishReason: "tool-calls",
-        };
+      if (
+        system.includes("learned-skill evolution agent") ||
+        system.includes("learned-skill regression")
+      ) {
+        skillStep += 1;
+        if (skillStep === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [
+                toolCall("skill-write", "write", {
+                  filePath: `${TARGET_SKILL}/SKILL.md`,
+                  content: VALID_SKILL,
+                }),
+              ],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
       }
-      return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
-    }
 
-    if (system.includes("consolidation engine")) {
-      dreamStep += 1;
-      if (dreamStep === 1) {
-        return {
-          message: {
-            role: "assistant",
-            content: null,
-            toolCalls: [
-              toolCall("memory-read", "read", { filePath: MEMORY_PATH }),
-            ],
-          },
-          finishReason: "tool-calls",
-        };
+      if (system.includes("consolidation engine")) {
+        dreamStep += 1;
+        if (dreamStep === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [toolCall("memory-read", "read", { filePath: MEMORY_PATH })],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        if (dreamStep === 2) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [
+                toolCall("memory-update", "edit", {
+                  filePath: MEMORY_PATH,
+                  oldString: [
+                    "Step 1: inspect package metadata, package files, and publish configuration.",
+                    "Step 2: inspect README, SECURITY, SUPPORT, CHANGELOG, and examples for release consistency.",
+                    "Step 3: run the repository CI command and package dry-run.",
+                    "Step 4: scan for old names, private paths, credentials, and AI-signature footers.",
+                    "Step 5: summarize release blockers before opening a pull request.",
+                  ].join("\n"),
+                  newString: `Release prep workflow is now handled by ${TARGET_SKILL}. Use that learned skill when release readiness comes up.`,
+                }),
+              ],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
       }
-      if (dreamStep === 2) {
-        return {
-          message: {
-            role: "assistant",
-            content: null,
-            toolCalls: [
-              toolCall("memory-update", "edit", {
-                filePath: MEMORY_PATH,
-                oldString: [
-                  "Step 1: inspect package metadata, package files, and publish configuration.",
-                  "Step 2: inspect README, SECURITY, SUPPORT, CHANGELOG, and examples for release consistency.",
-                  "Step 3: run the repository CI command and package dry-run.",
-                  "Step 4: scan for old names, private paths, credentials, and AI-signature footers.",
-                  "Step 5: summarize release blockers before opening a pull request.",
-                ].join("\n"),
-                newString: `Release prep workflow is now handled by ${TARGET_SKILL}. Use that learned skill when release readiness comes up.`,
-              }),
-            ],
-          },
-          finishReason: "tool-calls",
-        };
-      }
-      return { message: { role: "assistant", content: "done" }, finishReason: "stop" };
-    }
 
       throw new Error(`unexpected tool set: ${[...toolNames].join(", ")}`);
     },
@@ -207,14 +213,14 @@ async function main() {
   const instrumentedModel = {
     async complete(req) {
       const response = await modelCompletion.complete(req);
-    if (process.env.MEMFLYWHEEL_DEBUG_TOOL_ARGS === "1") {
-      for (const call of response.message.toolCalls ?? []) {
-        if (call.name === "write" && String(call.input?.filePath ?? "").includes(TARGET_SKILL)) {
-          console.error(`[debug] skill write input: ${JSON.stringify(call.input)}`);
+      if (process.env.MEMFLYWHEEL_DEBUG_TOOL_ARGS === "1") {
+        for (const call of response.message.toolCalls ?? []) {
+          if (call.name === "write" && String(call.input?.filePath ?? "").includes(TARGET_SKILL)) {
+            console.error(`[debug] skill write input: ${JSON.stringify(call.input)}`);
+          }
         }
       }
-    }
-    return response;
+      return response;
     },
   };
   const { scribe, sdk } = createMemFlywheelHarnessRuntime({
@@ -240,7 +246,11 @@ async function main() {
             output: call.output,
           })),
         ),
-      artifactPaths: () => ["README.md", "docs/skill-learning-loop-walkthrough.md", "packages/sdk/src/index.ts"],
+      artifactPaths: () => [
+        "README.md",
+        "docs/skill-learning-loop-walkthrough.md",
+        "packages/sdk/src/index.ts",
+      ],
       qualitySignals: () => ({
         repeatedWorkflow: true,
         shouldBecomeSkill: true,
@@ -282,7 +292,9 @@ async function main() {
   assert.match(skillFile, new RegExp(`name: ${TARGET_SKILL}`));
   assert.match(skillFile, /## Procedure/);
 
-  const workflowEntries = (await scanMemoryFiles(memoryRoot)).filter((entry) => entry.type === "workflow");
+  const workflowEntries = (await scanMemoryFiles(memoryRoot)).filter(
+    (entry) => entry.type === "workflow",
+  );
   assert.equal(workflowEntries.length, 1, "one workflow memory exists");
   const memoryPath = workflowEntries[0].relativePath;
   const memory = await readFile(path.join(memoryRoot, memoryPath), "utf8");
@@ -293,16 +305,22 @@ async function main() {
   const prompt = await scribe.onPromptBuild({ sessionId: "real-loop" });
   assert.match(prompt.preludePrompt, new RegExp(TARGET_SKILL));
 
-  console.log(JSON.stringify({
-    ok: true,
-    mode: useFake ? "fake" : "real",
-    root,
-    model,
-    memoryPath,
-    targetSkill: TARGET_SKILL,
-    skillBytes: skillFile.length,
-    memoryBody: memory.body,
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        mode: useFake ? "fake" : "real",
+        root,
+        model,
+        memoryPath,
+        targetSkill: TARGET_SKILL,
+        skillBytes: skillFile.length,
+        memoryBody: memory.body,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 main().catch(async (error) => {

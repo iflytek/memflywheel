@@ -66,8 +66,7 @@ export function isValidMemoryFilename(root: string, filename: string): boolean {
   const rawSegments = raw.split("/");
   if (
     rawSegments.some(
-      (segment) =>
-        !segment || segment === "." || segment === ".." || segment.startsWith("."),
+      (segment) => !segment || segment === "." || segment === ".." || segment.startsWith("."),
     )
   ) {
     return false;
@@ -88,7 +87,9 @@ export function isValidMemoryFilename(root: string, filename: string): boolean {
 
 /** type → absolute typed directory, or null for an invalid type. */
 export function getTypedMemoryDir(root: string, type: string): string | null {
-  const key = String(type || "").trim().toLowerCase();
+  const key = String(type || "")
+    .trim()
+    .toLowerCase();
   const directory = (MEMORY_TYPE_DIRECTORIES as Record<string, string>)[key];
   if (!directory) return null;
   return path.join(root, directory);
@@ -143,7 +144,5 @@ export function deriveMemoryFilename(name: string): string {
 
 export function memoryTypeForRelativePath(relativePath: string): MemoryType | null {
   const first = normalizeRelativePath(relativePath).split("/")[0] ?? "";
-  return (MEMORY_TYPE_DIRECTORIES as Record<string, string>)[first]
-    ? (first as MemoryType)
-    : null;
+  return (MEMORY_TYPE_DIRECTORIES as Record<string, string>)[first] ? (first as MemoryType) : null;
 }
