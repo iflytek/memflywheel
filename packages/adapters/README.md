@@ -9,28 +9,25 @@ Zero runtime dependencies (Node stdlib + TypeScript only).
 
 ## Built-in adapters
 
-| id            | host        | session start        | prompt build            | turn end            | idle/scheduled     | integration  |
-| ------------- | ----------- | -------------------- | ----------------------- | ------------------- | ------------------ | ------------ |
-| `pi`          | Pi kernel   | `session:ensure`     | `turn:build`            | `agent_end`         | `learning:idle`    | real         |
-| `hermes`      | Hermes      | `on_session_start`   | `pre_llm_call`          | `post_llm_call`     | `on_session_end`   | real         |
-| `openclaw`    | OpenClaw    | `before_agent_start` | `context:inject`        | `agent_end`         | `idle:watch`       | recall-only¹ |
-| `opencode`    | OpenCode    | `session.init`       | `message.build`         | `response.complete` | `timer.background` | usable       |
-| `codex`       | Codex       | `task:start`         | `instructions:assemble` | `task:complete`     | `job:scheduled`    | usable       |
-| `claude-code` | Claude Code | `SessionStart`       | `UserPromptSubmit`      | `Stop`              | `Idle`             | usable       |
+| id         | host      | session start        | prompt build     | turn end            | idle/scheduled     | integration |
+| ---------- | --------- | -------------------- | ---------------- | ------------------- | ------------------ | ----------- |
+| `pi`       | Pi kernel | `session:ensure`     | `turn:build`     | `agent_end`         | `learning:idle`    | real        |
+| `hermes`   | Hermes    | `on_session_start`   | `pre_llm_call`   | `post_llm_call`     | `on_session_end`   | planned     |
+| `openclaw` | OpenClaw  | `before_agent_start` | `context:inject` | `agent_end`         | `idle:watch`       | planned     |
+| `opencode` | OpenCode  | `session.init`       | `message.build`  | `response.complete` | `timer.background` | planned     |
 
-¹ **recall-only until a native model port exists.** OpenClaw exposes no in-process
-model-call API in this adapter layer, so a plugin cannot drive inference itself.
-Recall + injection are first-class via hooks (`registerMemoryCapability` +
-`context:inject`). Extraction/dream/skill loops require a future canonical model
-port or explicit sidecar.
+Only Pi is currently wired as the first-class integration. Hermes, OpenClaw, and
+OpenCode are kept as open harness targets; write-side loops require a native
+structured model port before they should be treated as complete integrations.
 
-- **`pi`** — real: a Pi `.js` extension exposes `createPiHarnessPort(pi)`;
-  `~/.pi/agent/settings.json` carries the wiring marker.
+- **`pi`** — real: `@memflywheel/adapters` is a Pi package. Its
+  `package.json` declares `pi.extensions`, and Pi installs it with
+  `pi install npm:@memflywheel/adapters`.
   `session:ensure` → `onSessionStart`; per-turn assembly → `onPromptBuild` (the
   scribe's `systemPrompt` merges into the per-session system prompt and
   `preludePrompt` is prepended to the prelude list); `agent_end` →
   `onTurnEnd` (fire-and-forget); learning-loop idle tick → `onIdle`.
-- **`hermes`** — real: a Hermes plugin's `register(ctx)` wraps
+- **`hermes`** — planned: a Hermes plugin's `register(ctx)` should wrap
   `ctx.llm.completeWithTools` as a canonical model. `on_session_start` → `onSessionStart`; `pre_llm_call` →
   `onPromptBuild` (inject prelude as `{"context": ...}`); `post_llm_call` →
   `onTurnEnd` (reads `user_message` + `assistant_response`, or an explicit
@@ -165,16 +162,13 @@ const dispose = hermesAdapter.attach(scribe, host); // session/prompt/turn-end/i
 Pi phase-1 native integration uses a host port:
 
 ```ts
-import {
-  createMemFlywheelHarnessRuntime,
-  createPiHarnessPort,
-  piAdapter,
-} from "@memflywheel/adapters";
+import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@memflywheel/adapters";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 
 export default function memScribeExtension(pi) {
-  const port = createPiHarnessPort(pi);
-  const { scribe } = createMemFlywheelHarnessRuntime({ port });
-  return piAdapter.attach(scribe, pi);
+  const port = createPiHarnessPort(pi, { completeSimple });
+  const runtime = createMemFlywheelHarnessRuntime({ port });
+  return runtime.dispose;
 }
 ```
 
@@ -232,7 +226,6 @@ const res = await connect(piAdapter, { apply: true }); // write + verify
 if (!res.verify!.ok) console.error(res.verify!.problems);
 ```
 
-Runnable minimal integrations live under [`examples/`](https://github.com/iflytek/memflywheel/tree/main/examples),
-one per targeted host (Pi, Hermes, OpenClaw): expose a canonical model or an
-explicit recall-only mode, build the scribe with `createMemFlywheelHarnessRuntime`,
-mount the lifecycle, and `connect` (install + verify) the wiring.
+Runnable integration examples live under [`examples/`](https://github.com/iflytek/memflywheel/tree/main/examples).
+Pi is the current first-class path; the other examples document planned harness
+targets and boundary checks.

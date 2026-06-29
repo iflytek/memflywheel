@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import type { MemFlywheelContext } from "./adapter.js";
 import { piAdapter } from "./pi.js";
-import { claudeCodeAdapter } from "./claude-code.js";
+import { opencodeAdapter } from "./opencode.js";
 import { hermesAdapter } from "./hermes.js";
 import { createFakeHost, createOffHost, createRecordingMemFlywheel } from "./test-helpers.js";
 
@@ -66,12 +66,12 @@ test("dispose works through host.off when on returns void", async () => {
 test("onPromptBuild result is delivered via a respond callback", async () => {
   const scribe = createRecordingMemFlywheel({ systemPrompt: "RULES", preludePrompt: "PRELUDE" });
   const host = createFakeHost();
-  claudeCodeAdapter.attach(scribe, host);
+  opencodeAdapter.attach(scribe, host);
 
   let received: MemFlywheelContext | undefined;
-  host.emit("UserPromptSubmit", {
-    session_id: "abc",
-    prompt: "review this release",
+  host.emit("message.build", {
+    sessionId: "abc",
+    message: "review this release",
     respond: (p: Promise<MemFlywheelContext>) => {
       void p.then((ctx) => {
         received = ctx;
@@ -100,22 +100,6 @@ test("turn-end extraction is fire-and-forget — emit does not throw on scribe r
   // Must not throw synchronously despite the rejection.
   assert.doesNotThrow(() => host.emit("post_llm_call", { session_id: "c1", transcript: [] }));
   await flush();
-  dispose();
-});
-
-test("claude-code maps snake_case session_id and Stop turn-end", async () => {
-  const scribe = createRecordingMemFlywheel();
-  const host = createFakeHost();
-  const dispose = claudeCodeAdapter.attach(scribe, host);
-
-  host.emit("SessionStart", { session_id: "cc-1" });
-  host.emit("Stop", { session_id: "cc-1", messages: [{ role: "user", content: "remember X" }] });
-  await flush();
-
-  assert.deepEqual(scribe.calls.sessionStart, [{ sessionId: "cc-1" }]);
-  assert.equal(scribe.calls.turnEnd[0]?.sessionId, "cc-1");
-  // `content` is normalized to `text`.
-  assert.deepEqual(scribe.calls.turnEnd[0]?.messages, [{ role: "user", text: "remember X" }]);
   dispose();
 });
 

@@ -140,7 +140,7 @@ export interface DoctorFinding {
  * and confirms the wiring is present and well-formed — it never trusts a write.
  */
 export interface HostAdapter {
-  /** Stable identifier, e.g. "pi", "claude-code". */
+  /** Stable identifier, e.g. "pi". */
   readonly id: string;
   /** Host display name. */
   readonly name: string;

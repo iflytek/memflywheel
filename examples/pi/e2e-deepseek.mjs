@@ -1,7 +1,7 @@
 /**
  * MemFlywheel × Pi — comprehensive, boundary-focused end-to-end test (real model: DeepSeek).
  *
- * Written to be RUN (e.g. by Codex), read, and iterated on. Scenarios are grouped:
+ * Written to be run, read, and iterated on. Scenarios are grouped:
  *   A · 记忆闭环 (memory loop)      — needs a real model
  *   B · 技能闭环 (skill loop)       — needs a real model; signals are TRAJECTORY-DERIVED
  *                                     from captured tool calls
