@@ -1,6 +1,6 @@
 # Security Policy
 
-This project follows the [Iflytek Opensource Community Security Policy](https://github.com/iflytek/community/blob/main/SECURITY.md).
+This project follows the [Iflytek Opensource Community Security Policy](https://github.com/iflytek/community/blob/master/SECURITY.md).
 
 For project-specific security considerations, see below.
 
