@@ -5,8 +5,6 @@ import { piAdapter } from "./pi.js";
 import { hermesAdapter } from "./hermes.js";
 import { opencodeAdapter } from "./opencode.js";
 import { openclawAdapter } from "./openclaw.js";
-import { codexAdapter } from "./codex.js";
-import { claudeCodeAdapter } from "./claude-code.js";
 
 /** Every built-in adapter. */
 export const ADAPTERS: readonly HostAdapter[] = [
@@ -14,8 +12,6 @@ export const ADAPTERS: readonly HostAdapter[] = [
   hermesAdapter,
   opencodeAdapter,
   openclawAdapter,
-  codexAdapter,
-  claudeCodeAdapter,
 ];
 
 const BY_ID: ReadonlyMap<string, HostAdapter> = new Map(ADAPTERS.map((a) => [a.id, a]));

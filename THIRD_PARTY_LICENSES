@@ -5,8 +5,11 @@ This file lists third-party npm packages used by the MemFlywheel source
 workspace for build, test, and type-checking. The MemFlywheel packages
 themselves are licensed under the repository LICENSE file.
 
+Published MemFlywheel packages do not bundle third-party runtime libraries.
+The packages below are used for source validation, type-checking, and builds.
+
 Package: typebox
-Version: 1.2.19
+Version: 1.3.1
 Homepage: https://github.com/sinclairzx81/typebox
 License: MIT
 Copyright: Copyright (c) 2017-2026 Haydn Paterson
@@ -18,7 +21,7 @@ License: Apache-2.0
 Copyright: Microsoft Corp.
 
 Package: @types/node
-Version: 22.19.21
+Version: 22.20.0
 Homepage: https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node
 License: MIT
 Copyright: Copyright (c) Microsoft Corporation.

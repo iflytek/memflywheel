@@ -1,8 +1,8 @@
 /**
  * @memflywheel/sdk — host lifecycle integration layer.
  *
- * This is the thin orchestration seam between a host runtime (Pi / Claude Code /
- * OpenCode / …) and @memflywheel/core. It owns:
+ * This is the thin orchestration seam between a host runtime (Pi today; Hermes,
+ * OpenClaw, OpenCode planned) and @memflywheel/core. It owns:
  *
  *   - a single per-root StorageContext + audit logger,
  *   - the per-session extraction cursor store,

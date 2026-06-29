@@ -16,5 +16,5 @@ for published packages.
   `glob`, and `grep`.
 - SDK lifecycle integration through `createMemFlywheel`.
 - Tool-calling extraction and dream runners injected through canonical model ports.
-- Host adapters for Hermes, OpenCode, OpenClaw, Pi, Codex, and Claude Code.
+- Host adapters for Pi, with Hermes, OpenCode, and OpenClaw as planned/open harness targets.
 - Runnable examples for Hermes, OpenClaw, and Pi.

@@ -13,6 +13,9 @@
     }
   },
   "files": [
+    "NOTICE",
+    "THIRD_PARTY_LICENSES",
+    "pi-extension/**/*.mjs",
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "!dist/**/*.test.js",
@@ -34,13 +37,19 @@
     "adapters",
     "llm",
     "memory",
+    "pi-package",
     "typescript"
   ],
+  "pi": {
+    "extensions": [
+      "./pi-extension/index.mjs"
+    ]
+  },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b",
@@ -51,6 +60,14 @@
     "@memflywheel/model": "workspace:*",
     "@memflywheel/sdk": "workspace:*",
     "@memflywheel/skills": "workspace:*"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

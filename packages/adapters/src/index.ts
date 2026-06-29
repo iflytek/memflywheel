@@ -123,8 +123,6 @@ export { piAdapter } from "./pi.js";
 export { hermesAdapter } from "./hermes.js";
 export { opencodeAdapter } from "./opencode.js";
 export { openclawAdapter } from "./openclaw.js";
-export { codexAdapter } from "./codex.js";
-export { claudeCodeAdapter } from "./claude-code.js";
 
 // Registry.
 export { ADAPTERS, getAdapter, adapterIds } from "./registry.js";
