@@ -240,7 +240,7 @@ async function main() {
             output: call.output,
           })),
         ),
-      artifactPaths: () => ["README.md", "docs/skill-learning-loop-walkthrough.md", "packages/sdk/src/index.ts"],
+      artifactPaths: () => ["README.md", "docs/architecture.md", "packages/sdk/src/index.ts"],
       qualitySignals: () => ({
         repeatedWorkflow: true,
         shouldBecomeSkill: true,

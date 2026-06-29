@@ -1,171 +1,183 @@
 # Architecture
 
-MemFlywheel is a file-backed long-term memory kernel. It has four moving parts — **storage**,
-**recall**, **extraction**, and **dream** — plus cross-cutting concerns (privacy, locking,
-atomic writes, audit) that every write path shares.
+MemFlywheel is a file-backed long-term memory kernel for Agent Harnesses. It has
+four runtime paths: recall, extraction, dream consolidation, and skill learning.
+The core package owns filesystem correctness; the host owns lifecycle events,
+model access, authentication, prompt assembly, and tool execution policy.
 
-The core (`@memflywheel/core`) is pure filesystem logic plus injected ports. It never owns
-model transport, provider auth, or provider wire shapes. The two generative steps
-(extraction, dream) reach the model only through injected function contracts; optional
-index-layer retrieval consumes a host-supplied embedding provider. Hosts wire those
-contracts and the turn lifecycle through `@memflywheel/sdk` and `@memflywheel/adapters`.
+![MemFlywheel lifecycle hooks](assets/readme/02-lifecycle.png)
 
-## Memory root and layout
+## System Shape
 
-The store is a single directory tree. The root is resolved with this precedence:
-
-1. An explicit `root` passed by the caller.
-2. The `MEMFLYWHEEL_HOME` environment variable.
-3. `<os-data-dir>/memflywheel/memory`, where the OS data dir is `APPDATA` on Windows,
-   `~/Library/Application Support` on macOS, and `$XDG_DATA_HOME` (or `~/.local/share`)
-   on Linux.
-
-```
-<memory-root>/
-├── MEMORY.md            # derived index (rebuildable; never hand-edited)
-├── .memory-task-lock    # per-root write lock
-├── .last-extraction     # extraction timestamp
-├── .consolidate-lock    # dream lock
-├── .audit.log           # append-only audit log
-├── .memflywheel/
-│   └── sources/         # cleaned execution traces, addressed by memory body refs
-├── identity/
-├── preference/
-├── style/
-├── workflow/
-├── context/
-└── ambient/
+```text
+Host Agent Harness
+   │ owns lifecycle, model channel, auth, tool policy
+   ▼
+@memflywheel/adapters
+   │ maps host events and payloads
+   ▼
+@memflywheel/sdk
+   │ orchestrates recall, extraction, dream, skill loop
+   ▼
+@memflywheel/core
+   │ validates and writes file-native memory
+   ▼
+memory-root + skills-root
 ```
 
-Each memory lives at `<type>/<filename>.md`. Reserved names
-(`MEMORY.md`, `.memory-task-lock`, `.last-extraction`, `.consolidate-lock`, `.audit.log`)
-are skipped during scans and rejected as memory filenames.
+| Layer | Responsibility |
+|---|---|
+| `@memflywheel/core` | Filesystem storage, schema validation, index rebuilds, locks, privacy checks, audit, ordinary file tools |
+| `@memflywheel/model` | Canonical tool-calling model protocol and OpenAI-compatible mapper |
+| `@memflywheel/sdk` | Lifecycle hooks, extraction/dream runners, skill-loop orchestration |
+| `@memflywheel/skills` | Learned-skill staging, validation, finalize, rollback, recall routing |
+| `@memflywheel/adapters` | Thin host mappings for Pi, Hermes, OpenClaw, OpenCode, Claude Code, Codex, and similar hosts |
 
-## Storage
+## File-Native Storage
 
-A memory file is a YAML frontmatter block followed by a free-text Markdown body:
+The Markdown files are the source of truth. `MEMORY.md` is only a rebuildable
+index derived from those files.
 
-```markdown
+```text
+memory-root/
+├─ MEMORY.md
+├─ identity/*.md
+├─ preference/*.md
+├─ style/*.md
+├─ workflow/*.md
+├─ context/*.md
+├─ ambient/*.md
+└─ .memflywheel/
+   ├─ sources/*.jsonl
+   └─ index/*
+
+skills-root/
+└─ memflywheel-learned-*/SKILL.md
+```
+
+| Path | Purpose |
+|---|---|
+| `identity/*.md` | Long-term identity and stable facts |
+| `preference/*.md` | User preferences |
+| `style/*.md` | Expression and collaboration style |
+| `workflow/*.md` | Workflow experience and repeatable procedures |
+| `context/*.md` | Current context, with aging hints |
+| `ambient/*.md` | Background facts, with aging hints |
+| `.memflywheel/sources/*.jsonl` | Cleaned raw conversation and tool trajectories |
+| `.memflywheel/index/*` | Index-layer retrieval cache |
+
+Each memory file is Markdown body plus YAML frontmatter:
+
+```md
 ---
-name: 用户称呼
-description: 用户偏好的称呼
-type: identity
+type: style
+name: concise-structured-collaboration
+description: The user prefers direct, structured engineering collaboration.
 retrieval_terms:
-  - 用户称呼
-  - preferred name
-  - address user
+  - direct answer
+  - structured explanation
+created_at: 2026-06-24T10:00:00.000Z
+updated_at: 2026-06-24T10:00:00.000Z
 ---
 
-叫用户小钟。
+The user prefers concise engineering answers that start with the concrete
+conclusion before expanding into details.
+
+## Sources
+
+- .memflywheel/sources/session-20260624-collaboration.jsonl#L10-L18
 ```
-
-The Markdown files are the source of truth. Frontmatter parsing is hand-rolled: only the
-first `FRONTMATTER_READ_BYTES` (2048) are read for a header scan, the block must close
-within `MAX_FRONTMATTER_LINES`, and `name` + a valid `type` are required or the entry is
-ignored. See [`memory-schema.md`](memory-schema.md).
-
-Writes go through `writeMemoryDocument` / `deleteMemoryDocument` / `archiveMemoryDocument`
-on a `StorageContext` (`{ root, audit }`). Every write is:
-
-- **Privacy-filtered** first — `<private>…</private>` spans become `[REDACTED]`. The
-  optional `refuseSecrets` gate can also refuse obvious secrets (see
-  [`extraction.md`](extraction.md) and the privacy notes below).
-- **Atomic** — written to a temp file and `rename`d into place.
-- **Audited** — appended to `.audit.log`.
-
-`scanMemoryFiles(root)` walks the tree, parses each header, sorts entries by `mtime`
-descending, and caps the result at `MAX_SCAN_ENTRIES` (200) for prompt-sized manifests.
-`scanAllMemoryFiles(root)` uses the same scan without that cap for the rebuildable
-`MEMORY.md` index and index-layer retrieval corpus.
-
-## The derived index (`MEMORY.md`)
-
-`MEMORY.md` is regenerated from the scanned entries; it is never authored by hand or by the
-model. Each entry becomes one line:
-
-```
-- [<name>](<type>/<file>.md) - <description> (type: <type>, path: <type>/<file>.md)
-```
-
-`syncMemoryIndex(root, entries)` rewrites the file. Before injection the content is passed
-through `truncateIndex` (≤ `INDEX_MAX_LINES` = 200 lines and ≤ `INDEX_MAX_BYTES` = 25 000
-UTF-8 bytes, with a truncation marker appended when cut) and `applyAgingHints` (per-type
-aging — see [`memory-schema.md`](memory-schema.md)).
 
 ## Recall
 
-Recall is progressive index injection. `buildContext({ root, enabled, query?, indexRetrieval? })`
-runs a deterministic pipeline — scan → sync index → read → truncate → apply aging hints —
-and returns two strings:
+Recall is progressive reading, not full memory stuffing. Prompt-build injects
+stable memory rules and lightweight `MEMORY.md` index cues. The main Agent then
+decides whether to read the full memory body and, if needed, the source trace.
 
-- `systemPrompt`: stable memory rules (a cache-friendly prefix).
-- `preludePrompt`: either the full/truncated index or a hybrid-retrieved subset of index
-  lines plus a `MEMORY.md` fallback path, wrapped in `<system-reminder>`.
+```text
+User query
+   │
+   ▼
+MEMORY.md index cues
+   │
+   ├─ small index -> inject full index
+   └─ large index -> embedding + BM25 + RRF over index lines
+   ▼
+selected memory Markdown body
+   ▼
+.memflywheel/sources/*.jsonl evidence lines
+```
 
-The main model reads the index and decides on its own whether any entry is relevant and
-whether to `Read` a body. Hybrid retrieval, when configured, ranks only index lines with
-embedding + BM25 + RRF; memory bodies are not embedded or searched. See
-[`recall.md`](recall.md).
+Pre-retrieval only ranks index fields (`name`, `description`, `occurred_on`,
+`retrieval_terms`, `type`, `path`). It does not embed memory bodies or raw
+source traces.
 
 ## Extraction
 
-After a turn, the host may trigger extraction. The core owns the whole mechanism — lock,
-cursor, message-window selection, relocation, index sync, and the validated ordinary file tools —
-and calls the host's injected `ExtractionAgentRunner` for the one model-driven step. The
-subagent calls `glob` / `grep` / `read` and then writes through
-`write` / `edit` / `bash`; those tool calls are the file changes.
-`runExtractionSession` acquires the write lock, cleans and windows the messages against a
-per-session cursor, appends only the newly processed messages as cleaned JSONL under
-`.memflywheel/sources/session-<hash>.jsonl`, lets the subagent drive the tools, and passes the
-resulting `sourceRef` into the memory file tools. Cursor context is still visible to the
-extraction agent, but is not persisted again. Any memory written through `write` or `edit`
-during that extraction pass gets a `## Sources` body section pointing to the JSONL line
-range. Multiple memories from the same pass therefore share the same source file and line
-range; later passes append new lines and can add more refs. The hidden source directory is
-never indexed. The pass then relocates any stray root-level files into typed directories,
-re-syncs the index, and advances the cursor only on success. See
-[`extraction.md`](extraction.md).
+Turn-end extraction converts a run into durable memories.
 
-## Dream (consolidation)
+| Step | Owner | What happens |
+|---|---|---|
+| Trigger | Host / SDK | Host sends normalized transcript and tool trajectory |
+| Windowing | Core | New messages are selected with cursor context |
+| Source trace | Core | Newly processed messages are appended to JSONL |
+| Memory writing | Injected runner + core tools | The subagent uses ordinary file tools to write validated memories |
+| Finalize | Core | Relocate invalid root files, rebuild index, advance cursor only on success |
 
-Dream is an idle/scheduled consolidation pass, not a summarizer. It runs in two phases under
-the consolidation lock, with the same atomic-write and audit guarantees. First a
-deterministic, LLM-free structural pre-pass cleans the state (delete identical-body
-duplicates, relocate path/type-mismatched files). Then the host's injected `DreamAgentRunner`
-— a tool-calling consolidation subagent that runs the same agent loop as extraction — works
-over the cleaned state: it reads full memory bodies and performs semantic consolidation
-(merges, compression, type re-judgement) by calling the ordinary file tools directly
-(`glob` / `grep` / `read` / `write` / `edit` /
-`bash`). There are no operations
-returned anymore — the tool calls are the changes. `shouldRunDream` gates the pass on a
-minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
-(`DREAM_DEFAULT_MIN_SESSIONS` = 5).
+The model-driven step is injected as an `ExtractionAgentRunner`. Core still owns
+validation, privacy filtering, locks, atomic writes, audit, and index sync.
 
-## Cross-cutting concerns
+## Dream Consolidation
 
-- **Privacy.** `redactPrivateSpans` softens `<private>…</private>` to `[REDACTED]`.
-  The hard-secret scan (`scanSecrets` / `enforceWritePrivacy`) is controlled by the
-  `refuseSecrets` gate. Host integrations decide whether to enable it for their write
-  path. When enabled, obvious secrets (SSH/PEM keys, API-key and token prefixes,
-  bearer/JWT tokens, `password:`/`cookie:` assignments) are refused with masked findings.
-- **Locking.** A per-root file lock (`.memory-task-lock`) serializes writers, with stale
-  detection (`LOCK_TIMEOUT_MS`) for crashed holders. `withLock` wraps a critical section.
-- **Atomic writes.** `atomicWriteFile` does temp-file + `rename`; `appendFileLine` backs the
-  audit log.
-- **Audit.** `.audit.log` is an append-only record of writes/deletes/archives, produced by
-  `createAuditLogger` (or a no-op via `createNullAuditLogger`).
+Dream is an idle/scheduled maintenance pass, not a free-form summarizer.
 
-## Package boundaries
+| Phase | Model? | Purpose |
+|---|---|---|
+| Deterministic pre-pass | No | Delete identical duplicates and relocate path/type mismatches |
+| Consolidation subagent | Yes, injected | Merge, compress, archive, and repair semantic memory structure through file tools |
 
-```
-@memflywheel/core      filesystem only, no LLM, no host coupling
-   ▲
-   │ ExtractionAgentRunner / DreamAgentRunner contracts + lifecycle calls
+`shouldRunDream` gates the pass by elapsed time or session count. The pass runs
+under a consolidation lock and uses the same atomic write and audit path as
+extraction.
+
+## Skill Learning Loop
+
+![MemFlywheel learning flywheel](assets/readme/05-skill-flywheel.png)
+
+Repeated workflows can become learned skills. The skill loop runs after a
+successful extraction pass when the host provides tool-call trajectory and skill
+store wiring.
+
+```text
+turn-end transcript + tool calls
    │
-@memflywheel/sdk       wires injection points + turn lifecycle
-   ▲
+   ▼
+memory extraction
    │
-@memflywheel/adapters  per-host lifecycle mapping
+   ▼
+skill evolution agent
+   │ writes staged skill package
+   ▼
+validate + finalize / rollback
+   │
+   ▼
+dream compresses memory into skill cues
+   │
+   ▼
+prompt-build injects learned-skill routes
 ```
 
-See [`integrations.md`](integrations.md) for the SDK and host adapter surfaces.
+The model does not get to self-declare success. The store derives whether a
+create, update, merge, or no-op happened from the real filesystem change set,
+then validates and finalizes it.
+
+## Reliability Boundaries
+
+| Concern | Current rule |
+|---|---|
+| Privacy | `<private>...</private>` spans are redacted; optional `refuseSecrets` rejects obvious secrets |
+| Locking | Per-root file locks serialize writers and reclaim stale locks |
+| Atomicity | Writes use temp-file plus rename |
+| Audit | Writes, deletes, and archives append to `.audit.log` |
+| Model boundary | Core never reads API keys or owns model transport |
+| Host boundary | Host decides lifecycle timing, prompt placement, model channel, and tool policy |
