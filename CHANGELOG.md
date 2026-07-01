@@ -33,3 +33,7 @@ for published packages.
   marked `private: true`.
 - Added `.npmrc` to `.gitignore` to prevent accidental commit of temporary auth
   tokens.
+- GitHub Packages publishing: rewrite runtime adapter imports in Hermes package
+  (`bin/install.mjs`, `bridge/worker.mjs`, `provider/__init__.py`) from
+  `@iflytekopensource/adapters` to `@iflytek/adapters` to match the rewritten
+  dependency scope.

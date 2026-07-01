@@ -1,16 +1,22 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const packages = ["@iflytekopensource/adapters", "@iflytekopensource/hermes"];
+const GHP_REGISTRY = "https://npm.pkg.github.com";
+const SCOPE_FROM = "@iflytekopensource/";
+const SCOPE_TO = "@iflytek/";
+const TARGET_PACKAGES = ["@iflytekopensource/adapters", "@iflytekopensource/hermes"];
+
+function rewriteScope(value) {
+  return value.split(SCOPE_FROM).join(SCOPE_TO);
+}
 
 function parseArgs() {
-  const args = process.argv.slice(2).filter((arg) => arg !== "--");
+  const args = process.argv.slice(2).filter((a) => a !== "--");
   let registry;
   const publishArgs = [];
-
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--registry" && args[i + 1]) {
       registry = args[++i];
@@ -20,78 +26,85 @@ function parseArgs() {
       publishArgs.push(args[i]);
     }
   }
-
-  const hasDistTag = publishArgs.some((a) => a === "--tag" || a.startsWith("--tag="));
-  if (!hasDistTag) publishArgs.unshift("--tag", "latest");
-
+  if (!publishArgs.some((a) => a === "--tag" || a.startsWith("--tag="))) {
+    publishArgs.unshift("--tag", "latest");
+  }
   return { registry, publishArgs };
 }
 
-function buildArgs({ publishArgs, registry, access }) {
-  const args = ["publish", "--no-git-checks", ...publishArgs];
-  if (registry) args.push("--registry", registry);
-  if (access) args.push("--access", access);
-  return args;
+function run(cmd, args) {
+  const r = spawnSync(cmd, args, { stdio: "inherit" });
+  if (r.error) {
+    console.error(`Failed to run ${cmd}: ${r.error.message}`);
+    process.exit(1);
+  }
+  if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-async function publishToGitHubPackages({ publishArgs }) {
-  const staging = mkdtempSync(join(tmpdir(), "ghpkg-"));
+function publishToNpm(publishArgs) {
+  for (const pkg of TARGET_PACKAGES) {
+    run("pnpm", ["--filter", pkg, "publish", "--no-git-checks", "--access", "public", ...publishArgs]);
+  }
+}
 
+function publishToGitHubPackages(publishArgs) {
+  const staging = mkdtempSync(join(tmpdir(), "ghpkg-"));
   try {
-    for (const pkg of packages) {
-      const pack = spawnSync("pnpm", ["--filter", pkg, "pack", "--pack-destination", staging], {
-        stdio: "inherit",
-      });
-      if (pack.status !== 0) process.exit(pack.status ?? 1);
+    for (const pkg of TARGET_PACKAGES) {
+      run("pnpm", ["--filter", pkg, "pack", "--pack-destination", staging]);
     }
 
-    for (const tarball of spawnSync("ls", [staging], { encoding: "utf8" })
-      .stdout.trim()
-      .split("\n")
-      .filter(Boolean)) {
+    for (const tarball of readdirSync(staging).filter((f) => f.endsWith(".tgz"))) {
       const dir = join(staging, tarball.replace(".tgz", ""));
-      mkdirSync(dir);
-      spawnSync("tar", ["xzf", join(staging, tarball), "-C", dir, "package"], { stdio: "inherit" });
+      mkdirSync(dir, { recursive: true });
+      run("tar", ["xzf", join(staging, tarball), "-C", dir, "package"]);
 
-      const pjPath = join(dir, "package", "package.json");
+      const pkgDir = join(dir, "package");
+      const pjPath = join(pkgDir, "package.json");
       const pj = JSON.parse(readFileSync(pjPath, "utf8"));
-      pj.name = pj.name.replace("@iflytekopensource/", "@iflytek/");
+
+      // Rewrite package name and dependency keys
+      pj.name = rewriteScope(pj.name);
       for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
-        if (pj[field]) {
-          for (const [k, v] of Object.entries(pj[field])) {
-            if (k.startsWith("@iflytekopensource/")) {
-              delete pj[field][k];
-              pj[field][k.replace("@iflytekopensource/", "@iflytek/")] = v;
-            }
+        if (!pj[field]) continue;
+        for (const [k, v] of Object.entries(pj[field])) {
+          if (k.startsWith(SCOPE_FROM)) {
+            delete pj[field][k];
+            pj[field][rewriteScope(k)] = v;
           }
         }
       }
       writeFileSync(pjPath, JSON.stringify(pj, null, 2) + "\n");
 
-      const result = spawnSync(
-        "npm",
-        ["publish", "./package", "--registry", "https://npm.pkg.github.com", "--access", "public"],
-        { stdio: "inherit", env: { ...process.env, NODE_AUTH_TOKEN: process.env.GITHUB_TOKEN } },
-      );
-      if (result.status !== 0) process.exit(result.status ?? 1);
+      // Rewrite runtime imports in hermes package
+      if (pj.name === `${SCOPE_TO}hermes`) {
+        for (const rel of ["bin/install.mjs", "bridge/worker.mjs", "provider/__init__.py"]) {
+          try {
+            const fp = join(pkgDir, rel);
+            const orig = readFileSync(fp, "utf8");
+            const rewritten = rewriteScope(orig);
+            if (orig !== rewritten) writeFileSync(fp, rewritten);
+          } catch (err) {
+            if (err.code !== "ENOENT") console.warn(`Warning: failed to rewrite ${rel}: ${err.message}`);
+          }
+        }
+      }
+
+      run("npm", [
+        "publish", "./package",
+        "--registry", GHP_REGISTRY,
+        "--access", "public",
+        ...publishArgs,
+      ]);
     }
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
 }
 
-function publishToNpm({ publishArgs }) {
-  const args = buildArgs({ publishArgs, access: "public" });
-  for (const pkg of packages) {
-    const result = spawnSync("pnpm", ["--filter", pkg, ...args], { stdio: "inherit" });
-    if (result.status !== 0) process.exit(result.status ?? 1);
-  }
-}
-
 const { registry, publishArgs } = parseArgs();
-
-if (registry === "https://npm.pkg.github.com") {
-  await publishToGitHubPackages({ publishArgs });
+if (registry === GHP_REGISTRY) {
+  publishToGitHubPackages(publishArgs);
 } else {
-  publishToNpm({ publishArgs });
-}
+  publishToNpm(publishArgs);
+scripts/publish-npm.mjs}
