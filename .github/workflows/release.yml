@@ -11,6 +11,7 @@ concurrency:
 permissions:
   contents: read
   id-token: write
+  packages: write
 
 jobs:
   release:
@@ -53,3 +54,11 @@ jobs:
         run: pnpm run publish:npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to GitHub Packages
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" > .npmrc
+          pnpm run publish:npm -- --registry=https://npm.pkg.github.com
+          rm .npmrc
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

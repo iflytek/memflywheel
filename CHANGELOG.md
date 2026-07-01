@@ -23,3 +23,13 @@ for published packages.
   mirror.
 - npm release workflow, package dry-run checks, and release documentation.
 - Runnable examples for Pi, Hermes, OpenCode, and OpenClaw.
+- Dual-registry publishing: npm (`@iflytekopensource/*`) and GitHub Packages
+  (`@iflytek/*`) via `scripts/publish-npm.mjs`.
+
+### Fixed
+
+- Preview release workflow: explicitly specify public package paths for
+  `pkg-pr-new publish` to resolve `No packages` error when internal packages are
+  marked `private: true`.
+- Added `.npmrc` to `.gitignore` to prevent accidental commit of temporary auth
+  tokens.

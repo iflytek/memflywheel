@@ -5,6 +5,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .turbo/
+.npmrc
 
 # ==============================
 # System / OS Files
