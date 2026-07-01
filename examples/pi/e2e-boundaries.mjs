@@ -24,7 +24,7 @@ import {
   createMemFlywheelHarnessRuntime,
   createPiHarnessPort,
   classifyHostCapabilities,
-} from "@memflywheel/adapters";
+} from "@iflytekopensource/adapters";
 import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import { validateLearnedSkillPackage, createLearnedSkillStore } from "@memflywheel/skills";
 

@@ -53,6 +53,29 @@ test("normalizeMessages keeps only user/assistant, coerces content, drops emptie
   ]);
 });
 
+test("normalizeMessages preserves adapter-native toolCalls", () => {
+  const out = normalizeMessages([
+    {
+      role: "assistant",
+      text: "ran tools",
+      toolCalls: [
+        { name: "ci", input: { command: "pnpm run ci" }, output: "ok" },
+        { name: "pack", input: { command: "npm pack --dry-run" }, output: "ok" },
+      ],
+    },
+  ]);
+  assert.deepEqual(out, [
+    {
+      role: "assistant",
+      text: "ran tools",
+      toolCalls: [
+        { name: "ci", input: { command: "pnpm run ci" }, output: "ok" },
+        { name: "pack", input: { command: "npm pack --dry-run" }, output: "ok" },
+      ],
+    },
+  ]);
+});
+
 test("normalizeMessages returns [] for non-arrays", () => {
   assert.deepEqual(normalizeMessages(undefined), []);
   assert.deepEqual(normalizeMessages({}), []);

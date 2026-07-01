@@ -299,7 +299,7 @@ test("runSkillEvolutionAgent: deleting a duplicate directory derives a merge coo
   assert.deepEqual([...result.changedSkills].sort(), [DEBUG, REVIEW]);
 });
 
-test("runSkillEvolutionAgent: rolls back when the change set violates the one-skill invariant", async () => {
+test("runSkillEvolutionAgent: keeps finalized skill changes even when multiple skills changed", async () => {
   const { store, state } = makeStore({
     catalog: [],
     finalizeResult: {
@@ -313,8 +313,12 @@ test("runSkillEvolutionAgent: rolls back when the change set violates the one-sk
     STOP_RESPONSE,
   ]);
 
-  await assert.rejects(run(store, model), /must change exactly one learned skill/);
-  assert.equal(state.rolledBack, 1);
+  const result = await run(store, model);
+
+  assert.equal(state.rolledBack, 0);
+  assert.deepEqual(result.changedSkills, [REVIEW, DEBUG]);
+  assert.equal(result.coordination.decision, "create");
+  assert.equal(result.coordination.targetSkill, REVIEW);
 });
 
 test("runSkillEvolutionAgent: feeds skill tool validation errors back so the model can correct them", async () => {

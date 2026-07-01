@@ -31,7 +31,7 @@ import https from "node:https";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createMemFlywheelHarnessRuntime } from "@memflywheel/adapters";
+import { createMemFlywheelHarnessRuntime } from "@iflytekopensource/adapters";
 import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import {
   validateLearnedSkillPackage,

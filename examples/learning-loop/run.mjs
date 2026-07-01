@@ -15,7 +15,7 @@ import path from "node:path";
 
 import { scanMemoryFiles, serializeMemoryFile } from "@memflywheel/core";
 import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
-import { createMemFlywheelHarnessRuntime } from "@memflywheel/adapters";
+import { createMemFlywheelHarnessRuntime } from "@iflytekopensource/adapters";
 
 const TARGET_SKILL = "memflywheel-learned-release-review";
 const MEMORY_PATH = "workflow/release-prep-workflow.md";
@@ -246,11 +246,7 @@ async function main() {
             output: call.output,
           })),
         ),
-      artifactPaths: () => [
-        "README.md",
-        "docs/skill-learning-loop-walkthrough.md",
-        "packages/sdk/src/index.ts",
-      ],
+      artifactPaths: () => ["README.md", "docs/architecture.md", "packages/sdk/src/index.ts"],
       qualitySignals: () => ({
         repeatedWorkflow: true,
         shouldBecomeSkill: true,

@@ -87,9 +87,9 @@ test("onPromptBuild returns stable rules + system-reminder-wrapped index, empty 
     const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
 
     assert.equal(ctx.enabled, true);
-    assert.ok(ctx.systemPrompt.includes("记忆"), "stable rules present");
+    assert.ok(ctx.systemPrompt.includes("Memory"), "stable rules present");
     assert.match(ctx.preludePrompt, /<system-reminder>[\s\S]*<\/system-reminder>/);
-    assert.match(ctx.preludePrompt, /没有可用记忆条目/);
+    assert.match(ctx.preludePrompt, /No memory entries are currently available/);
     assert.equal(scribe.instructionPrompt(), ctx.systemPrompt);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -117,9 +117,13 @@ test("onPromptBuild injects learned skill routing", async () => {
     });
 
     const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
-    assert.match(ctx.systemPrompt, /# 技能/);
-    assert.match(ctx.preludePrompt, /## 可用技能/);
+    assert.match(ctx.systemPrompt, /# Skills/);
+    assert.match(ctx.preludePrompt, /## Available Skills/);
     assert.match(ctx.preludePrompt, /memflywheel-learned-release-review/);
+    assert.match(
+      ctx.preludePrompt,
+      new RegExp(path.join(root, "memflywheel-learned-release-review", "SKILL.md")),
+    );
     assert.match(ctx.preludePrompt, /pre-publish review/);
     assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
   } finally {
@@ -163,7 +167,7 @@ test("onPromptBuild passes query into memory index retrieval", async () => {
     });
 
     const ctx = await scribe.onPromptBuild({ sessionId: "s1", query: "如何发布这个包" });
-    assert.match(ctx.preludePrompt, /## 相关记忆条目/);
+    assert.match(ctx.preludePrompt, /## Relevant Memory Entries/);
     assert.match(ctx.preludePrompt, /发布流程/);
     assert.doesNotMatch(ctx.preludePrompt, /饮茶偏好/);
   } finally {
@@ -317,7 +321,7 @@ test("onTurnEnd runs the integrated learning loop and routes skill memory compre
   }
 });
 
-test("onTurnEnd learning loop does not evolve skills when extraction writes nothing", async () => {
+test("onTurnEnd learning loop evolves skills when turn/tool gates pass even if extraction writes nothing", async () => {
   const root = await tempRoot();
   try {
     const events: string[] = [];
@@ -330,9 +334,21 @@ test("onTurnEnd learning loop does not evolve skills when extraction writes noth
         source: "local",
         skillLearningEnabled: true,
         gate: { minDoneTurns: 1, cooldownTurns: 0, minToolCalls: 0 },
-        skillEvolution: async () => {
-          events.push("skill");
-          throw new Error("must not run");
+        skillEvolution: async ({ lastExtraction }) => {
+          events.push(`skill:${lastExtraction.result}`);
+          return {
+            coordination: {
+              decision: "noop",
+              targetSkill: null,
+              mergedSkills: [],
+              why: "no reusable method",
+              memoryAction: "noop",
+              memoryTopics: [],
+              supportingFiles: [],
+            },
+            changedSkills: [],
+            changedFiles: [],
+          };
         },
       },
     });
@@ -341,10 +357,82 @@ test("onTurnEnd learning loop does not evolve skills when extraction writes noth
 
     assert.equal(turn.result, ExtractionResult.Skipped);
     assert.equal(turn.learningLoop?.extraction.ran, true);
-    assert.equal(turn.learningLoop?.skillEvolution.ran, false);
-    assert.equal(turn.learningLoop?.skillEvolution.reason, "extraction-not-completed");
+    assert.equal(turn.learningLoop?.skillEvolution.ran, true);
     assert.equal(turn.learningLoop?.dream.ran, false);
-    assert.deepEqual(events, []);
+    assert.deepEqual(events, ["skill:skipped"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("onTurnEnd learning loop serializes concurrent turns", async () => {
+  const root = await tempRoot();
+  try {
+    let firstStarted!: () => void;
+    const firstStartedPromise = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const releases: Array<() => void> = [];
+    const events: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    const scribe = createMemFlywheel({
+      root,
+      learningLoop: {
+        enabled: true,
+        source: "local",
+        skillLearningEnabled: true,
+        gate: { minDoneTurns: 1, cooldownTurns: 0, minToolCalls: 1 },
+        skillEvolution: async () => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          events.push("start");
+          firstStarted();
+          await new Promise<void>((resolve) => releases.push(resolve));
+          events.push("end");
+          active -= 1;
+          return {
+            coordination: {
+              decision: "noop",
+              targetSkill: null,
+              mergedSkills: [],
+              why: "No change needed.",
+              memoryAction: "noop",
+              memoryTopics: [],
+              supportingFiles: [],
+            },
+            changedSkills: [],
+            changedFiles: [],
+          };
+        },
+      },
+    });
+
+    const turn = [
+      {
+        role: "assistant" as const,
+        text: "ran tool",
+        toolCalls: [{ name: "read", input: { path: "README.md" }, output: "ok" }],
+      },
+    ];
+    const first = scribe.onTurnEnd("s1", turn);
+    const second = scribe.onTurnEnd("s1", turn);
+
+    await firstStartedPromise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.equal(maxActive, 1);
+    assert.deepEqual(events, ["start"]);
+
+    releases.shift()?.();
+    await first;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(events, ["start", "end", "start"]);
+
+    releases.shift()?.();
+    await second;
+    assert.equal(maxActive, 1);
+    assert.deepEqual(events, ["start", "end", "start", "end"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -398,6 +486,83 @@ test("onTurnEnd learning loop uses captured tool calls and internal cooldown cou
     assert.equal(turn.result, ExtractionResult.Completed);
     assert.equal(turn.learningLoop?.skillEvolution.ran, true);
     assert.deepEqual(events, ["skill"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("onTurnEnd learning loop infers completed turns from a resumed transcript", async () => {
+  const root = await tempRoot();
+  try {
+    const events: string[] = [];
+    const scribe = createMemFlywheel({
+      root,
+      learningLoop: {
+        enabled: true,
+        source: "local",
+        skillLearningEnabled: true,
+        skillEvolution: async ({ session }) => {
+          const toolCalls = session.messages.reduce(
+            (total, message) => total + (message.toolCalls?.length ?? 0),
+            0,
+          );
+          events.push(`turns:${session.turns}:tools:${toolCalls}`);
+          return {
+            coordination: {
+              decision: "noop",
+              targetSkill: null,
+              mergedSkills: [],
+              why: "No change needed.",
+              memoryAction: "noop",
+              memoryTopics: [],
+              supportingFiles: [],
+            },
+            changedSkills: [],
+            changedFiles: [],
+          };
+        },
+      },
+    });
+
+    const turn = await scribe.onTurnEnd("s1", [
+      { role: "user", text: "你好" },
+      { role: "assistant", text: "你好" },
+      { role: "user", text: "记住偏好" },
+      { role: "assistant", text: "好的" },
+      { role: "user", text: "记住流程" },
+      { role: "assistant", text: "好的" },
+      { role: "user", text: "执行项目交接检查" },
+      {
+        role: "assistant",
+        text: "读取文件",
+        toolCalls: [
+          { name: "read_file", input: { path: "package.json" }, output: "ok" },
+          { name: "read_file", input: { path: "README.md" }, output: "ok" },
+        ],
+      },
+      {
+        role: "assistant",
+        text: "运行检查",
+        toolCalls: [
+          { name: "terminal", input: { command: "npm test" }, output: "ok" },
+          { name: "terminal", input: { command: "npm run lint" }, output: "ok" },
+        ],
+      },
+      {
+        role: "assistant",
+        text: "写结果",
+        toolCalls: [{ name: "write_file", input: { path: "HANDOFF-CHECK.md" }, output: "ok" }],
+      },
+      {
+        role: "assistant",
+        text: "核对结果",
+        toolCalls: [{ name: "read_file", input: { path: "HANDOFF-CHECK.md" }, output: "ok" }],
+      },
+      { role: "assistant", text: "完成" },
+    ]);
+
+    assert.equal(turn.learningLoop?.skillEvolution.ran, true);
+    assert.deepEqual(events, ["turns:4:tools:6"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

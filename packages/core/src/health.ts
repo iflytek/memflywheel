@@ -7,7 +7,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { RESERVED_MEMORY_FILES, VALID_MEMORY_TYPES } from "./types.js";
-import { normalizeRelativePath } from "./paths.js";
+import { memoryTypeForRelativePath, normalizeRelativePath } from "./paths.js";
 import { scanMemoryFiles } from "./scan.js";
 
 export type HealthCode =
@@ -90,14 +90,16 @@ async function walkMarkdownFiles(root: string, currentDir: string, files: string
   for (const dirent of dirents) {
     if (dirent.name.startsWith(".")) continue;
     const absolutePath = path.join(currentDir, dirent.name);
+    const relativePath = normalizeRelativePath(path.relative(root, absolutePath));
     if (dirent.isDirectory()) {
+      if (currentDir === root && !memoryTypeForRelativePath(relativePath)) continue;
       await walkMarkdownFiles(root, absolutePath, files);
       continue;
     }
     if (!dirent.isFile()) continue;
     if (!dirent.name.endsWith(".md")) continue;
     if (RESERVED_MEMORY_FILES.has(dirent.name)) continue;
-    files.push(normalizeRelativePath(path.relative(root, absolutePath)));
+    files.push(relativePath);
   }
 }
 
@@ -177,7 +179,7 @@ export async function buildHealthFindings(root: string): Promise<HealthFinding[]
           "error",
           "missing-frontmatter",
           [relativePath],
-          "该文件缺少合法 frontmatter。",
+          "The file is missing valid frontmatter.",
         ),
       );
       continue;
@@ -188,7 +190,7 @@ export async function buildHealthFindings(root: string): Promise<HealthFinding[]
           "error",
           "missing-frontmatter-name",
           [relativePath],
-          "该文件 frontmatter 缺少 name。",
+          "The file frontmatter is missing name.",
         ),
       );
     }
@@ -198,7 +200,7 @@ export async function buildHealthFindings(root: string): Promise<HealthFinding[]
           "error",
           "missing-frontmatter-type",
           [relativePath],
-          "该文件 frontmatter 缺少 type。",
+          "The file frontmatter is missing type.",
         ),
       );
       continue;
@@ -209,7 +211,7 @@ export async function buildHealthFindings(root: string): Promise<HealthFinding[]
           "error",
           "invalid-frontmatter-type",
           [relativePath],
-          `该文件 frontmatter 的 type 非法：${type}。`,
+          `The file frontmatter type is invalid: ${type}.`,
         ),
       );
     }
@@ -226,7 +228,7 @@ export async function buildHealthFindings(root: string): Promise<HealthFinding[]
           "error",
           "path-type-mismatch",
           [relativePath],
-          `该文件位于 ${actualDirectory}/，但 frontmatter.type 是 ${declaredType}。`,
+          `The file is under ${actualDirectory}/, but frontmatter.type is ${declaredType}.`,
         ),
       );
     }
@@ -257,7 +259,7 @@ export async function buildHealthFindings(root: string): Promise<HealthFinding[]
         "warn",
         "duplicate-name-type",
         paths,
-        `这些文件拥有相同的 type 与 name（${type} / ${name}），属于重复候选。`,
+        `These files have the same type and name (${type} / ${name}); they are duplicate candidates.`,
       ),
     );
   }
@@ -265,7 +267,12 @@ export async function buildHealthFindings(root: string): Promise<HealthFinding[]
   for (const paths of contentGroups.values()) {
     if (paths.length < 2) continue;
     findings.push(
-      createFinding("warn", "duplicate-content", paths, "这些文件正文完全一致，属于精确重复候选。"),
+      createFinding(
+        "warn",
+        "duplicate-content",
+        paths,
+        "These files have identical bodies and are exact duplicate candidates.",
+      ),
     );
   }
 

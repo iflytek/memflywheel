@@ -129,8 +129,8 @@ export function resolveRelativePath(root: string, relativePath: string): string 
 
 /**
  * Derive a deterministic flat slug filename (ending in .md) from a memory name.
- * The subagent thinks in `type`+`name`; the host owns the path. Keeps a–z, 0–9,
- * and CJK; collapses everything else to hyphens; caps at 80 chars.
+ * The subagent thinks in `type`+`name`; the host owns the path. Keeps a-z, 0-9,
+ * and CJK characters; collapses everything else to hyphens; caps at 80 chars.
  */
 export function deriveMemoryFilename(name: string): string {
   const slug = String(name || "")

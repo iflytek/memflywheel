@@ -1,0 +1,15 @@
+{
+  "id": "memflywheel",
+  "activation": {
+    "onStartup": false
+  },
+  "kind": "memory",
+  "contracts": {
+    "tools": []
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

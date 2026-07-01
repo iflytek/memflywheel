@@ -8,7 +8,7 @@
  */
 
 import { completeSimple } from "@earendil-works/pi-ai/compat";
-import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@memflywheel/adapters";
+import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@iflytekopensource/adapters";
 
 /** @param {any} pi - the Pi ExtensionAPI */
 export default function memFlywheelExtension(pi) {

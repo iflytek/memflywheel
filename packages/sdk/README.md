@@ -1,7 +1,7 @@
 # @memflywheel/sdk
 
 Host lifecycle integration layer for [MemFlywheel](https://github.com/iflytek/memflywheel#readme). The thin
-orchestration seam between a host runtime (Pi today; Hermes, OpenClaw, OpenCode planned) and `@memflywheel/core`.
+orchestration seam between host runtimes such as Pi, Hermes, OpenClaw, OpenCode, and `@memflywheel/core`.
 
 The SDK owns:
 

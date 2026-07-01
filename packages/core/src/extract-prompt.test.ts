@@ -75,7 +75,7 @@ test("folds tool calls into text with per-field truncation (input head, output h
   assert.ok(out.includes("Output:"), "renders Output line");
   assert.ok(/HEAD_x+/.test(out), "output keeps head");
   assert.ok(out.includes("_TAIL"), "output keeps tail (head+tail truncation)");
-  assert.ok(out.includes("省略"), "output shows an elision marker");
+  assert.ok(out.includes("omitted"), "output shows an elision marker");
   // The folded output must be far smaller than the 5k raw output.
   const outputLine = out.split("\n").find((l) => l.startsWith("Output:"))!;
   assert.ok(outputLine.length < 600, `output line bounded (~500), got ${outputLine.length}`);
@@ -100,7 +100,10 @@ test("window-level cap omits overflow tool calls with a note", () => {
     manifest: "",
     messages: [{ role: "assistant", text: "many tools", toolCalls: calls }],
   });
-  assert.ok(out.includes("因窗口上限省略"), "emits the window-cap omission note");
+  assert.ok(
+    out.includes("omitted because of the window limit"),
+    "emits the window-cap omission note",
+  );
   // Total folded tool text stays bounded near the window cap (not 60 * ~450).
   assert.ok(out.length < 6000, `bounded total, got ${out.length}`);
 });

@@ -16,6 +16,7 @@ import {
   type DreamAgentRunner,
   type ExtractionAgentRunner,
   type ExtractionMessage,
+  type CursorStore,
   type MemFlywheel as SdkMemFlywheel,
   type MemFlywheelLearningLoopConfig,
   type MemoryIndexRetrievalOptions,
@@ -33,19 +34,24 @@ import {
   createLearnedSkillRecallProvider,
   createLearnedSkillStore,
 } from "@memflywheel/skills";
-import type { CanonicalModelCompletion } from "@memflywheel/model";
+import type {
+  CanonicalModelCompletion,
+  CanonicalModelMessage,
+  CanonicalToolCall,
+} from "@memflywheel/model";
 
 import type { MemFlywheel, MemFlywheelContext, MemFlywheelMessage } from "./adapter.js";
 import {
   classifyHostCapabilities,
   requireHostCapabilities,
+  type HostToolCallEvent,
+  type HostToolResultEvent,
   type HostHarnessPort,
   type HostIntegrationMode,
 } from "./harness-port.js";
-import type { CanonicalModelMessage } from "@memflywheel/model";
 
 /**
- * Re-exported SDK contracts so hosts/adapters depend only on `@memflywheel/adapters`.
+ * Re-exported SDK contracts so hosts/adapters depend only on `@iflytekopensource/adapters`.
  */
 export type {
   MemFlywheelLearningLoopConfig,
@@ -103,6 +109,8 @@ export interface MemFlywheelHarnessRuntimeOptions {
   mode?: MemFlywheelHarnessMode;
   /** Memory root override. Falls back to MEMFLYWHEEL_HOME / OS data dir. */
   root?: string;
+  /** Custom cursor store. Defaults to the SDK in-memory cursor store. */
+  cursorStore?: CursorStore;
   /** Master switch. When false, every hook becomes a no-op. */
   enabled?: boolean;
   /**
@@ -209,11 +217,105 @@ export function canonicalMessagesToMemFlywheelMessages(
   return out;
 }
 
+interface BufferedToolCall extends CanonicalToolCall {
+  output?: unknown;
+}
+
+function sessionKey(sessionId: string | undefined): string {
+  return sessionId?.trim() || "default";
+}
+
+function contentFromToolOutput(output: unknown): string | null {
+  if (output === undefined || output === null) return null;
+  if (typeof output === "string") return output;
+  try {
+    return JSON.stringify(output);
+  } catch {
+    return String(output);
+  }
+}
+
+function existingToolCallIds(messages: readonly CanonicalModelMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    for (const call of message.toolCalls ?? []) ids.add(call.id);
+  }
+  return ids;
+}
+
+function recordToolCall(
+  toolCallsBySession: Map<string, Map<string, BufferedToolCall>>,
+  event: HostToolCallEvent,
+): void {
+  if (!event.toolCallId) return;
+  const key = sessionKey(event.sessionId);
+  let session = toolCallsBySession.get(key);
+  if (!session) {
+    session = new Map();
+    toolCallsBySession.set(key, session);
+  }
+  const existing = session.get(event.toolCallId);
+  session.set(event.toolCallId, {
+    id: event.toolCallId,
+    name: event.toolName,
+    input: event.input,
+    output: existing?.output,
+  });
+}
+
+function recordToolResult(
+  toolCallsBySession: Map<string, Map<string, BufferedToolCall>>,
+  event: HostToolResultEvent,
+): void {
+  if (!event.toolCallId) return;
+  const key = sessionKey(event.sessionId);
+  let session = toolCallsBySession.get(key);
+  if (!session) {
+    session = new Map();
+    toolCallsBySession.set(key, session);
+  }
+  const existing = session.get(event.toolCallId);
+  session.set(event.toolCallId, {
+    id: event.toolCallId,
+    name: existing?.name ?? event.toolName,
+    input: existing?.input ?? event.input,
+    output: event.output,
+  });
+}
+
+function drainTelemetryMessages(
+  toolCallsBySession: Map<string, Map<string, BufferedToolCall>>,
+  sessionId: string,
+  baseMessages: readonly CanonicalModelMessage[],
+): CanonicalModelMessage[] {
+  const calls = toolCallsBySession.get(sessionKey(sessionId));
+  if (!calls || calls.size === 0) return [];
+  toolCallsBySession.delete(sessionKey(sessionId));
+
+  const seen = existingToolCallIds(baseMessages);
+  const unique = [...calls.values()].filter((call) => !seen.has(call.id));
+  if (unique.length === 0) return [];
+
+  const messages: CanonicalModelMessage[] = [
+    {
+      role: "assistant",
+      content: null,
+      toolCalls: unique.map(({ id, name, input }) => ({ id, name, input })),
+    },
+  ];
+  for (const call of unique) {
+    const content = contentFromToolOutput(call.output);
+    if (content !== null) messages.push({ role: "tool", toolCallId: call.id, content });
+  }
+  return messages;
+}
+
 export function attachMemFlywheelToHostPort(
   scribe: MemFlywheelHarnessRuntimeAdapter,
   port: HostHarnessPort,
 ): () => void {
   const disposers: Array<() => void> = [];
+  const toolCallsBySession = new Map<string, Map<string, BufferedToolCall>>();
   disposers.push(
     port.lifecycle.onPromptBuild(async (event) => {
       const ctx = await scribe.onPromptBuild({
@@ -229,17 +331,33 @@ export function attachMemFlywheelToHostPort(
   );
   disposers.push(
     port.lifecycle.onTurnEnd(async (event) => {
+      const telemetryMessages = drainTelemetryMessages(
+        toolCallsBySession,
+        event.sessionId,
+        event.messages,
+      );
       await scribe.onTurnEnd({
         sessionId: event.sessionId,
-        messages: canonicalMessagesToMemFlywheelMessages(event.messages),
+        messages: canonicalMessagesToMemFlywheelMessages([...event.messages, ...telemetryMessages]),
       });
     }),
   );
   disposers.push(
     port.lifecycle.onSessionEnd(async (event) => {
+      toolCallsBySession.delete(sessionKey(event.sessionId));
       await scribe.onSessionEnd({ sessionId: event.sessionId });
     }),
   );
+  if (port.telemetry?.onToolCall) {
+    disposers.push(
+      port.telemetry.onToolCall(async (event) => recordToolCall(toolCallsBySession, event)),
+    );
+  }
+  if (port.telemetry?.onToolResult) {
+    disposers.push(
+      port.telemetry.onToolResult(async (event) => recordToolResult(toolCallsBySession, event)),
+    );
+  }
   if (port.lifecycle.onIdle) {
     disposers.push(
       port.lifecycle.onIdle(async (event) => {
@@ -254,14 +372,45 @@ export function attachMemFlywheelToHostPort(
   };
 }
 
+const SKILL_CONTEXT_MESSAGE_LIMIT = 20;
+const SKILL_CONTEXT_TEXT_LIMIT = 2_000;
+const SKILL_CONTEXT_INPUT_LIMIT = 1_000;
+const SKILL_CONTEXT_OUTPUT_HEAD = 800;
+const SKILL_CONTEXT_OUTPUT_TAIL = 400;
+
+function truncateString(value: string, limit: number): string {
+  if (value.length <= limit) return value;
+  const marker = `\n...[truncated ${value.length - limit} chars]`;
+  return `${value.slice(0, Math.max(0, limit - marker.length))}${marker}`;
+}
+
+function truncateValue(value: unknown, limit: number): unknown {
+  if (typeof value === "string") return truncateString(value, limit);
+  const rendered = JSON.stringify(value);
+  if (!rendered || rendered.length <= limit) return value;
+  return truncateString(rendered, limit);
+}
+
+function previewOutput(output: unknown): unknown {
+  const rendered = typeof output === "string" ? output : JSON.stringify(output);
+  if (!rendered || rendered.length <= SKILL_CONTEXT_OUTPUT_HEAD + SKILL_CONTEXT_OUTPUT_TAIL) {
+    return output;
+  }
+  return {
+    truncated: true,
+    chars: rendered.length,
+    head: rendered.slice(0, SKILL_CONTEXT_OUTPUT_HEAD),
+    tail: rendered.slice(-SKILL_CONTEXT_OUTPUT_TAIL),
+  };
+}
+
 function compactMessages(messages: readonly ExtractionMessage[]): unknown[] {
-  return messages.slice(-12).map((message) => ({
+  return messages.slice(-SKILL_CONTEXT_MESSAGE_LIMIT).map((message) => ({
     role: message.role,
-    text: message.text,
+    text: truncateString(message.text, SKILL_CONTEXT_TEXT_LIMIT),
     toolCalls: (message.toolCalls ?? []).map((call) => ({
       name: call.name,
-      input: call.input,
-      output: call.output,
+      input: truncateValue(call.input, SKILL_CONTEXT_INPUT_LIMIT),
     })),
   }));
 }
@@ -271,8 +420,8 @@ function defaultToolTrajectory(input: HostLearnedSkillEvolutionInput): unknown[]
     (message.toolCalls ?? []).map((call) => ({
       role: message.role,
       name: call.name,
-      input: call.input,
-      output: call.output,
+      input: truncateValue(call.input, SKILL_CONTEXT_INPUT_LIMIT),
+      output: previewOutput(call.output),
     })),
   );
 }
@@ -283,7 +432,6 @@ function defaultReviewPacket(input: HostLearnedSkillEvolutionInput): unknown {
     sessionId: input.sessionId,
     lastExtraction: {
       result: input.lastExtraction.result,
-      skipped: input.lastExtraction.skipped,
     },
     recentMessages: compactMessages(input.session.messages),
   };
@@ -440,6 +588,7 @@ export function createMemFlywheelHarnessRuntime(
     enabled,
     agent,
     dreamRunner,
+    cursorStore: options.cursorStore,
     refuseSecrets,
     skillRecall: sdkSkillRecall,
     skillPreludeBuilder,

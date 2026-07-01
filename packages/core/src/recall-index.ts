@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 import { INDEX_FILE } from "./index-file.js";
+import { resolveRelativePath } from "./paths.js";
 
 export interface EmbeddingProvider {
   embed(input: { texts: string[]; signal?: AbortSignal }): Promise<{ vectors: number[][] }>;
@@ -112,6 +113,33 @@ export function parseMemoryIndexRecords(indexContent: string): MemoryIndexRecord
   }
 
   return records;
+}
+
+export function absolutizeMemoryIndexLine(rawLine: string, root: string): string {
+  const record = parseMemoryIndexRecords(rawLine)[0];
+  if (!record) return rawLine;
+
+  const absoluteRecordPath = resolveRelativePath(root, record.path);
+  if (!absoluteRecordPath) return rawLine;
+
+  const linkMatch = rawLine.match(/^(?<prefix>- \[[^\]]+\]\()(?<href>[^)]+)(?<suffix>\).*)$/u);
+  let line = rawLine;
+  if (linkMatch?.groups) {
+    const absoluteHref = resolveRelativePath(root, linkMatch.groups.href.trim());
+    if (absoluteHref) {
+      line = `${linkMatch.groups.prefix}${absoluteHref}${linkMatch.groups.suffix}`;
+    }
+  }
+
+  return line.replace(`path: ${record.path}`, `path: ${absoluteRecordPath}`);
+}
+
+export function absolutizeMemoryIndexContent(indexContent: string, root: string): string {
+  if (!indexContent) return indexContent;
+  return indexContent
+    .split(/\r?\n/)
+    .map((line) => absolutizeMemoryIndexLine(line, root))
+    .join("\n");
 }
 
 async function readDiskCache(
@@ -339,7 +367,10 @@ export async function hybridSearchMemoryIndex(input: {
 export function buildRelevantMemoryIndexPrompt(
   records: MemoryIndexRecord[],
   indexPath = INDEX_FILE,
+  root?: string,
 ): string {
-  const lines = records.map((record) => record.rawLine).join("\n");
-  return `<system-reminder>\n## 相关记忆条目\n\n以下条目是系统从 MEMORY.md 索引中通过混合检索得到的相关路径线索。它们不是完整事实；需要时读取对应文件。\n\n${lines}\n\n## 全局记忆索引\n\n如果相关条目不足，可以读取完整索引文件：\n\n${indexPath}\n</system-reminder>`;
+  const lines = records
+    .map((record) => (root ? absolutizeMemoryIndexLine(record.rawLine, root) : record.rawLine))
+    .join("\n");
+  return `<system-reminder>\n## Relevant Memory Entries\n\nThe following entries are path hints retrieved from MEMORY.md by hybrid search. They are not complete facts; read the corresponding files only when needed.\n\n${lines}\n\n## Global Memory Index\n\nIf the relevant entries are insufficient, read the full index file:\n\n${indexPath}\n</system-reminder>`;
 }

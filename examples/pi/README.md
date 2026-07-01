@@ -18,10 +18,10 @@ writes memory files directly.
 Install the published Pi package:
 
 ```bash
-pi install npm:@memflywheel/adapters
+pi install npm:@iflytekopensource/adapters
 ```
 
-Pi loads the extension declared by `@memflywheel/adapters`:
+Pi loads the extension declared by `@iflytekopensource/adapters`:
 
 ```json
 {

@@ -35,7 +35,7 @@ import {
   classifyHostCapabilities,
   requireHostCapabilities,
   createCapabilitySet,
-} from "@memflywheel/adapters";
+} from "@iflytekopensource/adapters";
 import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import {
   validateLearnedSkillPackage,

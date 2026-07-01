@@ -138,11 +138,11 @@ export async function readAllMemoryContents(
 }
 
 /**
- * Port of formatManifest: one line per entry, or "（无现有记忆）" when empty.
+ * Port of formatManifest: one line per entry, or "(no existing memories)" when empty.
  * Consumed by extract/dream prompt builders in the host.
  */
 export function formatManifest(entries: MemoryEntry[]): string {
-  if (!entries || entries.length === 0) return "（无现有记忆）";
+  if (!entries || entries.length === 0) return "(no existing memories)";
 
   return entries
     .map((entry) => {

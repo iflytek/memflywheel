@@ -1,8 +1,8 @@
 /**
  * @memflywheel/sdk — host lifecycle integration layer.
  *
- * This is the thin orchestration seam between a host runtime (Pi today; Hermes,
- * OpenClaw, OpenCode planned) and @memflywheel/core. It owns:
+ * This is the thin orchestration seam between host runtimes such as Pi, Hermes,
+ * OpenClaw, OpenCode, and @memflywheel/core. It owns:
  *
  *   - a single per-root StorageContext + audit logger,
  *   - the per-session extraction cursor store,
@@ -22,6 +22,8 @@
  * The host gathers the conversation turn into ExtractionMessage[] and calls the
  * hooks; core does the rest (write lock, atomic writes, index sync, cursor).
  */
+
+import path from "node:path";
 
 import {
   type ExtractionAgentRunner,
@@ -304,24 +306,24 @@ export interface DreamGateInput {
 }
 
 function buildSkillInstructionPrompt(): string {
-  return `# 技能
+  return `# Skills
 
-系统可能会提供一组可用 learned skill。技能是可执行流程包，不是普通记忆。
+The system may provide available learned skills. Skills are executable workflow packages, not ordinary memories.
 
-## 技能规则
+## Skill Rules
 
-- 可用技能条目只是路由线索，只有当用户请求和技能明确相关时才使用
-- 不要把技能步骤复制进普通记忆
-- 技能的加载、执行、权限和工具调用由宿主负责，MemFlywheel 只提供路由线索
-- 技能学习基于对话记录和工具调用轨迹，不要在回答里编造未执行的步骤`;
+- Available skill entries are routing hints. Use them only when the user request is clearly relevant to a skill.
+- Do not copy skill procedures into ordinary memory.
+- Skill loading, execution, permissions, and tool calls are owned by the host. MemFlywheel only provides routing hints.
+- Skill learning is based on conversation records and tool-call traces. Do not invent steps that were not executed.`;
 }
 
 function buildDefaultSkillPrelude(packet: SkillRecallPacket): string {
   if (packet.entries.length === 0) return "";
 
-  const lines = ["<system-reminder>", "## 可用技能", ""];
+  const lines = ["<system-reminder>", "## Available Skills", ""];
   if (packet.entries.length === 0) {
-    lines.push("当前没有可用 learned skill。");
+    lines.push("No learned skills are currently available.");
   } else {
     for (const entry of packet.entries) {
       lines.push(`- ${entry.name}: ${entry.displayName} — ${entry.description}`);
@@ -334,10 +336,24 @@ function buildDefaultSkillPrelude(packet: SkillRecallPacket): string {
 
   lines.push(
     "",
-    "仅当当前请求明确命中技能时才请求宿主加载/执行技能；不要向用户暴露技能索引、路径或内部学习过程。",
+    "Request host skill loading/execution only when the current request clearly matches a skill. Do not expose skill indexes, paths, or internal learning flow to the user.",
     "</system-reminder>",
   );
   return lines.join("\n");
+}
+
+function absolutizeSkillRecallPacket(
+  packet: SkillRecallPacket,
+  skillsRoot: string,
+): SkillRecallPacket {
+  return {
+    entries: packet.entries.map((entry) => ({
+      ...entry,
+      relativePath: path.isAbsolute(entry.relativePath)
+        ? entry.relativePath
+        : path.join(skillsRoot, entry.relativePath),
+    })),
+  };
 }
 
 function resolveCounter(value: number | (() => number)): number {
@@ -348,6 +364,14 @@ function countToolCalls(messages: readonly ExtractionMessage[]): number {
   let total = 0;
   for (const message of messages) {
     total += message.toolCalls?.length ?? 0;
+  }
+  return total;
+}
+
+function countUserTurns(messages: readonly ExtractionMessage[]): number {
+  let total = 0;
+  for (const message of messages) {
+    if (message.role === "user") total += 1;
   }
   return total;
 }
@@ -427,6 +451,16 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
 
   const sessions = new Map<string, SessionState>();
   const lastSkillEvolutionTurn = new Map<string, number>();
+  let lifecycleQueue: Promise<void> = Promise.resolve();
+
+  function serializeLifecycle<T>(task: () => Promise<T>): Promise<T> {
+    const run = lifecycleQueue.then(task, task);
+    lifecycleQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
 
   function ensureSession(sessionId: string): SessionState {
     let state = sessions.get(sessionId);
@@ -450,7 +484,7 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
     const state = ensureSession(sessionId);
     if (turnMessages && turnMessages.length > 0) {
       state.messages.push(...turnMessages);
-      state.turns += 1;
+      state.turns = Math.max(state.turns + 1, countUserTurns(state.messages));
     }
     if (!enabled || !agent) {
       return { result: ExtractionResult.Skipped, skipped: true };
@@ -517,7 +551,10 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
     });
     if (!enabled || !skillRecall) return memoryContext;
 
-    const packet = await skillRecall({ sessionId: input?.sessionId });
+    const packet = absolutizeSkillRecallPacket(
+      await skillRecall({ sessionId: input?.sessionId }),
+      root,
+    );
     const skillPreludePrompt = skillPreludeBuilder(packet);
     if (!skillPreludePrompt) return { ...memoryContext, skillPreludePrompt: "" };
 
@@ -537,12 +574,16 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
   ): Promise<TurnEndResult> {
     let lastExtraction: TurnEndResult | null = null;
     const stateBeforeTurn = ensureSession(sessionId);
-    const doneTurns = stateBeforeTurn.turns + (turnMessages.length > 0 ? 1 : 0);
+    const messagesAfterTurn = [...stateBeforeTurn.messages, ...turnMessages];
+    const doneTurns = Math.max(
+      stateBeforeTurn.turns + (turnMessages.length > 0 ? 1 : 0),
+      countUserTurns(messagesAfterTurn),
+    );
     const loopToolCalls = learningLoop?.toolCalls;
     const toolCalls =
       loopToolCalls !== undefined
         ? resolveCounter(loopToolCalls)
-        : countToolCalls([...stateBeforeTurn.messages, ...turnMessages]);
+        : countToolCalls(messagesAfterTurn);
     const loopTurnsSince = learningLoop?.turnsSinceLastSkillEvolution;
     const turnsSinceLastSkillEvolution =
       loopTurnsSince !== undefined
@@ -561,13 +602,6 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
       extraction: async () => {
         lastExtraction = await extract(sessionId, turnMessages);
         return lastExtraction;
-      },
-      skillEvolutionPrerequisite: ({ extraction }) => {
-        const extractionResult = extraction.value as TurnEndResult | undefined;
-        if (extractionResult?.result !== ExtractionResult.Completed) {
-          return { ok: false, reason: "extraction-not-completed" };
-        }
-        return { ok: true, reason: "ok" };
       },
       skillEvolution: skillEvolve
         ? async () => {
@@ -629,28 +663,32 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
     },
 
     async onTurnEnd(sessionId: string, turnMessages: ExtractionMessage[]): Promise<TurnEndResult> {
-      if (learningLoop) {
-        return runTurnEndLearningLoop(sessionId, turnMessages);
-      }
-      return extract(sessionId, turnMessages);
+      return serializeLifecycle(() => {
+        if (learningLoop) {
+          return runTurnEndLearningLoop(sessionId, turnMessages);
+        }
+        return extract(sessionId, turnMessages);
+      });
     },
 
     async onSessionEnd(sessionId: string): Promise<void> {
-      sessions.delete(sessionId);
-      lastSkillEvolutionTurn.delete(sessionId);
-      // Count this ended session toward the dream gate's session threshold.
-      if (enabled) {
-        try {
-          await bumpDreamSessions(root);
-        } catch {
-          // Bookkeeping is best-effort; never let it break session teardown.
+      await serializeLifecycle(async () => {
+        sessions.delete(sessionId);
+        lastSkillEvolutionTurn.delete(sessionId);
+        // Count this ended session toward the dream gate's session threshold.
+        if (enabled) {
+          try {
+            await bumpDreamSessions(root);
+          } catch {
+            // Bookkeeping is best-effort; never let it break session teardown.
+          }
         }
-      }
+      });
     },
 
     async onAgentEnd(sessionId: string): Promise<TurnEndResult> {
       // Final sweep over any messages not yet behind the cursor. No new turn.
-      return extract(sessionId);
+      return serializeLifecycle(() => extract(sessionId));
     },
 
     async onIdle(opts?: DreamGateInput): Promise<DreamRunResult> {

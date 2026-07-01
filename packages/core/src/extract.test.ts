@@ -25,6 +25,10 @@ function ctxFor(root: string): StorageContext {
   return { root, audit: createNullAuditLogger() };
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function msgs(n: number): ExtractionMessage[] {
   return Array.from({ length: n }, (_, i) => ({
     role: i % 2 === 0 ? "user" : "assistant",
@@ -140,7 +144,7 @@ test("runExtractionSession drives the agent runner, syncs index, advances cursor
 
     assert.equal(result, ExtractionResult.Completed);
     assert.ok(await readMemoryDocument(ctx, "preference/工具.md"));
-    assert.equal(seenManifest, "（无现有记忆）");
+    assert.equal(seenManifest, "(no existing memories)");
     assert.equal(cursorStore.get("s1"), 1);
 
     // Second run with no new messages → skipped.
@@ -209,13 +213,16 @@ test("runExtractionSession appends source refs to multiple memories from the sam
     assert.equal(result, ExtractionResult.Completed);
     const release = await readFile(path.join(root, "workflow", "release.md"), "utf8");
     const tone = await readFile(path.join(root, "preference", "tone.md"), "utf8");
-    const sourceRef = release.match(/- (?<ref>\.memflywheel\/sources\/[^#]+\.jsonl#L\d+-L\d+)/)
-      ?.groups?.ref;
+    const sourceRef = release.match(
+      new RegExp(
+        `- (?<ref>${escapeRegExp(root)}/\\.memflywheel/sources/[^#]+\\.jsonl#L\\d+-L\\d+)`,
+      ),
+    )?.groups?.ref;
     assert.ok(sourceRef);
     assert.ok(tone.includes(sourceRef));
 
     const sourcePath = sourceRef.split("#")[0]!;
-    const source = await readFile(path.join(root, sourcePath), "utf8");
+    const source = await readFile(sourcePath, "utf8");
     const lines = source.trimEnd().split("\n");
     assert.equal(lines.length, 2);
     assert.match(lines[0]!, /发布前先跑 build/);
@@ -286,14 +293,87 @@ test("runExtractionSession writes only new messages to source traces, not cursor
     );
 
     const second = await readFile(path.join(root, "workflow", "second.md"), "utf8");
-    assert.match(second, /\.memflywheel\/sources\/session-[a-f0-9]+\.jsonl#L3-L4/);
-    const sourcePath = second.match(/- (?<path>\.memflywheel\/sources\/[^#]+\.jsonl)#L3-L4/)?.groups
-      ?.path;
+    assert.match(
+      second,
+      new RegExp(`${escapeRegExp(root)}/\\.memflywheel/sources/session-[a-f0-9]+\\.jsonl#L3-L4`),
+    );
+    const sourcePath = second.match(
+      new RegExp(`- (?<path>${escapeRegExp(root)}/\\.memflywheel/sources/[^#]+\\.jsonl)#L3-L4`),
+    )?.groups?.path;
     assert.ok(sourcePath);
-    const lines = (await readFile(path.join(root, sourcePath), "utf8")).trimEnd().split("\n");
+    const lines = (await readFile(sourcePath, "utf8")).trimEnd().split("\n");
     assert.equal(lines.length, 4);
     assert.equal(lines.filter((line) => line.includes("first remembered fact")).length, 1);
     assert.equal(lines.filter((line) => line.includes("second remembered fact")).length, 1);
+  } finally {
+    await cleanup(root);
+  }
+});
+
+test("runExtractionSession does not append replayed source trace suffix", async () => {
+  const root = await makeRoot();
+  try {
+    const ctx = ctxFor(root);
+    const cursorStore = createMemoryCursorStore();
+    let calls = 0;
+    const agent: ExtractionAgentRunner = async (input) => {
+      calls += 1;
+      const map = fileToolMap(input.tools);
+      const filePath = `workflow/replay-${calls}.md`;
+      await map.get("write")!.handler(
+        {
+          filePath,
+          content: serializeMemoryFile({
+            type: "workflow",
+            name: `Replay ${calls}`,
+            body: `Replay ${calls} body.`,
+          }),
+        },
+        input.toolCtx,
+      );
+      return { changed: [filePath] };
+    };
+
+    const replayed: ExtractionMessage[] = [
+      { role: "user", text: "你好" },
+      { role: "assistant", text: "你好！有什么我可以帮你的吗？" },
+    ];
+    const remembered: ExtractionMessage[] = [
+      ...replayed,
+      { role: "user", text: "记住我喜欢吃中国的西瓜" },
+      { role: "assistant", text: "好的，我记住了。" },
+    ];
+
+    assert.equal(
+      await runExtractionSession({
+        ctx,
+        agent,
+        messages: replayed,
+        sessionId: "replayed-session",
+        cursorStore,
+      }),
+      ExtractionResult.Completed,
+    );
+    assert.equal(
+      await runExtractionSession({
+        ctx,
+        agent,
+        messages: remembered,
+        sessionId: "replayed-session",
+        cursorStore,
+      }),
+      ExtractionResult.Completed,
+    );
+
+    const second = await readFile(path.join(root, "workflow", "replay-2.md"), "utf8");
+    const sourcePath = second.match(
+      new RegExp(`- (?<path>${escapeRegExp(root)}/\\.memflywheel/sources/[^#]+\\.jsonl)#L3-L4`),
+    )?.groups?.path;
+    assert.ok(sourcePath);
+    const lines = (await readFile(sourcePath, "utf8")).trimEnd().split("\n");
+    assert.equal(lines.length, 4);
+    assert.equal(lines.filter((line) => line.includes("你好")).length, 2);
+    assert.equal(lines.filter((line) => line.includes("中国的西瓜")).length, 1);
   } finally {
     await cleanup(root);
   }

@@ -33,9 +33,9 @@ test("buildIndexContent formats the index line", () => {
   assert.equal(out, `- [Name](identity/u.md) - Desc (type: identity, path: identity/u.md)`);
 });
 
-test("buildIndexContent uses （无描述） placeholder", () => {
+test("buildIndexContent uses no-description placeholder", () => {
   const out = buildIndexContent([entry({ description: "" })]);
-  assert.ok(out.includes(" - （无描述） "));
+  assert.ok(out.includes(" - (no description) "));
 });
 
 test("buildIndexContent includes retrieval terms in the derived index metadata", () => {
@@ -56,7 +56,7 @@ test("truncateIndex caps lines and appends marker", () => {
   const many = Array.from({ length: INDEX_MAX_LINES + 50 }, (_, i) => `- line ${i}`).join("\n");
   const out = truncateIndex(many);
   const lines = out.split("\n");
-  assert.ok(out.includes("记忆索引已截断"));
+  assert.ok(out.includes("Memory index truncated"));
   // 200 content lines + blank + marker.
   assert.equal(lines.filter((l) => l.startsWith("- line ")).length, INDEX_MAX_LINES);
 });
@@ -82,8 +82,8 @@ test("applyAgingHints only ages context/ambient past threshold", () => {
   const hinted = applyAgingHints(content, entries);
   const ctxLine = hinted.split("\n").find((l) => l.includes("context/c.md"))!;
   const idLine = hinted.split("\n").find((l) => l.includes("identity/i.md"))!;
-  assert.ok(ctxLine.includes("天未更新，使用前建议验证"));
-  assert.ok(!idLine.includes("天未更新"));
+  assert.ok(ctxLine.includes("has not been updated"));
+  assert.ok(!idLine.includes("has not been updated"));
 });
 
 test("syncMemoryIndex writes MEMORY.md and readMemoryIndex reads it", async () => {

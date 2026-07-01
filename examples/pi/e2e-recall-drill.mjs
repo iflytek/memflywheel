@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { createPiHarnessPort, createMemFlywheelHarnessRuntime } from "@memflywheel/adapters";
+import { createPiHarnessPort, createMemFlywheelHarnessRuntime } from "@iflytekopensource/adapters";
 import { createOpenAIChatCompletionsModel, createOpenAIEmbeddingsModel } from "@memflywheel/model";
 import { createFileTools } from "@memflywheel/core";
 

@@ -1,4 +1,4 @@
-# @memflywheel/adapters
+# @iflytekopensource/adapters
 
 Host lifecycle mappings for MemFlywheel. Each adapter translates a host's lifecycle
 events — session start, prompt assembly, turn end, idle/scheduled — onto a
@@ -12,23 +12,25 @@ Zero runtime dependencies (Node stdlib + TypeScript only).
 | id         | host      | session start        | prompt build     | turn end            | idle/scheduled     | integration |
 | ---------- | --------- | -------------------- | ---------------- | ------------------- | ------------------ | ----------- |
 | `pi`       | Pi kernel | `session:ensure`     | `turn:build`     | `agent_end`         | `learning:idle`    | real        |
-| `hermes`   | Hermes    | `on_session_start`   | `pre_llm_call`   | `post_llm_call`     | `on_session_end`   | planned     |
-| `openclaw` | OpenClaw  | `before_agent_start` | `context:inject` | `agent_end`         | `idle:watch`       | planned     |
-| `opencode` | OpenCode  | `session.init`       | `message.build`  | `response.complete` | `timer.background` | planned     |
+| `hermes`   | Hermes    | `on_session_start`   | `pre_llm_call`   | `post_llm_call`     | `on_session_end`   | real        |
+| `openclaw` | OpenClaw  | `before_agent_start` | `context:inject` | `agent_end`         | `idle:watch`       | real        |
+| `opencode` | OpenCode  | `session.init`       | `message.build`  | `response.complete` | `timer.background` | real        |
 
-Only Pi is currently wired as the first-class integration. Hermes, OpenClaw, and
-OpenCode are kept as open harness targets; write-side loops require a native
-structured model port before they should be treated as complete integrations.
+`@iflytekopensource/adapters` owns the shared host adapter/runtime layer. Host-specific
+install shape still differs: Pi, OpenCode, and OpenClaw can load package
+entrypoints directly, while Hermes needs the `@iflytekopensource/hermes` package to
+install its Python `MemoryProvider`, config wiring, and skill mirror.
 
-- **`pi`** — real: `@memflywheel/adapters` is a Pi package. Its
+- **`pi`** — real: `@iflytekopensource/adapters` is a Pi package. Its
   `package.json` declares `pi.extensions`, and Pi installs it with
-  `pi install npm:@memflywheel/adapters`.
+  `pi install npm:@iflytekopensource/adapters`.
   `session:ensure` → `onSessionStart`; per-turn assembly → `onPromptBuild` (the
   scribe's `systemPrompt` merges into the per-session system prompt and
   `preludePrompt` is prepended to the prelude list); `agent_end` →
   `onTurnEnd` (fire-and-forget); learning-loop idle tick → `onIdle`.
-- **`hermes`** — planned: a Hermes plugin's `register(ctx)` should wrap
-  `ctx.llm.completeWithTools` as a canonical model. `on_session_start` → `onSessionStart`; `pre_llm_call` →
+- **`hermes`** — real: `@iflytekopensource/hermes` installs a Hermes
+  `MemoryProvider`, and its bridge imports `@iflytekopensource/adapters` for the
+  shared runtime. `on_session_start` → `onSessionStart`; `pre_llm_call` →
   `onPromptBuild` (inject prelude as `{"context": ...}`); `post_llm_call` →
   `onTurnEnd` (reads `user_message` + `assistant_response`, or an explicit
   `transcript`); `on_session_end` → `onIdle`.
@@ -54,12 +56,12 @@ interface HostAdapter {
 ### attach — pure event translation
 
 `attach` binds each host event to the matching scribe hook and returns a disposer
-that removes every listener. The `MemFlywheel` interface here is structurally
-identical to `@memflywheel/sdk`'s — any object with the lifecycle hooks satisfies
-it, including a real `createMemFlywheel(...)`.
+that removes every listener. The `MemFlywheel` interface is structural: any
+object with the lifecycle hooks satisfies it, including the runtime assembled by
+`createMemFlywheelHarnessRuntime(...)`.
 
 ```ts
-import { piAdapter } from "@memflywheel/adapters";
+import { piAdapter } from "@iflytekopensource/adapters";
 
 const dispose = piAdapter.attach(scribe, host);
 // ... later
@@ -114,7 +116,7 @@ for (const f of await piAdapter.doctor({ configPath })) {
 Build one from a lifecycle map + payload translators with `makeAdapter`:
 
 ```ts
-import { makeAdapter, normalizeMessages, readString } from "@memflywheel/adapters";
+import { makeAdapter, normalizeMessages, readString } from "@iflytekopensource/adapters";
 
 export const myAdapter = makeAdapter({
   id: "my-host",
@@ -148,7 +150,7 @@ ordinary file tools) on top of the single canonical model channel, assembles a r
 SDK scribe for explicit ops. One channel drives both subagents:
 
 ```ts
-import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@memflywheel/adapters";
+import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@iflytekopensource/adapters";
 
 // Host-owned model channel. The host owns auth, transport, policy, and lifecycle.
 const model = {
@@ -162,19 +164,26 @@ const dispose = hermesAdapter.attach(scribe, host); // session/prompt/turn-end/i
 Pi phase-1 native integration uses a host port:
 
 ```ts
-import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@memflywheel/adapters";
+import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@iflytekopensource/adapters";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 
-export default function memScribeExtension(pi) {
+export default function memFlywheelExtension(pi) {
   const port = createPiHarnessPort(pi, { completeSimple });
   const runtime = createMemFlywheelHarnessRuntime({ port });
   return runtime.dispose;
 }
 ```
 
-Skill recall and learning-loop wiring are opt-in. A host can either pass custom
-SDK hooks or ask `createMemFlywheelHarnessRuntime` to assemble the file-native learned-skill
-store from `@memflywheel/skills`:
+The packaged Pi extension enables learned skills by default. It stores
+MemFlywheel state under `$MEMFLYWHEEL_HOME` when set, otherwise
+`~/.pi/agent/memflywheel`, and mirrors finalized learned skills into Pi's native
+`~/.pi/agent/skills/memflywheel/` tree. Pi then lists them through its ordinary
+skills loader and renders them in the host-native `<available_skills>` prompt
+surface.
+
+Custom hosts can either pass custom lifecycle hooks or ask
+`createMemFlywheelHarnessRuntime` to assemble the bundled file-native
+learned-skill store:
 
 ```ts
 const { scribe } = createMemFlywheelHarnessRuntime({
@@ -219,7 +228,7 @@ const { scribe } = createMemFlywheelHarnessRuntime({ mode: "recall-only" });
 applies it and immediately re-reads from disk to verify the marker round-trips:
 
 ```ts
-import { connect, piAdapter } from "@memflywheel/adapters";
+import { connect, piAdapter } from "@iflytekopensource/adapters";
 
 const plan = await connect(piAdapter); // plan only, no writes
 const res = await connect(piAdapter, { apply: true }); // write + verify
@@ -227,5 +236,6 @@ if (!res.verify!.ok) console.error(res.verify!.problems);
 ```
 
 Runnable integration examples live under [`examples/`](https://github.com/iflytek/memflywheel/tree/main/examples).
-Pi is the current first-class path; the other examples document planned harness
-targets and boundary checks.
+Pi, Hermes, OpenCode, and OpenClaw are the public first-class host paths.
+Source-checkout debugging notes live in
+[`docs/integrations.md`](https://github.com/iflytek/memflywheel/blob/main/docs/integrations.md).

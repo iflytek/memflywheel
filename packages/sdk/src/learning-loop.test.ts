@@ -85,7 +85,7 @@ test("runLearningLoop: normal turn runs extraction, then skill evolution, then d
   assert.equal(result.dream?.ran, true);
 });
 
-test("runLearningLoop: turn-end skips skill evolution when extraction prerequisite rejects", async () => {
+test("runLearningLoop: turn-end still runs skill evolution when extraction writes nothing", async () => {
   const events: string[] = [];
   const result = await runLearningLoop({
     trigger: "turn-end",
@@ -99,10 +99,21 @@ test("runLearningLoop: turn-end skips skill evolution when extraction prerequisi
       events.push("extraction");
       return { result: "skipped" };
     },
-    skillEvolutionPrerequisite: () => ({ ok: false, reason: "extraction-not-completed" }),
     skillEvolution: async () => {
       events.push("skill_learning");
-      throw new Error("must not run");
+      return {
+        coordination: {
+          decision: "noop",
+          targetSkill: null,
+          mergedSkills: [],
+          why: "no new reusable method",
+          memoryAction: "noop",
+          memoryTopics: [],
+          supportingFiles: [],
+        },
+        changedSkills: [],
+        changedFiles: [],
+      };
     },
     dream: async () => {
       events.push("dream");
@@ -110,9 +121,8 @@ test("runLearningLoop: turn-end skips skill evolution when extraction prerequisi
     },
   });
 
-  assert.deepEqual(events, ["extraction"]);
-  assert.equal(result.skillEvolution.ran, false);
-  assert.equal(result.skillEvolution.reason, "extraction-not-completed");
+  assert.deepEqual(events, ["extraction", "skill_learning"]);
+  assert.equal(result.skillEvolution.ran, true);
   assert.equal(result.dream.ran, false);
 });
 

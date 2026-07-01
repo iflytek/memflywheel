@@ -11,8 +11,6 @@ export const LEARNED_SKILL_DIR_PREFIX = "memflywheel-learned-";
 export const MAX_SUPPORTING_FILE_BYTES = 1024 * 1024;
 export const SUPPORTING_DIRS = ["references", "templates", "scripts", "assets"] as const;
 
-const REQUIRED_FRONTMATTER_KEYS = ["name", "display_name", "description"] as const;
-const REQUIRED_SECTIONS = ["Use Cases", "Procedure", "Guardrails"] as const;
 const CHECKPOINT_MANIFEST = "checkpoint.json";
 const STORE_CHECKPOINT_MANIFEST = "store-checkpoint.json";
 
@@ -236,8 +234,7 @@ export function validateLearnedSkillPackage(
     throw new LearnedSkillValidationError("learned skill package must include text SKILL.md");
   }
 
-  const frontmatter = parseStrictSkillFrontmatter(skillFile.text, skillName);
-  assertRequiredSections(skillFile.text);
+  const frontmatter = parseSkillFrontmatter(skillFile.text, skillName);
 
   return {
     slug,
@@ -496,8 +493,9 @@ export function createLearnedSkillRecallProvider(input: {
   forbiddenPublicNames?: readonly string[];
 }): LearnedSkillRecallProvider {
   return async () => {
+    const skillsRoot = path.resolve(input.skillsRoot);
     const catalog = await getLearnedSkillsCatalog({
-      skillsRoot: input.skillsRoot,
+      skillsRoot,
       forbiddenPublicNames: input.forbiddenPublicNames,
     });
     return {
@@ -505,7 +503,7 @@ export function createLearnedSkillRecallProvider(input: {
         name: entry.name,
         displayName: entry.displayName,
         description: entry.description,
-        relativePath: entry.relativePath,
+        relativePath: path.join(skillsRoot, entry.relativePath),
         triggerHints: deriveTriggerHints(entry),
       })),
     };
@@ -515,9 +513,9 @@ export function createLearnedSkillRecallProvider(input: {
 export function buildLearnedSkillPrelude(packet: LearnedSkillRecallPacket): string {
   if (packet.entries.length === 0) return "";
 
-  const lines = ["<system-reminder>", "## 可用技能", ""];
+  const lines = ["<system-reminder>", "## Available Skills", ""];
   if (packet.entries.length === 0) {
-    lines.push("当前没有可用 learned skill。");
+    lines.push("No learned skills are currently available.");
   } else {
     for (const entry of packet.entries) {
       lines.push(`- ${entry.name}: ${entry.displayName} — ${entry.description}`);
@@ -530,7 +528,7 @@ export function buildLearnedSkillPrelude(packet: LearnedSkillRecallPacket): stri
 
   lines.push(
     "",
-    "仅当用户请求与某个技能明确相关时，才使用宿主提供的技能加载/执行能力；不要把技能步骤复制进普通记忆。",
+    "Use the host-provided skill loading/execution capability only when the user request clearly matches a skill. Do not copy skill procedures into ordinary memory.",
     "</system-reminder>",
   );
   return lines.join("\n");
@@ -585,6 +583,27 @@ function createLearnedSkillFileTools(input: {
   return createCoreFileTools().map((tool) => bindStageFileTool(tool, input.checkpoint));
 }
 
+function withDefaultSkillType(content: string): string {
+  const lines = content.split("\n");
+  if (lines[0] !== "---") return content;
+  const endIndex = lines.indexOf("---", 1);
+  if (endIndex === -1) return content;
+  if (lines.slice(1, endIndex).some((line) => /^type\s*:/u.test(line))) return content;
+  return [...lines.slice(0, endIndex), "type: skill", ...lines.slice(endIndex)].join("\n");
+}
+
+async function addDefaultSkillType(
+  stageRoot: string,
+  skillNames: readonly string[],
+): Promise<void> {
+  for (const skillName of skillNames) {
+    const skillPath = path.join(stageRoot, skillName, "SKILL.md");
+    const content = await readFile(skillPath, "utf8");
+    const next = withDefaultSkillType(content);
+    if (next !== content) await writeFile(skillPath, next, "utf8");
+  }
+}
+
 /** A token that begins with "/" — i.e. an absolute filesystem path. */
 function commandUsesAbsolutePath(command: string): boolean {
   return /(?:^|[\s"'`=(<>|;&])\/[^\s/]/.test(command);
@@ -636,8 +655,8 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
     );
   }
 
-  const stagedFiles = await listFileFingerprints(manifest.stageRoot);
-  const stagedDiff = diffFingerprints(manifest.beforeFiles, stagedFiles);
+  let stagedFiles = await listFileFingerprints(manifest.stageRoot);
+  let stagedDiff = diffFingerprints(manifest.beforeFiles, stagedFiles);
   const allowedDeletedSkills = allowedMergedSkills(input.learningSummary);
   const deletedSkillNames = [
     ...new Set(stagedDiff.deletedPaths.map((relativePath) => relativePath.split("/")[0] ?? "")),
@@ -669,8 +688,20 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
     }
   }
 
-  const changedFiles = [...stagedDiff.changedPaths, ...stagedDiff.deletedPaths].sort();
-  const changedSkillNames = [
+  let changedFiles = [...stagedDiff.changedPaths, ...stagedDiff.deletedPaths].sort();
+  let changedSkillNames = [
+    ...new Set(changedFiles.map((relativePath) => relativePath.split("/")[0] ?? "")),
+  ]
+    .filter(Boolean)
+    .sort();
+  await addDefaultSkillType(
+    manifest.stageRoot,
+    changedSkillNames.filter((skillName) => !deletedSkillNames.includes(skillName)),
+  );
+  stagedFiles = await listFileFingerprints(manifest.stageRoot);
+  stagedDiff = diffFingerprints(manifest.beforeFiles, stagedFiles);
+  changedFiles = [...stagedDiff.changedPaths, ...stagedDiff.deletedPaths].sort();
+  changedSkillNames = [
     ...new Set(changedFiles.map((relativePath) => relativePath.split("/")[0] ?? "")),
   ]
     .filter(Boolean)
@@ -1037,131 +1068,46 @@ function assertNoForbiddenPublicNames(
   }
 }
 
-function parseStrictSkillFrontmatter(
-  content: string,
-  expectedName: string,
-): LearnedSkillFrontmatter {
+function titleizeSlug(skillName: string): string {
+  return skillName
+    .replace(new RegExp(`^${LEARNED_SKILL_DIR_PREFIX}`), "")
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function parseSkillFrontmatter(content: string, expectedName: string): LearnedSkillFrontmatter {
+  const fallbackDisplayName = titleizeSlug(expectedName);
+  const fallback = {
+    name: expectedName,
+    display_name: fallbackDisplayName || expectedName,
+    description: "Learned skill.",
+  };
   const lines = content.split("\n");
   if (lines[0] !== "---") {
-    throw new LearnedSkillValidationError("SKILL.md must start with strict frontmatter");
+    return fallback;
   }
 
   const endIndex = lines.indexOf("---", 1);
   if (endIndex === -1) {
-    throw new LearnedSkillValidationError("SKILL.md strict frontmatter must be closed");
+    return fallback;
   }
 
-  const meta: Partial<Record<(typeof REQUIRED_FRONTMATTER_KEYS)[number], string>> = {};
-  const keys: string[] = [];
+  const meta = new Map<string, string>();
   for (const line of lines.slice(1, endIndex)) {
     const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-    if (!match) {
-      throw new LearnedSkillValidationError(
-        "SKILL.md strict frontmatter uses key: value lines only",
-      );
-    }
-    const key = match[1] as (typeof REQUIRED_FRONTMATTER_KEYS)[number];
-    const value = match[2] ?? "";
-    if (!REQUIRED_FRONTMATTER_KEYS.includes(key)) {
-      throw new LearnedSkillValidationError(
-        "SKILL.md strict frontmatter keys must be name, display_name, description",
-      );
-    }
-    if (Object.prototype.hasOwnProperty.call(meta, key)) {
-      throw new LearnedSkillValidationError(
-        `SKILL.md strict frontmatter has duplicate key: ${key}`,
-      );
-    }
-    if (value.trim().length === 0) {
-      throw new LearnedSkillValidationError(
-        `SKILL.md strict frontmatter value must be non-empty: ${key}`,
-      );
-    }
-    meta[key] = value.trim();
-    keys.push(key);
-  }
-
-  if (keys.join(",") !== REQUIRED_FRONTMATTER_KEYS.join(",")) {
-    throw new LearnedSkillValidationError(
-      "SKILL.md strict frontmatter keys must be name, display_name, description",
-    );
-  }
-  if (meta.name !== expectedName) {
-    throw new LearnedSkillValidationError(`SKILL.md name must equal ${expectedName}`);
+    if (!match) continue;
+    const key = match[1] ?? "";
+    const value = (match[2] ?? "").trim();
+    if (value.length > 0 && !meta.has(key)) meta.set(key, value);
   }
 
   return {
-    name: meta.name,
-    display_name: meta.display_name as string,
-    description: meta.description as string,
+    name: meta.get("name") || fallback.name,
+    display_name: meta.get("display_name") || meta.get("name") || fallback.display_name,
+    description: meta.get("description") || fallback.description,
   };
-}
-
-function assertRequiredSections(content: string): void {
-  const body = stripStrictFrontmatter(content);
-  const sections = collectSections(body);
-  let lastIndex = -1;
-  for (const title of REQUIRED_SECTIONS) {
-    const index = sections.findIndex((section) => section.title === title);
-    if (index === -1) {
-      throw new LearnedSkillValidationError(`SKILL.md must include ## ${title}`);
-    }
-    if (index <= lastIndex) {
-      throw new LearnedSkillValidationError(
-        "SKILL.md required sections must be ordered as Use Cases, Procedure, Guardrails",
-      );
-    }
-    if (sections[index]?.content.trim().length === 0) {
-      throw new LearnedSkillValidationError(`SKILL.md section must be non-empty: ${title}`);
-    }
-    lastIndex = index;
-  }
-
-  const procedure = sections.find((section) => section.title === "Procedure");
-  if (!procedure) {
-    throw new LearnedSkillValidationError("SKILL.md must include ## Procedure");
-  }
-  assertNumberedProcedure(procedure.content);
-}
-
-function stripStrictFrontmatter(content: string): string {
-  const lines = content.split("\n");
-  const endIndex = lines.indexOf("---", 1);
-  return lines.slice(endIndex + 1).join("\n");
-}
-
-function collectSections(body: string): Array<{ title: string; content: string }> {
-  const matches = [...body.matchAll(/^##\s+(.+?)\s*$/gm)];
-  return matches.map((match, index) => {
-    const start = (match.index ?? 0) + match[0].length;
-    const end =
-      index + 1 < matches.length ? (matches[index + 1]?.index ?? body.length) : body.length;
-    return { title: match[1] ?? "", content: body.slice(start, end) };
-  });
-}
-
-function assertNumberedProcedure(content: string): void {
-  const lines = content
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  if (lines.length === 0) {
-    throw new LearnedSkillValidationError("Procedure must use numbered steps");
-  }
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] as string;
-    const match = line.match(/^(\d+)\.\s+\S/);
-    if (!match) {
-      throw new LearnedSkillValidationError("Procedure must use numbered steps");
-    }
-    const step = Number(match[1]);
-    if (step !== index + 1) {
-      throw new LearnedSkillValidationError(
-        "Procedure numbered steps must start at 1 and be contiguous",
-      );
-    }
-  }
 }
 
 async function readCheckpointManifest(manifestPath: string): Promise<CheckpointManifest> {

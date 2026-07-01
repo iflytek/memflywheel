@@ -1,20 +1,10 @@
 /**
- * OpenClaw adapter (best-effort — still runnable).
- *
- * Phase 1 does not yet bind OpenClaw's llm-runtime into HostHarnessPort.
- * Consequences:
- *
- *  - Recall + injection are first-class (via hooks + registerMemoryCapability).
- *  - Native extraction/dream/skill loops are disabled until Phase 2 maps
- *    OpenClaw's llm-runtime into a canonical model port.
+ * OpenClaw adapter.
  *
  * Lifecycle:
- *  - `before_agent_start` → onSessionStart
- *  - `before_agent_start` prompt build (returns prependContext) → onPromptBuild
- *  - `agent_end`          → onTurnEnd (fire-and-forget extraction subagent)
- *  - idle watcher          → onIdle
- *
- * See examples/openclaw for the `register(api)` plugin glue.
+ *  - `before_prompt_build` → onPromptBuild
+ *  - `agent_end`           → onTurnEnd
+ *  - `session_end`         → session flush in the native plugin port
  */
 
 import { makeAdapter, normalizeMessages, readString } from "./make-adapter.js";
@@ -23,23 +13,23 @@ import type { HostAdapter, LifecycleMap } from "./adapter.js";
 const lifecycle: LifecycleMap = {
   onSessionStart: {
     hook: "onSessionStart",
-    hostEvent: "before_agent_start",
-    note: "OpenClaw before_agent_start: register memory capability + ensure dir.",
+    hostEvent: "session_start",
+    note: "OpenClaw session_start records the current session.",
   },
   onPromptBuild: {
     hook: "onPromptBuild",
-    hostEvent: "context:inject",
-    note: "Context injection: return prependContext = scribe.preludePrompt.",
+    hostEvent: "before_prompt_build",
+    note: "before_prompt_build injects memory and learned-skill context.",
   },
   onTurnEnd: {
     hook: "onTurnEnd",
     hostEvent: "agent_end",
-    note: "agent_end: turn transcript hook; native extraction requires a canonical model port.",
+    note: "agent_end forwards the turn transcript to MemFlywheel.",
   },
   onIdle: {
     hook: "onIdle",
-    hostEvent: "idle:watch",
-    note: "Idle watcher triggers gate-checked dream.",
+    hostEvent: "session_end",
+    note: "The native plugin port flushes session-end state.",
   },
 };
 
@@ -49,7 +39,7 @@ export const openclawAdapter: HostAdapter = makeAdapter({
   lifecycle,
   defaultConfigRelPath: ".openclaw/openclaw.json",
   integrationNote:
-    "Phase-1 recall path: OpenClaw hooks can inject memory, but native extraction/skill loops wait for an OpenClaw llm-runtime HostHarnessPort.",
+    "Native OpenClaw hooks inject recall and read transcripts; MemFlywheel extraction/skill loops use the configured OpenAI-compatible model endpoint.",
   translators: {
     sessionId: (payload) => readString(payload, "agentId") || readString(payload, "sessionId"),
     promptQuery: (payload) =>

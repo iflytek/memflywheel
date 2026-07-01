@@ -29,7 +29,7 @@ drive inference itself. So:
 ## Install
 
 ```bash
-node -e "import('@memflywheel/adapters').then(m => m.connect(m.openclawAdapter, { apply: true }))"
+node -e "import('@iflytekopensource/adapters').then(m => m.connect(m.openclawAdapter, { apply: true }))"
 ```
 
 ## Run the smoke test

@@ -1,5 +1,5 @@
 {
-  "name": "@memflywheel/adapters",
+  "name": "@iflytekopensource/adapters",
   "version": "0.1.0",
   "description": "Host lifecycle adapters for wiring MemFlywheel into agent runtimes.",
   "license": "Apache-2.0",
@@ -10,18 +10,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./server": {
+      "import": "./opencode-plugin/index.js"
     }
   },
   "files": [
     "NOTICE",
     "THIRD_PARTY_LICENSES",
     "pi-extension/**/*.mjs",
-    "dist/**/*.js",
-    "dist/**/*.d.ts",
-    "!dist/**/*.test.js",
-    "!dist/**/*.test.d.ts",
-    "!dist/test-helpers.js",
-    "!dist/test-helpers.d.ts"
+    "!pi-extension/**/*.test.mjs",
+    "opencode-plugin/**/*.js",
+    "opencode-plugin/**/*.mjs",
+    "openclaw-extension/**/*.mjs",
+    "openclaw.plugin.json",
+    "dist/index.js",
+    "dist/index.d.ts"
   ],
   "repository": {
     "type": "git",
@@ -45,6 +49,14 @@
       "./pi-extension/index.mjs"
     ]
   },
+  "openclaw": {
+    "extensions": [
+      "./openclaw-extension/index.mjs"
+    ],
+    "compat": {
+      "pluginApi": "2026.6.10"
+    }
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -52,25 +64,28 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b",
-    "test": "tsc -b && node --test \"dist/**/*.test.js\"",
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b && tsup src/index.ts --format esm --target node22 --dts --dts-resolve --out-dir dist --no-splitting --clean false --tsconfig tsconfig.bundle.json --external @earendil-works/pi-ai --external openclaw --external 'openclaw/*'",
+    "test": "pnpm run build && node --test \"dist/**/*.test.js\" \"pi-extension/**/*.test.mjs\"",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
-  "dependencies": {
+  "devDependencies": {
     "@memflywheel/model": "workspace:*",
     "@memflywheel/sdk": "workspace:*",
-    "@memflywheel/skills": "workspace:*"
+    "@memflywheel/skills": "workspace:*",
+    "@types/node": "^22.20.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.5.4"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*"
+    "@earendil-works/pi-ai": "*",
+    "openclaw": "*"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-ai": {
       "optional": true
+    },
+    "openclaw": {
+      "optional": true
     }
-  },
-  "devDependencies": {
-    "@types/node": "^22.20.0",
-    "typescript": "^5.5.4"
   }
 }

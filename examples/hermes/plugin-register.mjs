@@ -10,7 +10,7 @@
  * `ctx.llm.completeWithTools`, over the single canonical model channel.
  */
 
-import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@memflywheel/adapters";
+import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@iflytekopensource/adapters";
 
 /** @param {any} ctx - the Hermes PluginContext */
 export function register(ctx) {

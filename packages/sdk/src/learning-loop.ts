@@ -43,8 +43,7 @@ export type SkillLearningGateReason =
   | "skill-learning-disabled"
   | "min-done-turns"
   | "cooldown-turns"
-  | "min-tool-calls"
-  | "extraction-not-completed";
+  | "min-tool-calls";
 
 export interface SkillLearningGateResult {
   ok: boolean;
@@ -82,9 +81,6 @@ export interface RunLearningLoopOptions extends SkillLearningGateInput {
   extraction?: () => Promise<unknown>;
   skillEvolution?: () => Promise<SkillEvolutionLoopResult>;
   dream?: (coordination: DreamCoordinationFromSkill) => Promise<unknown>;
-  skillEvolutionPrerequisite?: (input: {
-    extraction: LearningLoopStepResult;
-  }) => SkillLearningGateResult;
 }
 
 export interface LearningLoopStepResult<T = unknown> {
@@ -113,12 +109,7 @@ async function maybeRunExtraction(
 
 async function maybeRunSkillEvolution(
   options: RunLearningLoopOptions,
-  extraction?: LearningLoopStepResult,
 ): Promise<LearningLoopStepResult<SkillEvolutionLoopResult>> {
-  if (extraction && options.skillEvolutionPrerequisite) {
-    const prerequisite = options.skillEvolutionPrerequisite({ extraction });
-    if (!prerequisite.ok) return skipped(prerequisite.reason);
-  }
   const gate = shouldRunSkillEvolution(options);
   if (!gate.ok) return skipped(gate.reason);
   if (!options.skillEvolution) return skipped("no-skill-evolution-runner");
@@ -167,7 +158,7 @@ export async function runLearningLoop(
   }
 
   const extraction = await maybeRunExtraction(options);
-  const skillEvolution = await maybeRunSkillEvolution(options, extraction);
+  const skillEvolution = await maybeRunSkillEvolution(options);
   const dream = await maybeRunDream(options, skillEvolution);
   return { extraction, skillEvolution, dream };
 }
