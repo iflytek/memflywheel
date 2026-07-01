@@ -62,7 +62,6 @@ export interface ValidateLearnedSkillPackageInput {
 
 export interface LearnedSkillFrontmatter {
   name: string;
-  display_name: string;
   description: string;
 }
 
@@ -435,7 +434,7 @@ export async function getLearnedSkillsCatalog(input: {
       : undefined;
     learnedSkills.push({
       name: validated.skillName,
-      displayName: validated.frontmatter.display_name,
+      displayName: titleizeSlug(validated.skillName),
       description: validated.frontmatter.description,
       relativePath: `${validated.skillDir}/SKILL.md`,
       supportingFiles: supportingFilesFromValidated(validated),
@@ -583,27 +582,6 @@ function createLearnedSkillFileTools(input: {
   return createCoreFileTools().map((tool) => bindStageFileTool(tool, input.checkpoint));
 }
 
-function withDefaultSkillType(content: string): string {
-  const lines = content.split("\n");
-  if (lines[0] !== "---") return content;
-  const endIndex = lines.indexOf("---", 1);
-  if (endIndex === -1) return content;
-  if (lines.slice(1, endIndex).some((line) => /^type\s*:/u.test(line))) return content;
-  return [...lines.slice(0, endIndex), "type: skill", ...lines.slice(endIndex)].join("\n");
-}
-
-async function addDefaultSkillType(
-  stageRoot: string,
-  skillNames: readonly string[],
-): Promise<void> {
-  for (const skillName of skillNames) {
-    const skillPath = path.join(stageRoot, skillName, "SKILL.md");
-    const content = await readFile(skillPath, "utf8");
-    const next = withDefaultSkillType(content);
-    if (next !== content) await writeFile(skillPath, next, "utf8");
-  }
-}
-
 /** A token that begins with "/" — i.e. an absolute filesystem path. */
 function commandUsesAbsolutePath(command: string): boolean {
   return /(?:^|[\s"'`=(<>|;&])\/[^\s/]/.test(command);
@@ -690,18 +668,6 @@ async function finalizeLearnedSkillStoreCheckpoint(input: {
 
   let changedFiles = [...stagedDiff.changedPaths, ...stagedDiff.deletedPaths].sort();
   let changedSkillNames = [
-    ...new Set(changedFiles.map((relativePath) => relativePath.split("/")[0] ?? "")),
-  ]
-    .filter(Boolean)
-    .sort();
-  await addDefaultSkillType(
-    manifest.stageRoot,
-    changedSkillNames.filter((skillName) => !deletedSkillNames.includes(skillName)),
-  );
-  stagedFiles = await listFileFingerprints(manifest.stageRoot);
-  stagedDiff = diffFingerprints(manifest.beforeFiles, stagedFiles);
-  changedFiles = [...stagedDiff.changedPaths, ...stagedDiff.deletedPaths].sort();
-  changedSkillNames = [
     ...new Set(changedFiles.map((relativePath) => relativePath.split("/")[0] ?? "")),
   ]
     .filter(Boolean)
@@ -1078,10 +1044,8 @@ function titleizeSlug(skillName: string): string {
 }
 
 function parseSkillFrontmatter(content: string, expectedName: string): LearnedSkillFrontmatter {
-  const fallbackDisplayName = titleizeSlug(expectedName);
   const fallback = {
     name: expectedName,
-    display_name: fallbackDisplayName || expectedName,
     description: "Learned skill.",
   };
   const lines = content.split("\n");
@@ -1105,7 +1069,6 @@ function parseSkillFrontmatter(content: string, expectedName: string): LearnedSk
 
   return {
     name: meta.get("name") || fallback.name,
-    display_name: meta.get("display_name") || meta.get("name") || fallback.display_name,
     description: meta.get("description") || fallback.description,
   };
 }

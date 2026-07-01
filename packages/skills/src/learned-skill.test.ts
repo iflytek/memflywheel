@@ -21,43 +21,51 @@ import {
 
 const validSkill = `---
 name: memflywheel-learned-editor-workflow
-display_name: Editor Workflow
-description: Captures durable editor workflow habits.
+description: Use when repeated editor workflow habits appear and need a reusable trigger-based skill instead of another memory note.
 ---
 
-## Use Cases
+## Overview
 
-- Preserve repeatable editor workflow choices.
+Editor workflow skills preserve reusable editing judgment, not one-off notes.
 
-## Procedure
+## When to Use
+
+- Use when the user repeats the same editor workflow or shortcut sequence.
+- Do not use for a one-time editing preference.
+
+## Steps
 
 1. Inspect the current workflow evidence.
 2. Record the durable rule and its trigger.
 
-## Guardrails
+## Common Mistakes
 
-- Keep host-specific details out of public skill text.
+- Writing the whole successful transcript instead of the reusable trigger.
 `;
 
-function skillContent(skillName: string, displayName: string, description: string): string {
+function skillContent(skillName: string, description: string): string {
   return `---
 name: ${skillName}
-display_name: ${displayName}
 description: ${description}
 ---
 
-## Use Cases
+## Overview
 
-- Preserve repeatable editor workflow choices.
+Editor workflow skills preserve reusable editing judgment, not one-off notes.
 
-## Procedure
+## When to Use
+
+- Use when the user repeats the same editor workflow or shortcut sequence.
+- Do not use for a one-time editing preference.
+
+## Steps
 
 1. Inspect the current workflow evidence.
 2. Record the durable rule and its trigger.
 
-## Guardrails
+## Common Mistakes
 
-- Keep host-specific details out of public skill text.
+- Writing the whole successful transcript instead of the reusable trigger.
 `;
 }
 
@@ -101,8 +109,8 @@ test("validateLearnedSkillPackage accepts the MemFlywheel learned skill layout",
   ]);
 
   const skillWithType = validSkill.replace(
-    "description: Captures durable editor workflow habits.\n",
-    "type: skill\ndescription: Captures durable editor workflow habits.\n",
+    "description: Use when repeated editor workflow habits appear and need a reusable trigger-based skill instead of another memory note.\n",
+    "type: skill\ndescription: Use when repeated editor workflow habits appear and need a reusable trigger-based skill instead of another memory note.\n",
   );
   const withType = validateLearnedSkillPackage({
     slug: "editor-workflow",
@@ -113,8 +121,8 @@ test("validateLearnedSkillPackage accepts the MemFlywheel learned skill layout",
 
 test("validateLearnedSkillPackage accepts loose skill markdown", () => {
   const extraFrontmatterKey = validSkill.replace(
-    "description: Captures durable editor workflow habits.\n",
-    "description: Captures durable editor workflow habits.\nversion: 1\n",
+    "description: Use when repeated editor workflow habits appear and need a reusable trigger-based skill instead of another memory note.\n",
+    "description: Use when repeated editor workflow habits appear and need a reusable trigger-based skill instead of another memory note.\nversion: 1\n",
   );
   assert.equal(
     validateLearnedSkillPackage({
@@ -125,15 +133,15 @@ test("validateLearnedSkillPackage accepts loose skill markdown", () => {
   );
 
   const invalidType = validSkill.replace(
-    "description: Captures durable editor workflow habits.\n",
-    "type: workflow\ndescription: Captures durable editor workflow habits.\n",
+    "description: Use when repeated editor workflow habits appear and need a reusable trigger-based skill instead of another memory note.\n",
+    "type: workflow\ndescription: Use when repeated editor workflow habits appear and need a reusable trigger-based skill instead of another memory note.\n",
   );
   assert.equal(
     validateLearnedSkillPackage({
       slug: "editor-workflow",
       files: { ...validFiles(), "SKILL.md": invalidType },
     }).frontmatter.description,
-    "Captures durable editor workflow habits.",
+    "Use when repeated editor workflow habits appear and need a reusable trigger-based skill instead of another memory note.",
   );
 
   const unnumberedProcedure = validSkill.replace(
@@ -156,7 +164,6 @@ test("validateLearnedSkillPackage accepts loose skill markdown", () => {
     }).frontmatter,
     {
       name: `${LEARNED_SKILL_DIR_PREFIX}editor-workflow`,
-      display_name: "Editor Workflow",
       description: "Learned skill.",
     },
   );
@@ -197,7 +204,7 @@ test("validateLearnedSkillPackage rejects invalid supporting files and configure
       error.message.includes("exceeds 1048576 bytes"),
   );
 
-  const leakedName = validSkill.replace("durable editor workflow", "LegacyHost editor workflow");
+  const leakedName = validSkill.replace("editor workflow habits", "LegacyHost workflow habits");
   assert.throws(
     () =>
       validateLearnedSkillPackage({
@@ -334,7 +341,7 @@ test("rollbackLearnedSkillCheckpoint restores a full target snapshot", async () 
     await writeRaw(
       skillsRoot,
       "memflywheel-learned-editor-workflow/SKILL.md",
-      validSkill.replace("durable editor", "original editor"),
+      validSkill.replace("reusable editing judgment", "original editor judgment"),
     );
     await writeRaw(skillsRoot, "memflywheel-learned-editor-workflow/assets/kept.txt", "keep me\n");
 
@@ -352,7 +359,7 @@ test("rollbackLearnedSkillCheckpoint restores a full target snapshot", async () 
       path.join(skillsRoot, "memflywheel-learned-editor-workflow", "SKILL.md"),
       "utf8",
     );
-    assert.match(restoredSkill, /original editor/);
+    assert.match(restoredSkill, /original editor judgment/);
     assert.equal(
       await readFile(
         path.join(skillsRoot, "memflywheel-learned-editor-workflow", "assets", "kept.txt"),
@@ -398,12 +405,12 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
       path.join(skillsRoot, "memflywheel-learned-editor-workflow", "SKILL.md"),
       "utf8",
     );
-    assert.match(publishedSkill, /^type: skill$/m);
+    assert.doesNotMatch(publishedSkill, /^type: skill$/m);
 
     const catalog = await store.getLearnedSkillsCatalog({ includeContent: true });
     assert.equal(catalog.learnedSkills.length, 1);
     assert.equal(catalog.learnedSkills[0]?.name, "memflywheel-learned-editor-workflow");
-    assert.match(catalog.learnedSkills[0]?.skillContent ?? "", /## Procedure/);
+    assert.match(catalog.learnedSkills[0]?.skillContent ?? "", /## When to Use/);
 
     await store.rollbackSkillCheckpoint(checkpoint);
     const emptyCatalog = await store.getLearnedSkillsCatalog();
@@ -423,12 +430,12 @@ test("createLearnedSkillStore can merge by updating one skill and archiving a du
     await writeRaw(
       skillsRoot,
       `${target}/SKILL.md`,
-      skillContent(target, "Editor Workflow", "Captures durable editor workflow habits."),
+      skillContent(target, "Use when repeated editor workflow habits appear."),
     );
     await writeRaw(
       skillsRoot,
       `${duplicate}/SKILL.md`,
-      skillContent(duplicate, "Editor Shortcuts", "Captures duplicate editor workflow shortcuts."),
+      skillContent(duplicate, "Use when duplicate editor workflow shortcuts appear."),
     );
 
     const store = createLearnedSkillStore({ skillsRoot, checkpointRoot });
@@ -437,11 +444,7 @@ test("createLearnedSkillStore can merge by updating one skill and archiving a du
 
     await tools.get("write")!.handler({
       filePath: `${target}/SKILL.md`,
-      content: skillContent(
-        target,
-        "Editor Workflow",
-        "Merged editor workflow and shortcut procedure.",
-      ),
+      content: skillContent(target, "Use when editor workflow and shortcut procedures overlap."),
     });
     await tools.get("bash")!.handler({
       command: `rm -rf ${duplicate}`,
@@ -466,7 +469,10 @@ test("createLearnedSkillStore can merge by updating one skill and archiving a du
       catalog.learnedSkills.map((skill) => skill.name),
       [target],
     );
-    assert.match(catalog.learnedSkills[0]?.skillContent ?? "", /Merged editor workflow/);
+    assert.match(
+      catalog.learnedSkills[0]?.skillContent ?? "",
+      /Use when editor workflow and shortcut procedures overlap/,
+    );
 
     await store.rollbackSkillCheckpoint(checkpoint);
     const restored = await store.getLearnedSkillsCatalog();
@@ -495,10 +501,7 @@ test("createLearnedSkillRecallProvider exposes learned skill routes for prompt b
 
     assert.equal(packet.entries.length, 1);
     assert.equal(packet.entries[0]?.name, "memflywheel-learned-editor-workflow");
-    assert.deepEqual(packet.entries[0]?.triggerHints, [
-      "editor workflow",
-      "durable editor workflow",
-    ]);
+    assert.deepEqual(packet.entries[0]?.triggerHints, ["editor workflow"]);
     assert.equal(
       packet.entries[0]?.relativePath,
       path.join(skillsRoot, "memflywheel-learned-editor-workflow", "SKILL.md"),

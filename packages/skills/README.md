@@ -17,14 +17,15 @@ A learned skill is a directory named `memflywheel-learned-<slug>` that contains:
 
 ```yaml
 ---
-name: memflywheel-learned-example
-display_name: Example
-description: Captures a durable workflow.
+name: memflywheel-learned-review-release
+description: Use when release review repeats and the agent must avoid skipping package, CI, or hygiene checks.
 ---
 ```
 
-The body must include `## Use Cases`, `## Procedure`, and `## Guardrails`.
-`## Procedure` must contain contiguous numbered steps starting at `1.`.
+The description is the discovery surface: write when to use the skill, not the
+procedure. Body shape follows the content: use `## When to Use` for triggers,
+tables for reference, numbered lists for linear steps, small ASCII flows for
+non-obvious decisions, and scripts for mechanical checks.
 
 ## API
 
@@ -68,7 +69,7 @@ Prompt recall is routing-only:
 ```text
 createLearnedSkillRecallProvider()
   -> validates learned skill directories
-  -> returns name / display name / description / path / trigger hints
+  -> returns name / derived display name / description / path / trigger hints
   -> does not execute skills or copy procedure steps into memory
 ```
 
