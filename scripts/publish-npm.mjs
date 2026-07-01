@@ -43,7 +43,15 @@ function run(cmd, args) {
 
 function publishToNpm(publishArgs) {
   for (const pkg of TARGET_PACKAGES) {
-    run("pnpm", ["--filter", pkg, "publish", "--no-git-checks", "--access", "public", ...publishArgs]);
+    run("pnpm", [
+      "--filter",
+      pkg,
+      "publish",
+      "--no-git-checks",
+      "--access",
+      "public",
+      ...publishArgs,
+    ]);
   }
 }
 
@@ -85,15 +93,19 @@ function publishToGitHubPackages(publishArgs) {
             const rewritten = rewriteScope(orig);
             if (orig !== rewritten) writeFileSync(fp, rewritten);
           } catch (err) {
-            if (err.code !== "ENOENT") console.warn(`Warning: failed to rewrite ${rel}: ${err.message}`);
+            if (err.code !== "ENOENT")
+              console.warn(`Warning: failed to rewrite ${rel}: ${err.message}`);
           }
         }
       }
 
       run("npm", [
-        "publish", "./package",
-        "--registry", GHP_REGISTRY,
-        "--access", "public",
+        "publish",
+        "./package",
+        "--registry",
+        GHP_REGISTRY,
+        "--access",
+        "public",
         ...publishArgs,
       ]);
     }
@@ -107,4 +119,4 @@ if (registry === GHP_REGISTRY) {
   publishToGitHubPackages(publishArgs);
 } else {
   publishToNpm(publishArgs);
-scripts/publish-npm.mjs}
+}
