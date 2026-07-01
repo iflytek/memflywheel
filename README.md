@@ -99,6 +99,7 @@ OpenClaw:
 
 ```sh
 openclaw plugins install npm:@iflytekopensource/adapters
+openclaw config set plugins.slots.memory memflywheel
 openclaw config set plugins.entries.memflywheel.hooks.allowConversationAccess true
 openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
 openclaw gateway run --force
