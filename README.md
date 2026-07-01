@@ -125,8 +125,7 @@ only the host package they need.
 
 MemFlywheel uses LoCoMo-oriented regression checks to keep long-term-memory
 behavior measurable while the recall, extraction, and learned-skill loops
-evolve. See [`docs/extraction-regression.md`](docs/extraction-regression.md)
-and [`docs/dream-regression.md`](docs/dream-regression.md).
+evolve. See [`docs/evaluation.md`](docs/evaluation.md).
 
 ## Documentation
 
@@ -136,6 +135,7 @@ and [`docs/dream-regression.md`](docs/dream-regression.md).
 | [`docs/integrations.md`](docs/integrations.md)                     | Pi, Hermes, OpenCode, and OpenClaw install, SDK hooks, adapter boundary   |
 | [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                               |
 | [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                        |
+| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release notes for public npm package versions                             |
 | [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                         |
 
 ## Open-Source Boundary

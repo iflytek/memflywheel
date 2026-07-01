@@ -236,5 +236,6 @@ if (!res.verify!.ok) console.error(res.verify!.problems);
 ```
 
 Runnable integration examples live under [`examples/`](https://github.com/iflytek/memflywheel/tree/main/examples).
-Pi is the current first-class path; the other examples document planned harness
-targets and boundary checks.
+Pi, Hermes, OpenCode, and OpenClaw are the public first-class host paths.
+Source-checkout debugging notes live in
+[`docs/integrations.md`](https://github.com/iflytek/memflywheel/blob/main/docs/integrations.md).

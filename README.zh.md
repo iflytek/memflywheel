@@ -117,8 +117,7 @@ turn-end 提取、dream 整理和 learned skills。
 ## 评测
 
 MemFlywheel 使用面向 LoCoMo 的回归检查，让长期记忆能力在召回、提取和 learned skill 闭环演进时可衡量。详见
-[`docs/extraction-regression.md`](docs/extraction-regression.md) 和
-[`docs/dream-regression.md`](docs/dream-regression.md)。
+[`docs/evaluation.md`](docs/evaluation.md)。
 
 ## 文档
 
@@ -128,6 +127,7 @@ MemFlywheel 使用面向 LoCoMo 的回归检查，让长期记忆能力在召回
 | [`docs/integrations.md`](docs/integrations.md)                     | Pi、Hermes、OpenCode 和 OpenClaw 安装、SDK hooks、adapter 边界 |
 | [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo 定位和本地回归检查                                      |
 | [`docs/release.md`](docs/release.md)                               | 版本规范、npm 发布渠道、发布检查清单                           |
+| [`CHANGELOG.md`](CHANGELOG.md)                                     | 公开 npm 包版本变更记录                                        |
 | [`NOTICE`](NOTICE)、[`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | 项目版权告知和三方 license 披露                                |
 
 ## 开源边界
