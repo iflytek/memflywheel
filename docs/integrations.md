@@ -27,12 +27,12 @@ skill loops should fail fast instead of parsing free-form model text.
 
 ## Host Status
 
-| Host     | Status                       | Notes                                                                                        |
-| -------- | ---------------------------- | -------------------------------------------------------------------------------------------- |
-| Pi       | Implemented first-class path | Adapter, HarnessPort, lifecycle mapping, and canonical model mapping are implemented         |
-| Hermes   | Implemented plugin path      | MemoryProvider plugin uses Hermes' host-owned model/auth channel for write-side loops        |
-| OpenClaw | Planned/open target          | Memory injection is the likely first step; full write-side loop needs an OpenClaw model port |
-| OpenCode | Planned/open target          | Suitable for hook-native recall first; full loop needs host-owned tool-call model port       |
+| Host     | Status                       | Notes                                                                                    |
+| -------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
+| Pi       | Implemented first-class path | Adapter, HarnessPort, lifecycle mapping, and canonical model mapping are implemented     |
+| Hermes   | Implemented plugin path      | MemoryProvider plugin uses Hermes' host-owned model/auth channel for write-side loops    |
+| OpenClaw | Implemented plugin path      | Load the adapter as OpenClaw's memory slot; hooks provide recall, extraction, and skills |
+| OpenCode | Implemented plugin path      | Load the adapter as an OpenCode plugin; hooks provide recall, extraction, and skills     |
 
 ## Pi Integration
 
@@ -196,6 +196,40 @@ pattern to confirm the full Hermes path:
 ```text
 Hermes main turn -> extraction -> skill evolution -> dream
 ```
+
+## OpenCode Integration
+
+```sh
+opencode plugin @iflytekopensource/adapters --global
+opencode run --dir /path/to/project "your task"
+```
+
+OpenCode keeps model configuration, tools, permissions, and sessions. The
+MemFlywheel plugin uses OpenCode hooks for prompt recall, turn-end extraction,
+source traces, skill evolution, and dream consolidation.
+
+For non-interactive `opencode run` tests, remember that OpenCode may reject file
+reads outside `--dir`. If the model needs to inspect
+`~/.config/opencode/memflywheel`, run interactively and approve the read, or use
+your test harness' explicit permission override.
+
+## OpenClaw Integration
+
+```sh
+openclaw plugins install npm:@iflytekopensource/adapters
+openclaw config set plugins.slots.memory memflywheel
+openclaw config set plugins.entries.memflywheel.hooks.allowConversationAccess true
+openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
+openclaw gateway run --force
+```
+
+The `plugins.slots.memory` setting is required because OpenClaw enables exactly
+one memory plugin slot. If the slot still points at `memory-core`, the
+MemFlywheel package is installed but inactive.
+
+After a real session, MemFlywheel files should appear under
+`~/.openclaw/memflywheel/`, including `MEMORY.md`, typed memory documents,
+source traces, and learned skills.
 
 ## Adapter Rules
 
