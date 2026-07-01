@@ -14,8 +14,8 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@memflywheel/core"><img alt="npm" src="https://img.shields.io/npm/v/%40memflywheel%2Fcore?label=npm"></a>
-  <a href="https://www.npmjs.com/package/@memflywheel/core"><img alt="npm downloads" src="https://img.shields.io/npm/dm/%40memflywheel%2Fcore?label=downloads"></a>
+  <a href="https://www.npmjs.com/package/@iflytekopensource/adapters"><img alt="npm" src="https://img.shields.io/npm/v/%40iflytekopensource%2Fadapters?label=npm"></a>
+  <a href="https://www.npmjs.com/package/@iflytekopensource/adapters"><img alt="npm downloads" src="https://img.shields.io/npm/dm/%40iflytekopensource%2Fadapters?label=downloads"></a>
   <a href="https://github.com/iflytek/memflywheel/releases"><img alt="release" src="https://img.shields.io/github/v/release/iflytek/memflywheel?include_prereleases&label=release"></a>
   <a href="https://github.com/iflytek/memflywheel/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/iflytek/memflywheel/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="node" src="https://img.shields.io/badge/node-%3E%3D22.13.0-339933">
@@ -35,7 +35,7 @@ skills.
   </tr>
   <tr>
     <td><strong>Post-run learning</strong><br>Turn-end extraction and dream consolidation keep memory moving.</td>
-    <td><strong>Harness-native</strong><br>Pi is supported today; more Agent Harness integrations are planned.</td>
+    <td><strong>Harness-native</strong><br>Pi, Hermes, OpenCode, and OpenClaw are supported through npm packages.</td>
   </tr>
 </table>
 
@@ -74,26 +74,52 @@ MemFlywheel
 
 ## Quick Start
 
-Install the Pi package:
+Pi:
 
 ```sh
-pi install npm:@memflywheel/adapters
+pi install npm:@iflytekopensource/adapters
 ```
 
-Pi loads the extension declared in `@memflywheel/adapters` and drives
-MemFlywheel through native lifecycle events: prompt-build recall, turn-end
-extraction, source tracing, and file-native memory writes. Source checkout and
-smoke-test paths live in [`docs/integrations.md`](docs/integrations.md).
+Hermes:
 
-## Packages
+```sh
+npm install -g @iflytekopensource/hermes
+memflywheel-hermes-install
+hermes config set memory.provider memflywheel
+```
 
-| Package                                                                        | Role                                                                               |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| [`@memflywheel/core`](https://www.npmjs.com/package/@memflywheel/core)         | Storage, frontmatter, index, recall, extraction/dream tools, privacy, locks, audit |
-| [`@memflywheel/model`](https://www.npmjs.com/package/@memflywheel/model)       | Provider-neutral tool-calling model protocol and OpenAI-compatible mapper          |
-| [`@memflywheel/sdk`](https://www.npmjs.com/package/@memflywheel/sdk)           | Lifecycle hooks and extraction / dream / skill-loop orchestration                  |
-| [`@memflywheel/skills`](https://www.npmjs.com/package/@memflywheel/skills)     | Learned skill packages, staging, validation, finalize, rollback, recall routing    |
-| [`@memflywheel/adapters`](https://www.npmjs.com/package/@memflywheel/adapters) | Host lifecycle mapping for Pi today, with more Agent Harness integrations planned  |
+OpenCode:
+
+```sh
+opencode plugin @iflytekopensource/adapters --global
+opencode run --dir /path/to/project "your task"
+```
+
+OpenClaw:
+
+```sh
+openclaw plugins install npm:@iflytekopensource/adapters
+openclaw config set plugins.entries.memflywheel.hooks.allowConversationAccess true
+openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
+openclaw gateway run --force
+```
+
+MemFlywheel installs into each host as a native memory plugin. The host keeps
+owning models, tools, permissions, and sessions; MemFlywheel adds recall,
+turn-end extraction, dream consolidation, and learned skills.
+
+Source checkout, verification, and debugging paths live in
+[`docs/integrations.md`](docs/integrations.md).
+
+## Install Packages
+
+| Package                                                                                    | Role                                                                       |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| [`@iflytekopensource/adapters`](https://www.npmjs.com/package/@iflytekopensource/adapters) | Pi, OpenCode, OpenClaw, and the shared host-adapter runtime used by Hermes |
+| [`@iflytekopensource/hermes`](https://www.npmjs.com/package/@iflytekopensource/hermes)     | Hermes MemoryProvider installer and skill mirror                           |
+
+Internal workspace packages keep the code split by responsibility; users install
+only the host package they need.
 
 ## Evaluation
 
@@ -107,9 +133,8 @@ and [`docs/dream-regression.md`](docs/dream-regression.md).
 | Document                                                           | Content                                                                   |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries |
-| [`docs/integrations.md`](docs/integrations.md)                     | Pi package install, SDK hooks, adapter boundary, host capability levels   |
-| [`docs/extraction-regression.md`](docs/extraction-regression.md)   | Extraction subagent real-model regression report                          |
-| [`docs/dream-regression.md`](docs/dream-regression.md)             | Dream consolidation real-model regression report                          |
+| [`docs/integrations.md`](docs/integrations.md)                     | Pi, Hermes, OpenCode, and OpenClaw install, SDK hooks, adapter boundary   |
+| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                               |
 | [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                        |
 | [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                         |
 

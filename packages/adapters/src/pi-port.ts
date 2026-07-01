@@ -110,6 +110,8 @@ export type PiCompleteSimple = (
 export type PiSessionIdResolver =
   string | ((input: { event?: unknown; context?: PiExtensionContextLike }) => string | undefined);
 
+export type PiLifecycleAfterHook = () => void | Promise<void>;
+
 export interface CreatePiModelCompletionOptions {
   completeSimple: PiCompleteSimple;
   /** Explicit Pi model; when absent, the current ExtensionContext model is used. */
@@ -134,6 +136,9 @@ export interface CreatePiHarnessPortOptions {
    * this opts into a real polling bridge instead of claiming a non-existent hook.
    */
   idleIntervalMs?: number;
+  afterPromptBuild?: PiLifecycleAfterHook;
+  afterTurnEnd?: PiLifecycleAfterHook;
+  afterSessionEnd?: PiLifecycleAfterHook;
 }
 
 export interface PiScribeLike {
@@ -191,6 +196,10 @@ function resolvePiSessionId(
     if (typeof resolved === "string" && resolved.trim()) return resolved;
   }
   return readString(event, "sessionId") ?? context?.sessionManager?.getSessionId?.() ?? "pi";
+}
+
+function isolatedBackgroundModelSessionId(hostSessionId: string | undefined): string | undefined {
+  return hostSessionId ? `memflywheel:${hostSessionId}` : undefined;
 }
 
 function piUserMessage(content: string): PiUserMessage {
@@ -488,7 +497,7 @@ export function createPiHarnessPort(
           completeSimple: options.completeSimple,
           model: options.piModel,
           getContext: () => lastContext,
-          getSessionId: () => lastSessionId,
+          getSessionId: () => isolatedBackgroundModelSessionId(lastSessionId),
         })
       : undefined);
   if (!model) {
@@ -513,7 +522,9 @@ export function createPiHarnessPort(
           sessionId: lastSessionId,
           query: promptQueryFromPiEvent(event),
         });
-        return piContextResultFromPromptBuild(result, event);
+        const contextResult = piContextResultFromPromptBuild(result, event);
+        await options.afterPromptBuild?.();
+        return contextResult;
       });
     },
     onTurnEnd(handler) {
@@ -523,12 +534,14 @@ export function createPiHarnessPort(
           sessionId: lastSessionId ?? "pi",
           messages: canonicalMessagesFromPi(isRecord(event) ? event.messages : undefined),
         });
+        await options.afterTurnEnd?.();
       });
     },
     onSessionEnd(handler) {
       return bindPiEvent(pi, "session_shutdown", async (event, ctx) => {
         rememberContext(event, ctx);
         await handler({ sessionId: lastSessionId ?? "pi" });
+        await options.afterSessionEnd?.();
       });
     },
   };

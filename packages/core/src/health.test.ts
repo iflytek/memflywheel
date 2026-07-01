@@ -36,6 +36,33 @@ test("buildHealthFindings flags path-type-mismatch", async () => {
   }
 });
 
+test("buildHealthFindings ignores learned skill packages", async () => {
+  const root = await makeRoot();
+  try {
+    await writeRaw(
+      root,
+      "learned-skills/memflywheel-learned-research/SKILL.md",
+      [
+        "---",
+        "name: memflywheel-learned-research",
+        "description: Reusable research workflow",
+        "type: skill",
+        "---",
+        "",
+        "## Use Cases",
+        "",
+        "- Run this for research.",
+      ].join("\n"),
+    );
+
+    const findings = await buildHealthFindings(root);
+
+    assert.deepEqual(findings, []);
+  } finally {
+    await cleanup(root);
+  }
+});
+
 test("buildTypeReviewPacket returns sorted entries with excerpts", async () => {
   const root = await makeRoot();
   try {

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 
 import {
   type EmbeddingProvider,
@@ -40,22 +41,22 @@ function needleEmbeddingProvider(): EmbeddingProvider {
 
 test("buildMemoryInstructionPrompt is stable rules with no index", () => {
   const rules = buildMemoryInstructionPrompt();
-  assert.ok(rules.includes("# 记忆"));
-  assert.ok(rules.includes("召回规则"));
+  assert.ok(rules.includes("# Memory"));
+  assert.ok(rules.includes("Recall Rules"));
   assert.ok(rules.includes("## Sources"));
-  assert.ok(rules.includes(".memflywheel/sources"));
+  assert.ok(rules.includes("absolute source trace"));
   assert.ok(!rules.includes("<system-reminder>"));
 });
 
 test("buildMemoryIndexPrompt wraps index in system-reminder", () => {
   const withIndex = buildMemoryIndexPrompt("- [a](p) - d");
   assert.ok(withIndex.startsWith("<system-reminder>"));
-  assert.ok(withIndex.includes("## 可用记忆条目"));
+  assert.ok(withIndex.includes("## Available Memory Entries"));
   assert.ok(withIndex.includes("- [a](p) - d"));
   assert.ok(withIndex.endsWith("</system-reminder>"));
 
   const empty = buildMemoryIndexPrompt("");
-  assert.ok(empty.includes("当前没有可用记忆条目"));
+  assert.ok(empty.includes("No memory entries are currently available"));
 });
 
 test("buildContext returns two segments and full index", async () => {
@@ -69,9 +70,11 @@ test("buildContext returns two segments and full index", async () => {
     });
     const result = await buildContext({ root });
     assert.equal(result.enabled, true);
-    assert.ok(result.systemPrompt.includes("# 记忆"));
+    assert.ok(result.systemPrompt.includes("# Memory"));
     assert.ok(result.preludePrompt.startsWith("<system-reminder>"));
     assert.ok(result.preludePrompt.includes("用户称呼"));
+    assert.ok(result.preludePrompt.includes(path.join(root, "identity", "u.md")));
+    assert.ok(result.preludePrompt.includes(`path: ${path.join(root, "identity", "u.md")}`));
   } finally {
     await cleanup(root);
   }
@@ -110,10 +113,11 @@ test("buildContext uses hybrid index retrieval when a query and provider are ava
       },
     });
 
-    assert.ok(result.preludePrompt.includes("## 相关记忆条目"));
+    assert.ok(result.preludePrompt.includes("## Relevant Memory Entries"));
     assert.ok(result.preludePrompt.includes("发布流程"));
     assert.ok(!result.preludePrompt.includes("饮茶偏好"));
-    assert.ok(result.preludePrompt.includes("MEMORY.md"));
+    assert.ok(result.preludePrompt.includes(path.join(root, "workflow", "release.md")));
+    assert.ok(result.preludePrompt.includes(path.join(root, "MEMORY.md")));
     assert.deepEqual(
       diagnostics.find((event) => event.stage === "search-complete")?.selectedPaths,
       ["workflow/release.md"],
@@ -181,7 +185,7 @@ test("buildContext skips retrieval for small indexes that already fit full injec
     });
 
     assert.equal(calls, 0);
-    assert.ok(result.preludePrompt.includes("## 可用记忆条目"));
+    assert.ok(result.preludePrompt.includes("## Available Memory Entries"));
     assert.ok(result.preludePrompt.includes("发布流程"));
   } finally {
     await cleanup(root);
@@ -215,7 +219,7 @@ test("buildContext falls back to full index when the embedding provider fails at
       indexRetrieval: { embeddingProvider: provider, minRecords: 1 },
     });
 
-    assert.ok(result.preludePrompt.includes("## 可用记忆条目"));
+    assert.ok(result.preludePrompt.includes("## Available Memory Entries"));
     assert.ok(result.preludePrompt.includes("发布流程"));
     assert.ok(result.preludePrompt.includes("饮茶偏好"));
   } finally {

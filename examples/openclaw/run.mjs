@@ -11,7 +11,11 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createMemFlywheelHarnessRuntime, openclawAdapter, connect } from "@memflywheel/adapters";
+import {
+  createMemFlywheelHarnessRuntime,
+  openclawAdapter,
+  connect,
+} from "@iflytekopensource/adapters";
 import { transcript } from "../shared/transcript.mjs";
 
 function createMockOpenClawHost() {

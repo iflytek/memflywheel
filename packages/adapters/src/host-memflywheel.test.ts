@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createMemFlywheelHarnessRuntime } from "./host-memflywheel.js";
+import {
+  attachMemFlywheelToHostPort,
+  createMemFlywheelHarnessRuntime,
+  type MemFlywheelHarnessRuntimeAdapter,
+} from "./host-memflywheel.js";
 import {
   type DreamAgentRunner,
   ExtractionResult,
@@ -11,6 +15,15 @@ import {
   type MemoryType,
 } from "@memflywheel/sdk";
 import type { CanonicalModelCompletion, CanonicalModelResponse } from "@memflywheel/model";
+import type {
+  HostHarnessPort,
+  HostPromptBuildEvent,
+  HostPromptBuildResult,
+  HostSessionEvent,
+  HostToolCallEvent,
+  HostToolResultEvent,
+  HostTurnEndEvent,
+} from "./harness-port.js";
 import { piAdapter } from "./pi.js";
 import { createFakeHost, tempDir } from "./test-helpers.js";
 
@@ -235,6 +248,14 @@ function learnedSkillLoopModel(): CanonicalModelCompletion {
   };
 }
 
+function section(text: string, heading: string, nextHeading: string): string {
+  const start = text.indexOf(heading);
+  const end = text.indexOf(nextHeading);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  return text.slice(start + heading.length, end).trim();
+}
+
 /** A subagent that declines: it calls no tools and replies with one sentence. */
 const decliningModel: CanonicalModelCompletion = { complete: async () => STOP };
 
@@ -286,6 +307,90 @@ test("attach drives a real end-to-end extraction through host events", async () 
   }
   assert.match(body, /green tea/);
   dispose();
+});
+
+test("host harness folds telemetry tool calls into turn-end messages", async () => {
+  let promptBuild: ((event: HostPromptBuildEvent) => Promise<HostPromptBuildResult>) | undefined;
+  let turnEnd: ((event: HostTurnEndEvent) => Promise<void>) | undefined;
+  let sessionEnd: ((event: HostSessionEvent) => Promise<void>) | undefined;
+  let toolCall: ((event: HostToolCallEvent) => Promise<void>) | undefined;
+  let toolResult: ((event: HostToolResultEvent) => Promise<void>) | undefined;
+  const received: MemFlywheelHarnessRuntimeAdapter["onTurnEnd"] extends (input: infer I) => unknown
+    ? I[]
+    : never[] = [];
+  const scribe: MemFlywheelHarnessRuntimeAdapter = {
+    async onSessionStart() {},
+    async onPromptBuild() {
+      return { systemPrompt: "", preludePrompt: "", enabled: true };
+    },
+    async onTurnEnd(input) {
+      received.push(input);
+      return { result: ExtractionResult.Completed, skipped: false };
+    },
+    async onSessionEnd() {},
+    async onIdle() {},
+  };
+  const port: HostHarnessPort = {
+    name: "fake",
+    capabilities: new Set(["prompt-build", "turn-end", "session-end", "agentic-tool-loop"]),
+    model: decliningModel,
+    lifecycle: {
+      onPromptBuild(handler) {
+        promptBuild = handler;
+        return () => undefined;
+      },
+      onTurnEnd(handler) {
+        turnEnd = handler;
+        return () => undefined;
+      },
+      onSessionEnd(handler) {
+        sessionEnd = handler;
+        return () => undefined;
+      },
+    },
+    telemetry: {
+      onToolCall(handler) {
+        toolCall = handler;
+        return () => undefined;
+      },
+      onToolResult(handler) {
+        toolResult = handler;
+        return () => undefined;
+      },
+    },
+  };
+
+  const dispose = attachMemFlywheelToHostPort(scribe, port);
+  await promptBuild?.({ sessionId: "s1" });
+  await toolCall?.({
+    sessionId: "s1",
+    toolCallId: "t1",
+    toolName: "bash",
+    input: { command: "pnpm run ci" },
+  });
+  await toolResult?.({
+    sessionId: "s1",
+    toolCallId: "t1",
+    toolName: "bash",
+    input: { command: "pnpm run ci" },
+    output: "ok",
+  });
+  await turnEnd?.({
+    sessionId: "s1",
+    messages: [
+      { role: "user", content: "Run release checks." },
+      { role: "assistant", content: "Done." },
+    ],
+  });
+  await sessionEnd?.({ sessionId: "s1" });
+  dispose();
+
+  assert.equal(received.length, 1);
+  assert.deepEqual(received[0].messages.at(-1), {
+    role: "assistant",
+    text: "",
+    toolCalls: [{ name: "bash", input: { command: "pnpm run ci" }, output: "ok" }],
+  });
 });
 
 test("createMemFlywheelHarnessRuntime prompt build returns the two recall segments", async () => {
@@ -347,8 +452,8 @@ test("createMemFlywheelHarnessRuntime wires skill recall and turn-end learning l
   });
 
   const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
-  assert.match(ctx.systemPrompt, /# 技能/);
-  assert.match(ctx.preludePrompt, /## 可用技能/);
+  assert.match(ctx.systemPrompt, /# Skills/);
+  assert.match(ctx.preludePrompt, /## Available Skills/);
   assert.match(ctx.preludePrompt, /memflywheel-learned-release-review/);
   assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
 
@@ -429,6 +534,88 @@ test("createMemFlywheelHarnessRuntime learnedSkills assembly runs extraction, sk
   const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
   assert.match(ctx.preludePrompt, new RegExp(TARGET_SKILL));
   assert.match(ctx.skillPreludePrompt ?? "", /Release Review/);
+});
+
+test("createMemFlywheelHarnessRuntime learnedSkills caps prompt packet context", async () => {
+  const root = await tempDir();
+  let captured = "";
+  let extractionStep = 0;
+  const model: CanonicalModelCompletion = {
+    complete: async (req) => {
+      const system = req.messages.find((message) => message.role === "system")?.content ?? "";
+      if (system.includes("memory extraction engine")) {
+        extractionStep += 1;
+        if (extractionStep === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: null,
+              toolCalls: [
+                toolCall(
+                  "memory-save",
+                  "write",
+                  writeMemoryArgs({
+                    type: "workflow",
+                    name: "large tool output",
+                    description: "large output workflow",
+                    body: "Large tool output was observed.",
+                  }),
+                ),
+              ],
+            },
+            finishReason: "tool-calls",
+          };
+        }
+        return STOP;
+      }
+      if (system.includes("learned-skill evolution agent")) {
+        captured = req.messages.find((message) => message.role === "user")?.content ?? "";
+      }
+      return STOP;
+    },
+  };
+  const { scribe } = createMemFlywheelHarnessRuntime({
+    root: path.join(root, "memory"),
+    model,
+    learnedSkills: {
+      skillsRoot: path.join(root, "skills"),
+      checkpointRoot: path.join(root, ".skill-checkpoints"),
+    },
+    learningLoop: {
+      gate: { minDoneTurns: 1, cooldownTurns: 0, minToolCalls: 1 },
+    },
+  });
+
+  await scribe.onSessionStart({ sessionId: "s1" });
+  const longText = "t".repeat(2500);
+  const longInput = "i".repeat(1500);
+  const longOutput = `${"h".repeat(1500)}MIDDLE${"z".repeat(500)}`;
+  const messages = Array.from({ length: 25 }, (_, index) => ({
+    role: index % 2 === 0 ? ("user" as const) : ("assistant" as const),
+    text: `${index}:${longText}`,
+    toolCalls:
+      index === 24
+        ? [{ name: "web_extract", input: { query: longInput }, output: longOutput }]
+        : [],
+  }));
+
+  await scribe.onTurnEnd({ sessionId: "s1", messages });
+
+  const reviewPacket = JSON.parse(section(captured, "# Review packet", "# Learned skill index"));
+  const trajectory = JSON.parse(section(captured, "# Tool trajectory", "# Artifact paths"));
+  assert.deepEqual(Object.keys(reviewPacket.lastExtraction), ["result"]);
+  assert.equal(reviewPacket.recentMessages.length, 20);
+  assert.equal(reviewPacket.recentMessages[0].text.length, 2000);
+  assert.equal(reviewPacket.recentMessages.at(-1).toolCalls[0].name, "web_extract");
+  assert.equal(reviewPacket.recentMessages.at(-1).toolCalls[0].input.length, 1000);
+  assert.match(reviewPacket.recentMessages.at(-1).toolCalls[0].input, /truncated \d+ chars/);
+  assert.equal(trajectory.length, 1);
+  assert.equal(trajectory[0].input.length, 1000);
+  assert.match(trajectory[0].input, /truncated \d+ chars/);
+  assert.deepEqual(Object.keys(trajectory[0].output), ["truncated", "chars", "head", "tail"]);
+  assert.equal(trajectory[0].output.chars, longOutput.length);
+  assert.equal(trajectory[0].output.head.length, 800);
+  assert.equal(trajectory[0].output.tail.length, 400);
 });
 
 test("createMemFlywheelHarnessRuntime requires explicit recall-only mode when no model is present", async () => {

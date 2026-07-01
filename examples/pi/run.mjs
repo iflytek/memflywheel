@@ -19,7 +19,7 @@ import {
   createPiHarnessPort,
   piAdapter,
   connect,
-} from "@memflywheel/adapters";
+} from "@iflytekopensource/adapters";
 import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import { createFakeModel } from "../shared/fake-model.mjs";
 import { transcript } from "../shared/transcript.mjs";

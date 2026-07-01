@@ -1,0 +1,34 @@
+{
+  "name": "@iflytekopensource/hermes",
+  "version": "0.1.0",
+  "description": "Hermes MemoryProvider plugin for MemFlywheel.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "memflywheel-hermes-install": "./bin/install.mjs"
+  },
+  "files": [
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_LICENSES",
+    "bin/**/*.mjs",
+    "bridge/**/*.mjs",
+    "provider/**/*.py",
+    "plugin.yaml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node --check bridge/worker.mjs && node --check bin/install.mjs && python3 - <<'PY'\nfrom pathlib import Path\ncompile(Path('provider/__init__.py').read_text(), 'provider/__init__.py', 'exec')\nPY",
+    "install:local": "node bin/install.mjs",
+    "test": "PYTHONDONTWRITEBYTECODE=1 python3 tests/provider_contract_test.py"
+  },
+  "dependencies": {
+    "@iflytekopensource/adapters": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

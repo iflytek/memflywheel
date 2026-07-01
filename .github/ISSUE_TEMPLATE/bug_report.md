@@ -8,7 +8,7 @@ assignees: ""
 
 ## Package
 
-`@memflywheel/core` / `@memflywheel/model` / `@memflywheel/sdk` / `@memflywheel/skills` / `@memflywheel/adapters`
+`@iflytekopensource/adapters` / `@iflytekopensource/hermes` / internal workspace
 
 ## Environment
 

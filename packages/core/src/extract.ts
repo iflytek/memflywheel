@@ -96,7 +96,7 @@ export const TOOL_FOLD_WINDOW_MAX_CHARS = 4000;
 export const SOURCE_TRACE_DIR = ".memflywheel/sources";
 
 function elision(omitted: number): string {
-  return `…[省略 ${omitted} 字符]…`;
+  return `…[${omitted} characters omitted]…`;
 }
 
 /** JSON-stringify a tool input/output to a flat string for folding. */
@@ -211,6 +211,17 @@ function sourceTraceLine(message: ExtractionMessage): string {
   return JSON.stringify(payload);
 }
 
+function countSourceTraceOverlap(existingLines: string[], nextLines: string[]): number {
+  const max = Math.min(existingLines.length, nextLines.length);
+  for (let size = max; size > 0; size -= 1) {
+    const offset = existingLines.length - size;
+    if (nextLines.slice(0, size).every((line, index) => line === existingLines[offset + index])) {
+      return size;
+    }
+  }
+  return 0;
+}
+
 async function appendSourceTrace(
   root: string,
   sessionId: string,
@@ -224,13 +235,19 @@ async function appendSourceTrace(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
     throw error;
   });
-  const existingLines = previous.trimEnd() ? previous.trimEnd().split(/\r?\n/).length : 0;
+  const existingLines = previous.trimEnd() ? previous.trimEnd().split(/\r?\n/) : [];
   const lines = messages.map(sourceTraceLine);
-  const startLine = existingLines + 1;
-  const endLine = existingLines + lines.length;
-  const separator = previous && !previous.endsWith("\n") ? "\n" : "";
-  await writeFile(absolutePath, `${previous}${separator}${lines.join("\n")}\n`, "utf8");
-  return { relativePath, startLine, endLine };
+  const overlap = countSourceTraceOverlap(existingLines, lines);
+  const newLines = lines.slice(overlap);
+  const startLine =
+    newLines.length > 0 ? existingLines.length + 1 : existingLines.length - overlap + 1;
+  const endLine =
+    newLines.length > 0 ? existingLines.length + newLines.length : existingLines.length;
+  if (newLines.length > 0) {
+    const separator = previous && !previous.endsWith("\n") ? "\n" : "";
+    await writeFile(absolutePath, `${previous}${separator}${newLines.join("\n")}\n`, "utf8");
+  }
+  return { relativePath, absolutePath, startLine, endLine };
 }
 
 /**

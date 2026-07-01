@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createPiHarnessPort, type PiModelContext } from "./pi-port.js";
+import {
+  createPiHarnessPort,
+  type PiCompleteSimple,
+  type PiExtensionHandler,
+  type PiModelContext,
+} from "./pi-port.js";
 
 test("createPiHarnessPort maps Pi native tool calls into canonical model responses", async () => {
   const events: string[] = [];
@@ -108,4 +113,90 @@ test("createPiHarnessPort forwards Pi context prompt as retrieval query", async 
   await contextHandler!({ sessionId: "p1", prompt: "how do I publish?" }, {});
 
   assert.deepEqual(seen, { sessionId: "p1", query: "how do I publish?" });
+});
+
+test("createPiHarnessPort isolates background model session from Pi chat continuation", async () => {
+  let turnHandler: PiExtensionHandler | undefined;
+  const model = { id: "gpt-5.5", provider: "openai-codex" };
+  const seenSessionIds: unknown[] = [];
+  const completeSimple: PiCompleteSimple = async (_model, _context, options) => {
+    seenSessionIds.push(options?.sessionId);
+    return {
+      role: "assistant",
+      content: [{ type: "text", text: "done" }],
+    };
+  };
+  const pi = {
+    on(event: string, handler: PiExtensionHandler) {
+      if (event === "agent_end") turnHandler = handler;
+      return () => undefined;
+    },
+  };
+  const port = createPiHarnessPort(pi, { completeSimple, piModel: model });
+  port.lifecycle.onTurnEnd(async () => {
+    await port.model.complete({ messages: [], tools: [] });
+  });
+
+  assert.ok(turnHandler);
+  await turnHandler({ sessionId: "chat-1", messages: [] }, {});
+
+  assert.deepEqual(seenSessionIds, ["memflywheel:chat-1"]);
+});
+
+test("createPiHarnessPort runs host-native sync hooks after lifecycle handling", async () => {
+  const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown> | unknown>();
+  const calls: string[] = [];
+  const pi = {
+    on(event: string, handler: unknown) {
+      handlers.set(event, handler as (event: unknown, ctx: unknown) => Promise<unknown> | unknown);
+      return () => undefined;
+    },
+  };
+  const port = createPiHarnessPort(pi, {
+    model: {
+      async complete() {
+        return { message: { role: "assistant", content: "done" } };
+      },
+    },
+    afterPromptBuild: () => {
+      calls.push("sync:prompt");
+    },
+    afterTurnEnd: () => {
+      calls.push("sync:turn");
+    },
+    afterSessionEnd: () => {
+      calls.push("sync:session");
+    },
+  });
+
+  port.lifecycle.onPromptBuild(async () => {
+    calls.push("prompt");
+    return { preludePrompt: "index" };
+  });
+  port.lifecycle.onTurnEnd(async () => {
+    calls.push("turn");
+  });
+  port.lifecycle.onSessionEnd(async () => {
+    calls.push("session");
+  });
+
+  const contextHandler = handlers.get("context");
+  const turnHandler = handlers.get("agent_end");
+  const sessionHandler = handlers.get("session_shutdown");
+  assert.ok(contextHandler);
+  assert.ok(turnHandler);
+  assert.ok(sessionHandler);
+
+  await contextHandler({ sessionId: "p1", prompt: "release?" }, {});
+  await turnHandler({ sessionId: "p1", messages: [] }, {});
+  await sessionHandler({ sessionId: "p1" }, {});
+
+  assert.deepEqual(calls, [
+    "prompt",
+    "sync:prompt",
+    "turn",
+    "sync:turn",
+    "session",
+    "sync:session",
+  ]);
 });

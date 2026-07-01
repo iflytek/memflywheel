@@ -99,37 +99,66 @@ test("validateLearnedSkillPackage accepts the MemFlywheel learned skill layout",
     "scripts/check.mjs",
     "templates/report.md",
   ]);
+
+  const skillWithType = validSkill.replace(
+    "description: Captures durable editor workflow habits.\n",
+    "type: skill\ndescription: Captures durable editor workflow habits.\n",
+  );
+  const withType = validateLearnedSkillPackage({
+    slug: "editor-workflow",
+    files: { ...validFiles(), "SKILL.md": skillWithType },
+  });
+  assert.equal(withType.skillName, `${LEARNED_SKILL_DIR_PREFIX}editor-workflow`);
 });
 
-test("validateLearnedSkillPackage rejects loose frontmatter and unnumbered procedures", () => {
+test("validateLearnedSkillPackage accepts loose skill markdown", () => {
   const extraFrontmatterKey = validSkill.replace(
     "description: Captures durable editor workflow habits.\n",
     "description: Captures durable editor workflow habits.\nversion: 1\n",
   );
-  assert.throws(
-    () =>
-      validateLearnedSkillPackage({
-        slug: "editor-workflow",
-        files: { ...validFiles(), "SKILL.md": extraFrontmatterKey },
-      }),
-    (error: unknown) =>
-      error instanceof LearnedSkillValidationError &&
-      error.message.includes("strict frontmatter keys"),
+  assert.equal(
+    validateLearnedSkillPackage({
+      slug: "editor-workflow",
+      files: { ...validFiles(), "SKILL.md": extraFrontmatterKey },
+    }).skillName,
+    `${LEARNED_SKILL_DIR_PREFIX}editor-workflow`,
+  );
+
+  const invalidType = validSkill.replace(
+    "description: Captures durable editor workflow habits.\n",
+    "type: workflow\ndescription: Captures durable editor workflow habits.\n",
+  );
+  assert.equal(
+    validateLearnedSkillPackage({
+      slug: "editor-workflow",
+      files: { ...validFiles(), "SKILL.md": invalidType },
+    }).frontmatter.description,
+    "Captures durable editor workflow habits.",
   );
 
   const unnumberedProcedure = validSkill.replace(
     "1. Inspect the current workflow evidence.\n2. Record the durable rule and its trigger.",
     "- Inspect the current workflow evidence.\n- Record the durable rule and its trigger.",
   );
-  assert.throws(
-    () =>
-      validateLearnedSkillPackage({
-        slug: "editor-workflow",
-        files: { ...validFiles(), "SKILL.md": unnumberedProcedure },
-      }),
-    (error: unknown) =>
-      error instanceof LearnedSkillValidationError &&
-      error.message.includes("Procedure must use numbered steps"),
+  assert.equal(
+    validateLearnedSkillPackage({
+      slug: "editor-workflow",
+      files: { ...validFiles(), "SKILL.md": unnumberedProcedure },
+    }).frontmatter.name,
+    `${LEARNED_SKILL_DIR_PREFIX}editor-workflow`,
+  );
+
+  const noFrontmatter = "# Editor workflow\n\nUse this for editor workflow habits.\n";
+  assert.deepEqual(
+    validateLearnedSkillPackage({
+      slug: "editor-workflow",
+      files: { ...validFiles(), "SKILL.md": noFrontmatter },
+    }).frontmatter,
+    {
+      name: `${LEARNED_SKILL_DIR_PREFIX}editor-workflow`,
+      display_name: "Editor Workflow",
+      description: "Learned skill.",
+    },
   );
 });
 
@@ -365,6 +394,11 @@ test("createLearnedSkillStore commits staged tool writes and can rollback after 
     });
     assert.deepEqual(result.changedSkills, ["memflywheel-learned-editor-workflow"]);
     assert.deepEqual(result.changedFiles.sort(), ["memflywheel-learned-editor-workflow/SKILL.md"]);
+    const publishedSkill = await readFile(
+      path.join(skillsRoot, "memflywheel-learned-editor-workflow", "SKILL.md"),
+      "utf8",
+    );
+    assert.match(publishedSkill, /^type: skill$/m);
 
     const catalog = await store.getLearnedSkillsCatalog({ includeContent: true });
     assert.equal(catalog.learnedSkills.length, 1);
@@ -465,6 +499,10 @@ test("createLearnedSkillRecallProvider exposes learned skill routes for prompt b
       "editor workflow",
       "durable editor workflow",
     ]);
+    assert.equal(
+      packet.entries[0]?.relativePath,
+      path.join(skillsRoot, "memflywheel-learned-editor-workflow", "SKILL.md"),
+    );
     assert.match(
       buildLearnedSkillPrelude(packet),
       /memflywheel-learned-editor-workflow[\s\S]*editor workflow/,

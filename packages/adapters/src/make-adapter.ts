@@ -174,6 +174,15 @@ export function normalizeMessages(raw: unknown): MemFlywheelMessage[] {
     let toolCalls: MemFlywheelToolCall[] | undefined;
     if (fold && role === "assistant") {
       const collected: MemFlywheelToolCall[] = [];
+      if (Array.isArray(obj.toolCalls)) {
+        for (const c of obj.toolCalls) {
+          if (!c || typeof c !== "object") continue;
+          const call = c as RawObj;
+          const name = typeof call.name === "string" ? call.name : "";
+          if (!name) continue;
+          collected.push({ name, input: call.input, output: call.output });
+        }
+      }
       // OpenAI shape: top-level tool_calls.
       if (Array.isArray(obj.tool_calls)) {
         for (const c of obj.tool_calls) {

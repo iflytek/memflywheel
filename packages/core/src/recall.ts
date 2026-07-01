@@ -12,12 +12,14 @@ import {
   readMemoryIndex,
   truncateIndex,
   applyAgingHints,
+  INDEX_FILE,
   INDEX_MAX_BYTES,
   INDEX_MAX_LINES,
 } from "./index-file.js";
 import { resolveRelativePath } from "./paths.js";
 import {
   type EmbeddingProvider,
+  absolutizeMemoryIndexContent,
   buildMemoryIndexSearchCache,
   buildRelevantMemoryIndexPrompt,
   hybridSearchMemoryIndex,
@@ -71,49 +73,49 @@ export interface MemoryIndexRetrievalOptions {
 
 /** Stable memory rules. Port of buildMemoryInstructionPrompt. */
 export function buildMemoryInstructionPrompt(): string {
-  return `# 记忆
+  return `# Memory
 
-你拥有关于当前用户的长期记忆。系统可能会向你提供一组可用记忆条目；这些条目用于帮助你判断是否需要读取更完整的记忆内容。
+You have long-term memory about the current user. The system may provide available memory entries as routing hints for deciding whether to read more detailed memory content.
 
-## 召回规则
+## Recall Rules
 
-- MEMORY.md 索引由系统根据记忆文件自动生成，你不需要维护它
-- 如果上下文里出现多组可用记忆条目，只使用最新的一组；旧条目只代表当时的上下文
-- 可用记忆条目只是线索，不是完整事实；只有和用户当前请求明确相关时，才读取对应文件获取详情
-- 只在用户的话题与某条记忆**明确相关**时，才用 Read 读取对应文件获取详情
-- 只要记忆会影响回答方式、结构、默认建议、术语或协作路径，就属于相关，不要因为“即使不读也能回答”而忽略
-- 当用户在请求解释、写作、推荐、实现、调试、review、命名或方案推进时，应优先命中 1-2 条最相关的 style、workflow、preference、context、ambient 记忆
-- 同类型记忆有多条时，优先读取与当前问题语义最接近的那 1-2 条，不要随便读取同类型但不相关的其他记忆
-- 只对命中的具体记忆文件使用 Read，不要先 Read 整个记忆目录来确认文件列表
-- 读取具体记忆文件后，如果正文信息不足以回答、问题涉及相对时间/日期推理/多个相似事件，且文件包含 ## Sources，应继续用 Read 读取引用的 .memflywheel/sources/*.jsonl 行范围；例如 #L10-L18 对应 offset=10, limit=9
-- 不要自己构造、猜测或补全任何记忆文件名或路径
-- 不要用 Read 读取记忆目录本身
-- 除非最新可用记忆条目末尾明确提示内容已截断，否则不要再次 Read MEMORY.md
-- 用户明确要求回忆时（“我之前说过什么”、“你还记得吗”），必须查阅
-- 不相关的对话不要读任何记忆文件
-- 不要一次性读取所有记忆文件
-- 读取后必须在回答中落实，不要只读不使用
-- 读取后自然地运用信息回复，不要说“根据记忆”、“我查了记忆文件”之类的话
+- MEMORY.md is generated automatically from memory files; do not maintain it manually.
+- If multiple available-memory blocks appear in context, use only the latest one; older blocks only reflect earlier context.
+- Available memory entries are hints, not complete facts. Read a memory file only when it is clearly relevant to the current user request.
+- Read a specific memory file only when the user's topic is clearly related to that entry.
+- A memory is relevant when it may affect response style, structure, default suggestions, terminology, or collaboration path. Do not ignore it merely because you could answer without reading it.
+- For explanation, writing, recommendation, implementation, debugging, review, naming, or planning requests, prefer the 1-2 most relevant style, workflow, preference, context, or ambient memories.
+- When multiple memories of the same type exist, prefer the 1-2 semantically closest files. Do not read unrelated files of the same type.
+- Read only the specific matched memory files. Do not read the whole memory directory to discover files.
+- After reading a memory file, if the body is insufficient and the question involves relative time, date reasoning, or similar events, and the file has ## Sources, read the referenced absolute source trace line range, for example #L10-L18 as offset=10, limit=9.
+- Do not construct, guess, or complete memory file names or paths yourself.
+- Do not use Read on the memory directory itself.
+- Do not read MEMORY.md again unless the latest available-memory block explicitly says it was truncated.
+- When the user explicitly asks you to recall something, you must inspect the relevant memory.
+- Do not read memory files for unrelated conversation.
+- Do not read all memory files at once.
+- If you read memory, use it in the answer. Do not read and then ignore it.
+- Use memory naturally. Do not say "according to memory", "I checked a memory file", or similar mechanism-revealing phrases.
 
-## 保存规则
+## Save Rules
 
-- 记忆由系统自动保存，你不需要做任何写入操作
-- 用户说“记住”、“别忘了”时，回复“好的”即可
-- 不要调用 Write 或 Edit 操作记忆目录
+- Memory is saved automatically by the system. You do not need to write memory yourself.
+- If the user says "remember this" or "do not forget", simply acknowledge it.
+- Do not call Write or Edit on the memory directory.
 
-## 禁止事项
+## Forbidden
 
-- 不要向用户提及记忆系统、记忆文件、记忆目录、MEMORY.md 等内部概念
-- 不要解释记忆的工作原理
-- 不要说“我从记忆中得知”、“根据之前的记录”等暴露机制的表述
-- 像一个真正认识用户的朋友一样自然地使用这些信息`;
+- Do not mention memory-system internals, memory files, memory directories, or MEMORY.md to the user.
+- Do not explain how memory works.
+- Do not say "I know from memory", "according to earlier records", or similar mechanism-revealing phrases.
+- Use the information naturally, as if you genuinely know the user.`;
 }
 
 /** Port of buildMemoryIndexPrompt: wraps the index in <system-reminder>. */
 export function buildMemoryIndexPrompt(indexContent: string): string {
   const body = indexContent
-    ? `## 可用记忆条目\n\n${indexContent}\n\n只在条目与当前请求明确相关时读取对应文件。不要向用户提及这些条目、路径或读取过程。`
-    : "## 可用记忆条目\n\n当前没有可用记忆条目。不要调用 Read 读取记忆文件，也不要猜测任何文件路径；直接基于本轮对话自然回复。";
+    ? `## Available Memory Entries\n\n${indexContent}\n\nRead a listed file only when the entry is clearly relevant to the current request. Do not mention these entries, paths, or the reading process to the user.`
+    : "## Available Memory Entries\n\nNo memory entries are currently available. Do not call Read on memory files or guess file paths; respond naturally from the current conversation.";
 
   return `<system-reminder>\n${body}\n</system-reminder>`;
 }
@@ -142,7 +144,7 @@ export async function buildContext(opts: {
   const hinted = applyAgingHints(truncated, entries);
   const fallback: BuildContextResult = {
     systemPrompt: buildMemoryInstructionPrompt(),
-    preludePrompt: buildMemoryIndexPrompt(hinted),
+    preludePrompt: buildMemoryIndexPrompt(absolutizeMemoryIndexContent(hinted, opts.root)),
     enabled: true,
   };
 
@@ -257,7 +259,11 @@ export async function buildContext(opts: {
 
   return {
     systemPrompt: buildMemoryInstructionPrompt(),
-    preludePrompt: buildRelevantMemoryIndexPrompt(selected),
+    preludePrompt: buildRelevantMemoryIndexPrompt(
+      selected,
+      resolveRelativePath(opts.root, INDEX_FILE) ?? INDEX_FILE,
+      opts.root,
+    ),
     enabled: true,
   };
 }

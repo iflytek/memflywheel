@@ -56,6 +56,7 @@ export interface FileToolContext {
 
 export interface MemorySourceRef {
   relativePath: string;
+  absolutePath: string;
   startLine: number;
   endLine: number;
 }
@@ -164,7 +165,7 @@ function parseMemoryWritePath(relativePath: string): { type: MemoryType; filenam
 }
 
 function formatSourceRef(ref: MemorySourceRef): string {
-  return `${ref.relativePath}#L${ref.startLine}-L${ref.endLine}`;
+  return `${ref.absolutePath}#L${ref.startLine}-L${ref.endLine}`;
 }
 
 function validateRetrievalTerms(terms: string[] | undefined): void {

@@ -13,6 +13,9 @@ test("default dream prompt is a tool-use contract: lists the tools, demands read
   assert.match(p, /read full bodies|read each file|full body/i);
   assert.match(p, /merge/i);
   assert.match(p, /compress-memory/);
+  assert.match(p, /learned-skills\//);
+  assert.match(p, /\.memflywheel-skill-checkpoints\//);
+  assert.match(p, /Do not read, edit, move, archive, delete, or otherwise operate on skill files/);
   // No JSON op format anymore — the tool calls ARE the changes.
   assert.ok(!/fenced json|JSON array of ops/i.test(p), "no leftover JSON-op instructions");
   assert.ok(!new RegExp(["loo", "my"].join(""), "i").test(p), "prompt is name-free");

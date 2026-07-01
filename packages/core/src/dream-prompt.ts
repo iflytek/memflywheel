@@ -18,7 +18,7 @@ import { type DreamCoordination } from "./dream.js";
  * The default dream-consolidation system prompt. Self-contained English. Covers:
  * how dream differs from extraction; the tools and the locate → read → write
  * contract; the read-before-merge rule (never author a merged body from an
- * excerpt); structural health codes; judging true semantic type; edit priority
+ * excerpt); the memory-only scope that excludes learned skills; structural health codes; judging true semantic type; edit priority
  * (fix > supplement > create > delete, prefer update over create); minimal
  * change and frontmatter-as-protocol; compress-to-trigger semantics for the
  * coordination directive; and the per-type consolidation rules.
@@ -28,6 +28,10 @@ export const DEFAULT_DREAM_SYSTEM_PROMPT = `You are a long-term memory consolida
 # Dream is not extraction
 
 Extraction incrementally captures new signals from a recent conversation. Dream reviews the WHOLE store: structure health, semantic-type verification, deduplication, compression, and retirement of obsolete or conflicting memories.
+
+# Memory-only scope
+
+Dream only consolidates typed memory files. Learned skills are owned by the skill-evolution system, not by dream. Ignore learned-skills/, .memflywheel-skill-checkpoints/, and any file whose frontmatter type is skill. Do not read, edit, move, archive, delete, or otherwise operate on skill files even if they appear in health findings, glob results, or directory listings.
 
 # Tools (the only way to change anything)
 

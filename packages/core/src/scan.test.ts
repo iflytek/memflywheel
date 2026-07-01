@@ -116,7 +116,7 @@ test("readAllMemoryContents concatenates bodies", async () => {
 });
 
 test("formatManifest renders lines or empty marker", () => {
-  assert.equal(formatManifest([]), "（无现有记忆）");
+  assert.equal(formatManifest([]), "(no existing memories)");
   const line = formatManifest([
     {
       filename: "u.md",

@@ -8,7 +8,7 @@ The core (`@memflywheel/core`) is pure filesystem logic plus injected ports. It 
 model transport, provider auth, or provider wire shapes. The two generative steps
 (extraction, dream) reach the model only through injected function contracts; optional
 index-layer retrieval consumes a host-supplied embedding provider. Hosts wire those
-contracts and the turn lifecycle through `@memflywheel/sdk` and `@memflywheel/adapters`.
+contracts and the turn lifecycle through `@memflywheel/sdk` and `@iflytekopensource/adapters`.
 
 ## Memory root and layout
 
@@ -62,14 +62,14 @@ retrieval_terms:
 The Markdown files are the source of truth. Frontmatter parsing is hand-rolled: only the
 first `FRONTMATTER_READ_BYTES` (2048) are read for a header scan, the block must close
 within `MAX_FRONTMATTER_LINES`, and `name` + a valid `type` are required or the entry is
-ignored. See [`memory-schema.md`](memory-schema.md).
+ignored. Supported memory types are `identity`, `preference`, `style`, `workflow`,
+`context`, and `ambient`.
 
 Writes go through `writeMemoryDocument` / `deleteMemoryDocument` / `archiveMemoryDocument`
 on a `StorageContext` (`{ root, audit }`). Every write is:
 
 - **Privacy-filtered** first — `<private>…</private>` spans become `[REDACTED]`. The
-  optional `refuseSecrets` gate can also refuse obvious secrets (see
-  [`extraction.md`](extraction.md) and the privacy notes below).
+  optional `refuseSecrets` gate can also refuse obvious secrets.
 - **Atomic** — written to a temp file and `rename`d into place.
 - **Audited** — appended to `.audit.log`.
 
@@ -89,8 +89,8 @@ model. Each entry becomes one line:
 
 `syncMemoryIndex(root, entries)` rewrites the file. Before injection the content is passed
 through `truncateIndex` (≤ `INDEX_MAX_LINES` = 200 lines and ≤ `INDEX_MAX_BYTES` = 25 000
-UTF-8 bytes, with a truncation marker appended when cut) and `applyAgingHints` (per-type
-aging — see [`memory-schema.md`](memory-schema.md)).
+UTF-8 bytes, with a truncation marker appended when cut) and `applyAgingHints` for
+time-sensitive memory types such as `context` and `ambient`.
 
 ## Recall
 
@@ -104,8 +104,7 @@ and returns two strings:
 
 The main model reads the index and decides on its own whether any entry is relevant and
 whether to `Read` a body. Hybrid retrieval, when configured, ranks only index lines with
-embedding + BM25 + RRF; memory bodies are not embedded or searched. See
-[`recall.md`](recall.md).
+embedding + BM25 + RRF; memory bodies are not embedded or searched.
 
 ## Extraction
 
@@ -123,8 +122,7 @@ during that extraction pass gets a `## Sources` body section pointing to the JSO
 range. Multiple memories from the same pass therefore share the same source file and line
 range; later passes append new lines and can add more refs. The hidden source directory is
 never indexed. The pass then relocates any stray root-level files into typed directories,
-re-syncs the index, and advances the cursor only on success. See
-[`extraction.md`](extraction.md).
+re-syncs the index, and advances the cursor only on success.
 
 ## Dream (consolidation)
 
@@ -157,6 +155,10 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 
 ## Package boundaries
 
+Only `@iflytekopensource/adapters` and `@iflytekopensource/hermes` are public npm packages.
+The layers below remain private workspace packages; release builds bundle the
+runtime pieces into the host-facing packages.
+
 ```
 @memflywheel/core      filesystem only, no LLM, no host coupling
    ▲
@@ -165,7 +167,7 @@ minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 @memflywheel/sdk       wires injection points + turn lifecycle
    ▲
    │
-@memflywheel/adapters  per-host lifecycle mapping
+@iflytekopensource/adapters  per-host lifecycle mapping
 ```
 
 See [`integrations.md`](integrations.md) for the SDK and host adapter surfaces.

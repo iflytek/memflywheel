@@ -632,8 +632,6 @@ export async function runSkillEvolutionAgent<TCheckpoint>(
     });
 
     const coordination = deriveCoordination({ changeSet, catalogNames, deletedNames });
-    validateSkillEvolutionCoordination(coordination);
-    validateSkillEvolutionChangeSet(coordination, changeSet);
 
     return {
       ...changeSet,

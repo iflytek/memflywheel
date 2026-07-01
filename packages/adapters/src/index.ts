@@ -1,5 +1,5 @@
 /**
- * @memflywheel/adapters — host lifecycle mappings.
+ * @iflytekopensource/adapters — host lifecycle mappings.
  *
  * Each adapter maps a host's lifecycle events (session start, prompt build,
  * turn end, idle/scheduled) onto a MemFlywheel's hooks. Adapters contain NO
@@ -98,6 +98,36 @@ export {
   attachPiScribe,
   createPiHarnessPort,
 } from "./pi-port.js";
+
+export {
+  type OpenCodeClientLike,
+  type OpenCodePluginInput,
+  type OpenCodeHarnessPortOptions,
+  type OpenCodeHooks,
+  defaultOpenCodeMemFlywheelRoot,
+  canonicalMessagesFromOpenCodeSessionMessages,
+  createOpenCodeHarnessPort,
+  createOpenCodePluginServer,
+  createOpenCodePluginServer as server,
+} from "./opencode-port.js";
+
+export {
+  type OpenClawApiLike,
+  type OpenClawHarnessPortOptions,
+  defaultOpenClawMemFlywheelRoot,
+  canonicalMessagesFromOpenClawMessages,
+  createOpenClawHarnessPort,
+  registerOpenClawMemoryCapability,
+  createOpenClawPluginRuntime,
+} from "./openclaw-port.js";
+
+export {
+  type EnvLike,
+  type OpenAICompatibleEnvModelOptions,
+  type ResolvedOpenAICompatibleEnvModelConfig,
+  resolveOpenAICompatibleEnvModelConfig,
+  createOpenAICompatibleEnvModel,
+} from "./openai-env-model.js";
 
 // Host-scribe bridge: wrap a canonical host model into a batteries-included scribe.
 export {

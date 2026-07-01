@@ -13,7 +13,11 @@
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createMemFlywheelHarnessRuntime, hermesAdapter, connect } from "@memflywheel/adapters";
+import {
+  createMemFlywheelHarnessRuntime,
+  hermesAdapter,
+  connect,
+} from "@iflytekopensource/adapters";
 import { createOpenAIChatCompletionsModel } from "@memflywheel/model";
 import { createFakeModel } from "../shared/fake-model.mjs";
 import { transcript } from "../shared/transcript.mjs";

@@ -69,9 +69,9 @@ test("onPromptBuild result is delivered via a respond callback", async () => {
   opencodeAdapter.attach(scribe, host);
 
   let received: MemFlywheelContext | undefined;
-  host.emit("message.build", {
-    sessionId: "abc",
-    message: "review this release",
+  host.emit("experimental.chat.system.transform", {
+    sessionID: "abc",
+    prompt: "review this release",
     respond: (p: Promise<MemFlywheelContext>) => {
       void p.then((ctx) => {
         received = ctx;

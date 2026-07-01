@@ -6,4 +6,6 @@ packages:
 # Dependabot PRs for freshly-published packages don't fail CI.
 minimumReleaseAge: 60
 
+allowBuilds:
+  esbuild: true
 autoInstallPeers: false

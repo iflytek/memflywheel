@@ -32,7 +32,8 @@
     "format": "prettier --write \"**/*.{ts,mts,mjs,json,md,yml,yaml}\" --ignore-path .prettierignore",
     "format:check": "prettier --check \"**/*.{ts,mts,mjs,json,md,yml,yaml}\" --ignore-path .prettierignore",
     "ci": "pnpm run clean && pnpm run lint && pnpm run format:check && pnpm run build && pnpm run test && pnpm run pack:dry-run",
-    "pack:dry-run": "pnpm -r --filter './packages/*' exec npm pack --dry-run --json"
+    "pack:dry-run": "pnpm --filter @iflytekopensource/adapters run build && pnpm --filter @iflytekopensource/hermes run build && pnpm --filter @iflytekopensource/adapters pack --dry-run --json && pnpm --filter @iflytekopensource/hermes pack --dry-run --json",
+    "publish:npm": "node scripts/publish-npm.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

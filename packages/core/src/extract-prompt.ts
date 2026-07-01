@@ -310,7 +310,7 @@ export function buildExtractionAgentUserMessage(input: {
     }
   }
   if (omittedToolCalls > 0) {
-    lines.push(`…[${omittedToolCalls} 个工具调用因窗口上限省略]…`);
+    lines.push(`…[${omittedToolCalls} tool calls omitted because of the window limit]…`);
   }
 
   lines.push("");

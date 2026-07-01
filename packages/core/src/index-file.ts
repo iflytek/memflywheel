@@ -26,7 +26,7 @@ export const AGING_THRESHOLDS: Readonly<Record<MemoryType, number | null>> = {
 };
 
 const TRUNCATION_MARKER =
-  "<!-- 记忆索引已截断；仅在确实需要查看剩余索引时，才 Read MEMORY.md 文件 -->";
+  "<!-- Memory index truncated; read MEMORY.md only when you truly need the remaining index. -->";
 
 function getEntryPath(entry: MemoryEntry): string {
   return entry?.relativePath || entry?.filename || "";
@@ -43,7 +43,7 @@ export function buildIndexContent(entries: MemoryEntry[]): string {
   return entries
     .map((entry) => {
       const entryPath = getEntryPath(entry);
-      const description = entry.description || "（无描述）";
+      const description = entry.description || "(no description)";
       const meta = [`type: ${entry.type}`, `path: ${entryPath}`];
       if (entry.occurredOn) meta.push(`occurred_on: ${entry.occurredOn}`);
       if (entry.retrievalTerms?.length) meta.push(`terms: ${entry.retrievalTerms.join("; ")}`);
@@ -96,7 +96,7 @@ export function applyAgingHints(content: string, entries: MemoryEntry[]): string
     if (age <= threshold) continue;
 
     const days = Math.floor(age / (24 * 60 * 60 * 1000));
-    const hint = `（此记忆已有 ${days} 天未更新，使用前建议验证）`;
+    const hint = `(this memory has not been updated for ${days} days; verify before use)`;
     const entryPath = getEntryPath(entry);
     const pathPattern = escapeRegex(entryPath).replace(/\//g, "[\\\\/]");
     const filenamePattern = escapeRegex(entry.filename || path.posix.basename(entryPath));
