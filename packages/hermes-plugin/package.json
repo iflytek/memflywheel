@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "memflywheel-hermes-install": "./bin/install.mjs"
+    "memflywheel-hermes-install": "bin/install.mjs"
   },
   "files": [
     "LICENSE",
