@@ -116,9 +116,9 @@ export these variables before starting the host; pre-recall then turns on
 automatically and injects only the most relevant index entries.
 
 ```sh
-export MEMFLYWHEEL_EMBEDDING_ENDPOINT="http://127.0.0.1:18088/v1"
-export MEMFLYWHEEL_EMBEDDING_API_KEY="local"
-export MEMFLYWHEEL_EMBEDDING_MODEL="BAAI/bge-m3"
+export MEMFLYWHEEL_EMBEDDING_ENDPOINT="https://embedding-gateway.example.com/v1"
+export MEMFLYWHEEL_EMBEDDING_API_KEY="..."
+export MEMFLYWHEEL_EMBEDDING_MODEL="text-embedding-3-small"
 ```
 
 Host setup, embedding pre-recall, verification, and troubleshooting live in

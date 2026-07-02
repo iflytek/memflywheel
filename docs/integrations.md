@@ -56,26 +56,32 @@ embed MEMORY.md index lines -> hybrid search -> inject Relevant Memory Entries
 The adapter runtime reads the following environment variables when
 `memoryIndexRetrieval` was not supplied explicitly:
 
-| Variable                                         | Set when                      | Meaning                                                                        |
-| ------------------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------ |
-| `MEMFLYWHEEL_EMBEDDING_ENDPOINT`                 | Using local/custom embeddings | Base URL without `/embeddings`, for example `http://127.0.0.1:18088/v1`        |
-| `MEMFLYWHEEL_EMBEDDING_BASE_URL`                 | Alias                         | Alias for `MEMFLYWHEEL_EMBEDDING_ENDPOINT`                                     |
-| `MEMFLYWHEEL_EMBEDDING_API_KEY`                  | No `OPENAI_API_KEY` fallback  | Embedding API key; `OPENAI_API_KEY` is used only as fallback                   |
-| `MEMFLYWHEEL_EMBEDDING_MODEL`                    | Using a non-default model     | Embedding model id and index-cache key; default is `text-embedding-3-small`    |
-| `MEMFLYWHEEL_EMBEDDING_BATCH_SIZE`               | Provider needs batching       | Maximum texts per embeddings request                                           |
-| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL`             | Need explicit behavior        | `auto`, `required`, or `off`; default is `auto` when retrieval config is found |
-| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_LIMIT`       | Need a different recall size  | Retrieved index-line count; default is `30`                                    |
-| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_MIN_RECORDS` | Need a different threshold    | Record threshold before pre-recall runs; default is `200`                      |
+| Variable                                         | Set when                     | Meaning                                                                                |
+| ------------------------------------------------ | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `MEMFLYWHEEL_EMBEDDING_ENDPOINT`                 | Using a provider or gateway  | Base URL without `/embeddings`, for example `https://embedding-gateway.example.com/v1` |
+| `MEMFLYWHEEL_EMBEDDING_BASE_URL`                 | Alias                        | Alias for `MEMFLYWHEEL_EMBEDDING_ENDPOINT`                                             |
+| `MEMFLYWHEEL_EMBEDDING_API_KEY`                  | No `OPENAI_API_KEY` fallback | Sent as `Authorization: Bearer ...`; `OPENAI_API_KEY` is used only as fallback         |
+| `MEMFLYWHEEL_EMBEDDING_MODEL`                    | Using a non-default model    | Embedding model id and index-cache key; default is `text-embedding-3-small`            |
+| `MEMFLYWHEEL_EMBEDDING_BATCH_SIZE`               | Provider needs batching      | Maximum texts per embeddings request                                                   |
+| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL`             | Need explicit behavior       | `auto`, `required`, or `off`; default is `auto` when retrieval config is found         |
+| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_LIMIT`       | Need a different recall size | Retrieved index-line count; default is `30`                                            |
+| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_MIN_RECORDS` | Need a different threshold   | Record threshold before pre-recall runs; default is `200`                              |
 
 Example with any OpenAI-compatible embedding service:
 
 ```sh
-export MEMFLYWHEEL_EMBEDDING_ENDPOINT="http://127.0.0.1:18088/v1"
-export MEMFLYWHEEL_EMBEDDING_API_KEY="local"
-export MEMFLYWHEEL_EMBEDDING_MODEL="BAAI/bge-m3"
+export MEMFLYWHEEL_EMBEDDING_ENDPOINT="https://embedding-gateway.example.com/v1"
+export MEMFLYWHEEL_EMBEDDING_API_KEY="..."
+export MEMFLYWHEEL_EMBEDDING_MODEL="text-embedding-3-small"
 export MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL="auto"
 export MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_LIMIT="30"
 ```
+
+For managed providers, put the provider key in `MEMFLYWHEEL_EMBEDDING_API_KEY`.
+For proxy or gateway setups, point `MEMFLYWHEEL_EMBEDDING_ENDPOINT` at the
+OpenAI-compatible gateway URL. MemFlywheel sends ordinary `/embeddings` requests
+with a Bearer token; provider-specific auth, routing, or network proxy rules
+belong in that gateway or in a custom `memoryIndexRetrieval.embeddingProvider`.
 
 During setup, use `required` instead of `auto` if you want a missing or broken
 embedding service to fail the agent turn immediately:
@@ -88,26 +94,10 @@ To verify pre-recall from the user's point of view:
 
 | Step                                                                    | Expected result                                            |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Start an OpenAI-compatible embeddings service                           | `POST /v1/embeddings` succeeds                             |
+| Configure an OpenAI-compatible embeddings provider or gateway           | `POST /v1/embeddings` succeeds                             |
 | Export the `MEMFLYWHEEL_EMBEDDING_*` variables before starting the host | Host process inherits them                                 |
 | Run a prompt against a memory store with more than 200 index lines      | `.memflywheel/index/memory-index.json` is created          |
 | Ask for a fact that appears after the first 200 index lines             | The agent reads the matched memory file or answers from it |
-
-Optional local BGE-M3 helper from this repository:
-
-```sh
-bench/.venv-bge-m3/bin/python bench/local-bge-m3/server.py \
-  --host 127.0.0.1 \
-  --port 18088 \
-  --cache-dir bench/.hf-cache/hub \
-  --local-files-only
-
-curl http://127.0.0.1:18088/health
-```
-
-This helper expects the Python environment and BGE-M3 weights to already exist.
-For normal use, any service with an OpenAI-compatible `/v1/embeddings` endpoint
-works.
 
 ## Pi Integration
 

@@ -187,11 +187,16 @@ index grows beyond the direct prompt budget (200 lines / 25 000 bytes). When
 index-layer retrieval from OpenAI-compatible embedding env:
 
 ```sh
-export MEMFLYWHEEL_EMBEDDING_ENDPOINT="http://127.0.0.1:18088/v1"
-export MEMFLYWHEEL_EMBEDDING_API_KEY="local"
-export MEMFLYWHEEL_EMBEDDING_MODEL="BAAI/bge-m3"
+export MEMFLYWHEEL_EMBEDDING_ENDPOINT="https://embedding-gateway.example.com/v1"
+export MEMFLYWHEEL_EMBEDDING_API_KEY="..."
+export MEMFLYWHEEL_EMBEDDING_MODEL="text-embedding-3-small"
 export MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL="auto"
 ```
+
+`MEMFLYWHEEL_EMBEDDING_API_KEY` is sent as a Bearer token. For proxy or gateway
+deployments, set `MEMFLYWHEEL_EMBEDDING_ENDPOINT` to the OpenAI-compatible
+gateway URL; provider-specific auth and routing stay in that gateway or in a
+custom `memoryIndexRetrieval.embeddingProvider`.
 
 Use `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL=required` while testing if a missing or
 broken embedding provider should fail prompt build instead of using direct index
