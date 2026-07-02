@@ -101,7 +101,7 @@ function publishToGitHubPackages(publishArgs) {
 
       run("npm", [
         "publish",
-        "./package",
+        pkgDir,
         "--registry",
         GHP_REGISTRY,
         "--access",
