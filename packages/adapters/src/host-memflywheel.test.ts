@@ -38,15 +38,27 @@ const STOP: CanonicalModelResponse = {
 const TARGET_SKILL = "memflywheel-learned-release-review";
 const VALID_SKILL = `---
 name: memflywheel-learned-release-review
-display_name: Release Review
-description: Captures a repeatable release preparation review.
+description: Use when release preparation repeats and the agent must avoid skipping package, CI, or hygiene checks.
 ---
 
-## Use Cases
+## Overview
 
-- Use when preparing a MemFlywheel package or repository release.
+Release review is a gate-driven skill for turning repeated release prep into a reusable checklist.
 
-## Procedure
+## When to Use
+
+- Use when the user asks to prepare, review, publish, or cut a release.
+- Do not use for ordinary feature work with no release action.
+
+## Quick Reference
+
+| Check | Stop Signal |
+|---|---|
+| Package metadata | Wrong repository, scope, or dependency target |
+| CI | Any failing lint, build, test, or pack dry-run |
+| Hygiene | Old names, private paths, credentials, or AI footers |
+
+## Steps
 
 1. Inspect package metadata, package files, and publish configuration.
 2. Inspect README, SECURITY, SUPPORT, CHANGELOG, and examples for release consistency.
@@ -54,10 +66,10 @@ description: Captures a repeatable release preparation review.
 4. Scan for old names, private paths, credentials, and AI-signature footers.
 5. Summarize release blockers before opening a pull request.
 
-## Guardrails
+## Common Mistakes
 
-- Do not publish when secrets, private paths, or old project names are present.
-- Keep release notes concise and evidence-based.
+- Treating a green build as release approval.
+- Writing local-only proxy or credential details into public release docs.
 `;
 
 function slug(name: string): string {
@@ -523,7 +535,8 @@ test("createMemFlywheelHarnessRuntime learnedSkills assembly runs extraction, sk
   assert.equal(result.learningLoop?.dream.ran, true);
 
   const skillFile = await readFile(path.join(skillsRoot, TARGET_SKILL, "SKILL.md"), "utf8");
-  assert.match(skillFile, /## Procedure/);
+  assert.match(skillFile, /## When to Use/);
+  assert.doesNotMatch(skillFile, /^display_name:/m);
   const memoryFile = await readFile(
     path.join(root, "memory", "workflow", "release-prep.md"),
     "utf8",

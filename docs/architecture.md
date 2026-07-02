@@ -65,6 +65,19 @@ within `MAX_FRONTMATTER_LINES`, and `name` + a valid `type` are required or the 
 ignored. Supported memory types are `identity`, `preference`, `style`, `workflow`,
 `context`, and `ambient`.
 
+The built-in types are common defaults, not a closed product taxonomy. Host developers can
+add domain-specific categories if their adapter, scan rules, and prompt contract agree on the
+extra directories and `type` values.
+
+| Field             | Purpose                                                                |
+| ----------------- | ---------------------------------------------------------------------- |
+| `name`            | Short stable label shown in `MEMORY.md` and recall cues                |
+| `description`     | One-line routing summary, not the full memory body                     |
+| `type`            | Memory category and directory name                                     |
+| `retrieval_terms` | Short routing phrases for index-layer retrieval, not a body summary    |
+| Markdown body     | The actual memory content                                              |
+| `## Sources`      | Optional evidence refs into `.memflywheel/sources/*.jsonl` line ranges |
+
 Writes go through `writeMemoryDocument` / `deleteMemoryDocument` / `archiveMemoryDocument`
 on a `StorageContext` (`{ root, audit }`). Every write is:
 
@@ -91,6 +104,11 @@ model. Each entry becomes one line:
 through `truncateIndex` (≤ `INDEX_MAX_LINES` = 200 lines and ≤ `INDEX_MAX_BYTES` = 25 000
 UTF-8 bytes, with a truncation marker appended when cut) and `applyAgingHints` for
 time-sensitive memory types such as `context` and `ambient`.
+
+`retrieval_terms` help find the right index line; they should stay short and grounded in
+likely query wording. They are not a second description field and should not copy the memory
+body. Source traces are intentionally outside `MEMORY.md`: memory bodies may point to them
+through `## Sources`, but source JSONL is never scanned into the recall index.
 
 ## Recall
 
@@ -138,6 +156,18 @@ over the cleaned state: it reads full memory bodies and performs semantic consol
 returned anymore — the tool calls are the changes. `shouldRunDream` gates the pass on a
 minimum elapsed time (`DREAM_DEFAULT_MIN_HOURS` = 24) or a minimum session count
 (`DREAM_DEFAULT_MIN_SESSIONS` = 5).
+
+## Learned skills
+
+Learned skills use the same file-native rule: MemFlywheel stores and recalls them, while the
+host decides whether to load or execute them. Skill evolution writes into a staged checkpoint
+first. Finalize only publishes staged directories after validating package shape, path scope,
+and that the target skill tree was not externally changed; failures roll back to the snapshot.
+
+When skill evolution creates, updates, or merges a skill, the coordination result asks dream
+to compress redundant workflow memory into a cue pointing at the learned skill. That is the
+memory ↔ skill flywheel: repeated procedure details move out of ordinary memory and become a
+reusable skill route for future turns.
 
 ## Cross-cutting concerns
 

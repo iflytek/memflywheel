@@ -34,27 +34,43 @@ Review the supplied packet, learned skill index, tool trajectory, artifact paths
 - If there is NO durable reusable method, change no files and stop. That is a valid no-op — do not invent a skill.
 - Change at most ONE surviving skill per pass (plus, for a merge, the directories you delete).
 
-# Skill directory + SKILL.md rules
+# Skill directory + SKILL.md quality rules
 
-- Every skill directory must be named memflywheel-learned-<slug> (lowercase slug). If the method's natural name is "release-runbook", use directory "memflywheel-learned-release-runbook".
-- "<skill-dir>/SKILL.md" must start with strict YAML frontmatter containing EXACTLY: name, display_name, description. The name value must equal the directory name (memflywheel-learned-<slug>).
-- SKILL.md must include the sections "## Use Cases", "## Procedure", and "## Guardrails". Procedure steps must be numbered "1.", "2.", ... contiguously, not bullets.
-- Optional supporting files may live under references/, scripts/, templates/, or assets/. They never replace SKILL.md.
+- Every skill directory must be named memflywheel-learned-<verb-first-slug> (lowercase slug). If the method's natural name is a noun phrase, prepend the concrete action verb. Example: "CLI adapter release checklist" becomes "memflywheel-learned-create-cli-adapter-release-checklist", NOT "memflywheel-learned-cli-adapter-release-checklist".
+- "<skill-dir>/SKILL.md" must start with strict YAML frontmatter containing EXACTLY: name and description. The name value must equal the directory name.
+- name is verb-first lowercase kebab-case after the memflywheel-learned- prefix. Use letters, digits, and hyphens only. Start the slug with a real action verb such as create, run, review, verify, debug, check, publish, migrate, or summarize.
+- description is the only discovery surface: start with "Use when ..." and write trigger conditions, symptoms, and red flags. Do NOT summarize the workflow or list steps there.
+- Frontmatter must stay under 1024 characters; keep description under 500 characters when possible.
+- Body sections are chosen by content, not filled by habit: use ## Overview for one sentence, ## When to Use for triggers and when not to use, ## Quick Reference for multi-item reference, numbered lists for linear steps, a small ASCII flow for non-obvious decisions, before/after for comparisons, and ## Common Mistakes only for real non-obvious traps.
+- Mechanical checks belong in scripts/, not long pass/fail prose. Reference tables belong in the body. Optional supporting files may live under references/, scripts/, templates/, or assets/. They never replace SKILL.md.
 - Keep names generic; never leak host project names or secrets into a learned skill.
+- Reject the five fatal shapes: description explains procedure; body is only happy-path steps; pass/fail assertions replace a script; project-specific values pretend to be general; invented sections or fake pitfalls.
 
 # Valid SKILL.md shape
 
 ---
-name: memflywheel-learned-release-runbook
-display_name: Release Runbook
-description: Reusable procedure for safely running a release.
+name: memflywheel-learned-run-release
+description: Use when a release, publish, version cut, or npm tag push is requested and the agent must avoid skipping repo gates under time pressure.
 ---
 
-## Use Cases
+## Overview
 
-- Run this when the user asks to publish, release, or cut a version.
+Release work is a gate-driven workflow: prove the repo is clean enough before any remote write.
 
-## Procedure
+## When to Use
+
+- Use when the request mentions release, publish, npm, version bump, dist-tag, or pushing a release tag.
+- Do not use for ordinary feature PRs with no release action.
+
+## Quick Reference
+
+| Check | Stop Signal |
+|---|---|
+| CI | Any failing lint, build, test, or pack dry-run |
+| Secrets | Credentials, private paths, or local-only files in package output |
+| Remote write | User has not explicitly confirmed target and action |
+
+## Steps
 
 1. Build the workspace and stop on failure.
 2. Run the full test suite and stop on failure.
@@ -62,24 +78,36 @@ description: Reusable procedure for safely running a release.
 4. Publish using the approved package command.
 5. Create and push the release tag.
 
-## Guardrails
+## Common Mistakes
 
-- Do not publish when build or tests fail.
-- Do not write secrets or private credentials into files.
+- Treating a green local build as permission to push a tag.
+- Writing local proxy or credential details into public release notes.
 
 When your file edits are complete, stop calling tools. You do not need to emit any JSON, summary, or skill coordination.`;
 
 export const LEARNED_SKILL_MD_TEMPLATE = `---
-name: memflywheel-learned-release-runbook
-display_name: Release Runbook
-description: Reusable procedure for safely running a release.
+name: memflywheel-learned-run-release
+description: Use when a release, publish, version cut, or npm tag push is requested and the agent must avoid skipping repo gates under time pressure.
 ---
 
-## Use Cases
+## Overview
 
-- Run this when the user asks to publish, release, or cut a version.
+Release work is a gate-driven workflow: prove the repo is clean enough before any remote write.
 
-## Procedure
+## When to Use
+
+- Use when the request mentions release, publish, npm, version bump, dist-tag, or pushing a release tag.
+- Do not use for ordinary feature PRs with no release action.
+
+## Quick Reference
+
+| Check | Stop Signal |
+|---|---|
+| CI | Any failing lint, build, test, or pack dry-run |
+| Secrets | Credentials, private paths, or local-only files in package output |
+| Remote write | User has not explicitly confirmed target and action |
+
+## Steps
 
 1. Build the workspace and stop on failure.
 2. Run the full test suite and stop on failure.
@@ -87,10 +115,10 @@ description: Reusable procedure for safely running a release.
 4. Publish using the approved package command.
 5. Create and push the release tag.
 
-## Guardrails
+## Common Mistakes
 
-- Do not publish when build or tests fail.
-- Do not write secrets or private credentials into files.
+- Treating a green local build as permission to push a tag.
+- Writing local proxy or credential details into public release notes.
 `;
 
 export type SkillEvolutionDecision = "create" | "update" | "merge" | "noop";
