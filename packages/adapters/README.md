@@ -181,6 +181,22 @@ MemFlywheel state under `$MEMFLYWHEEL_HOME` when set, otherwise
 skills loader and renders them in the host-native `<available_skills>` prompt
 surface.
 
+Large memory stores need embedding pre-recall after the generated `MEMORY.md`
+index grows beyond the direct prompt budget (200 lines / 25 000 bytes). When
+`memoryIndexRetrieval` is not supplied explicitly, the runtime auto-enables
+index-layer retrieval from OpenAI-compatible embedding env:
+
+```sh
+export MEMFLYWHEEL_EMBEDDING_ENDPOINT="http://127.0.0.1:18088/v1"
+export MEMFLYWHEEL_EMBEDDING_API_KEY="local"
+export MEMFLYWHEEL_EMBEDDING_MODEL="BAAI/bge-m3"
+export MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL="auto"
+```
+
+Use `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL=required` while testing if a missing or
+broken embedding provider should fail prompt build instead of using direct index
+injection.
+
 Custom hosts can either pass custom lifecycle hooks or ask
 `createMemFlywheelHarnessRuntime` to assemble the bundled file-native
 learned-skill store:
@@ -237,5 +253,5 @@ if (!res.verify!.ok) console.error(res.verify!.problems);
 
 Runnable integration examples live under [`examples/`](https://github.com/iflytek/memflywheel/tree/main/examples).
 Pi, Hermes, OpenCode, and OpenClaw are the public first-class host paths.
-Source-checkout debugging notes live in
+Host setup, embedding pre-recall, verification, and troubleshooting live in
 [`docs/integrations.md`](https://github.com/iflytek/memflywheel/blob/main/docs/integrations.md).

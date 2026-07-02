@@ -185,6 +185,26 @@ function appendPromptBuildResult(
   }
 }
 
+function latestUserQuery(messages: readonly CanonicalModelMessage[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role === "user" && message.content?.trim()) return message.content.trim();
+  }
+  return undefined;
+}
+
+function withCompletedAssistantText(
+  messages: readonly CanonicalModelMessage[],
+  text: string,
+): CanonicalModelMessage[] {
+  const completedText = text.trim();
+  if (!completedText) return [...messages];
+  if (messages.some((message) => message.role === "assistant" && message.content?.trim())) {
+    return [...messages];
+  }
+  return [...messages, { role: "assistant", content: completedText }];
+}
+
 export function createOpenCodeHarnessPort(
   client: OpenCodeClientLike,
   options: OpenCodeHarnessPortOptions = {},
@@ -217,17 +237,23 @@ export function createOpenCodeHarnessPort(
     },
     async "experimental.chat.system.transform"(input, output) {
       const sessionId = input.sessionID ?? lastSessionId;
+      const query = sessionId
+        ? latestUserQuery(await readOpenCodeMessages(client, sessionId, messageLimit))
+        : undefined;
       for (const handler of promptHandlers) {
-        const result = await handler({ sessionId });
+        const result = await handler({ sessionId, query });
         appendPromptBuildResult(output, result);
       }
     },
-    async "experimental.text.complete"(input) {
+    async "experimental.text.complete"(input, output) {
       const key = `${input.sessionID}:${input.messageID}:${input.partID}`;
       if (completedTextParts.has(key)) return;
       completedTextParts.add(key);
       lastSessionId = input.sessionID;
-      const messages = await readOpenCodeMessages(client, input.sessionID, messageLimit);
+      const messages = withCompletedAssistantText(
+        await readOpenCodeMessages(client, input.sessionID, messageLimit),
+        output.text,
+      );
       for (const handler of turnHandlers) await handler({ sessionId: input.sessionID, messages });
     },
     async "tool.execute.before"(input, output) {

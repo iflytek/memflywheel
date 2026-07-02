@@ -227,6 +227,41 @@ test("buildContext falls back to full index when the embedding provider fails at
   }
 });
 
+test("buildContext required retrieval fails fast when the embedding provider fails at runtime", async () => {
+  const root = await makeRoot();
+  try {
+    await writeFixture(root, "workflow", "release.md", {
+      name: "发布流程",
+      description: "pnpm build 后打 tag",
+      body: "release",
+      mtime: 1,
+    });
+    await writeFixture(root, "preference", "tea.md", {
+      name: "饮茶偏好",
+      description: "喜欢茉莉花茶",
+      body: "tea",
+      mtime: 2,
+    });
+    const provider: EmbeddingProvider = {
+      async embed() {
+        throw new Error("embedding timeout");
+      },
+    };
+
+    await assert.rejects(
+      () =>
+        buildContext({
+          root,
+          query: "发布",
+          indexRetrieval: { mode: "required", embeddingProvider: provider, minRecords: 1 },
+        }),
+      /Memory index retrieval failed during cache-start/,
+    );
+  } finally {
+    await cleanup(root);
+  }
+});
+
 test("buildContext required retrieval fails fast when no provider is configured", async () => {
   const root = await makeRoot();
   try {

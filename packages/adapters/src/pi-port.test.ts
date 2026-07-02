@@ -115,6 +115,44 @@ test("createPiHarnessPort forwards Pi context prompt as retrieval query", async 
   assert.deepEqual(seen, { sessionId: "p1", query: "how do I publish?" });
 });
 
+test("createPiHarnessPort forwards the latest Pi context user message as retrieval query", async () => {
+  let contextHandler: ((event: unknown, ctx: unknown) => Promise<unknown> | unknown) | undefined;
+  const pi = {
+    on(event: string, handler: unknown) {
+      if (event === "context") {
+        contextHandler = handler as (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
+      }
+      return () => undefined;
+    },
+  };
+  const port = createPiHarnessPort(pi, {
+    model: {
+      async complete() {
+        return { message: { role: "assistant", content: "done" } };
+      },
+    },
+  });
+
+  let seen: { sessionId?: string; query?: string } | undefined;
+  port.lifecycle.onPromptBuild(async (event) => {
+    seen = event;
+    return { systemPrompt: "rules", preludePrompt: "index" };
+  });
+  assert.ok(contextHandler);
+  await contextHandler!(
+    {
+      messages: [
+        { role: "user", content: [{ type: "text", text: "old question" }] },
+        { role: "assistant", content: [{ type: "text", text: "old answer" }] },
+        { role: "user", content: [{ type: "text", text: "how do I publish now?" }] },
+      ],
+    },
+    { sessionManager: { getSessionId: () => "p2" } },
+  );
+
+  assert.deepEqual(seen, { sessionId: "p2", query: "how do I publish now?" });
+});
+
 test("createPiHarnessPort isolates background model session from Pi chat continuation", async () => {
   let turnHandler: PiExtensionHandler | undefined;
   const model = { id: "gpt-5.5", provider: "openai-codex" };

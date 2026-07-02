@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import path from "node:path";
 
 import {
@@ -271,6 +272,80 @@ function section(text: string, heading: string, nextHeading: string): string {
 /** A subagent that declines: it calls no tools and replies with one sentence. */
 const decliningModel: CanonicalModelCompletion = { complete: async () => STOP };
 
+async function writeManyMemories(root: string, count: number): Promise<void> {
+  const dir = path.join(root, "preference");
+  await mkdir(dir, { recursive: true });
+  await Promise.all(
+    Array.from({ length: count }, async (_, index) => {
+      const topic = index === count - 1 ? "rare mountain tea" : `ordinary topic ${index}`;
+      await writeFile(
+        path.join(dir, `memory-${index}.md`),
+        [
+          "---",
+          "type: preference",
+          `name: ${topic}`,
+          `description: ${topic}`,
+          "---",
+          "",
+          `The remembered topic is ${topic}.`,
+          "",
+        ].join("\n"),
+      );
+    }),
+  );
+}
+
+async function withEmbeddingServer<T>(run: (baseUrl: string) => Promise<T>): Promise<T> {
+  const server = createServer((req, res) => {
+    if (req.method !== "POST" || req.url !== "/v1/embeddings") {
+      res.writeHead(404).end();
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { input: string[] };
+      const data = body.input.map((text, index) => ({
+        index,
+        embedding: text.includes("rare mountain tea") ? [1, 0, 0] : [0, 1, 0],
+      }));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data }));
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  try {
+    return await run(`http://127.0.0.1:${address.port}/v1`);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
+async function withEnv<T>(values: Record<string, string>, run: () => Promise<T>): Promise<T> {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(values)) {
+    previous.set(key, process.env[key]);
+    process.env[key] = value;
+  }
+  try {
+    return await run();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 test("createMemFlywheelHarnessRuntime with a canonical model extracts and writes a memory end-to-end", async () => {
   const root = await tempDir();
   const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root });
@@ -413,6 +488,35 @@ test("createMemFlywheelHarnessRuntime prompt build returns the two recall segmen
   assert.equal(ctx.enabled, true);
   assert.ok(typeof ctx.systemPrompt === "string");
   assert.ok(typeof ctx.preludePrompt === "string");
+});
+
+test("createMemFlywheelHarnessRuntime enables index pre-recall from embedding env", async () => {
+  const root = await tempDir();
+  await writeManyMemories(root, 205);
+
+  await withEmbeddingServer(async (baseUrl) => {
+    await withEnv(
+      {
+        MEMFLYWHEEL_EMBEDDING_ENDPOINT: baseUrl,
+        MEMFLYWHEEL_EMBEDDING_API_KEY: "test-key",
+        MEMFLYWHEEL_EMBEDDING_MODEL: "test-embedding",
+        MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL: "required",
+        MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_LIMIT: "3",
+      },
+      async () => {
+        const { scribe } = createMemFlywheelHarnessRuntime({ model: decliningModel, root });
+
+        const ctx = await scribe.onPromptBuild({
+          sessionId: "s1",
+          query: "Please recall rare mountain tea.",
+        });
+
+        assert.match(ctx.preludePrompt, /Relevant Memory Entries/);
+        assert.match(ctx.preludePrompt, /rare mountain tea/);
+        assert.equal(ctx.preludePrompt.split("\n- [").length - 1, 3);
+      },
+    );
+  });
 });
 
 test("createMemFlywheelHarnessRuntime wires skill recall and turn-end learning loop into the SDK", async () => {

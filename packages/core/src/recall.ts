@@ -246,6 +246,9 @@ export async function buildContext(opts: {
       errorCauseCode: typeof cause?.code === "string" ? cause.code : undefined,
       errorCauseMessage: typeof cause?.message === "string" ? cause.message : undefined,
     });
+    if (mode === "required") {
+      throw new Error(`Memory index retrieval failed during ${stage}.`, { cause: error });
+    }
     return fallback;
   }
 
