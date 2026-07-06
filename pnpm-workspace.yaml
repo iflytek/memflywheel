@@ -9,3 +9,6 @@ minimumReleaseAge: 60
 allowBuilds:
   esbuild: true
 autoInstallPeers: false
+
+overrides:
+  esbuild: ">=0.28.1"
