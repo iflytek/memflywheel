@@ -15,6 +15,12 @@ for published packages.
 - Documentation for the 200-line direct index limit and the optional
   endpoint/API-key setup needed to enable pre-recall.
 
+### Security
+
+- Upgraded esbuild to 0.28.1 to resolve security vulnerability (CVE affects
+  versions < 0.28.1). Added `overrides` in `pnpm-workspace.yaml` to force the
+  patched version.
+
 ## [0.1.0] - 2026-07-01
 
 ### Added
