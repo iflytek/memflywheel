@@ -109,7 +109,19 @@ MemFlywheel installs into each host as a native memory plugin. The host keeps
 owning models, tools, permissions, and sessions; MemFlywheel adds recall,
 turn-end extraction, dream consolidation, and learned skills.
 
-Source checkout, verification, and debugging paths live in
+Embedding pre-recall is optional. Without it, MemFlywheel still works and
+injects up to 200 generated `MEMORY.md` index lines directly. Once your memory
+index grows beyond that, start any OpenAI-compatible embeddings endpoint and
+export these variables before starting the host; pre-recall then turns on
+automatically and injects only the most relevant index entries.
+
+```sh
+export MEMFLYWHEEL_EMBEDDING_ENDPOINT="https://embedding-gateway.example.com/v1"
+export MEMFLYWHEEL_EMBEDDING_API_KEY="..."
+export MEMFLYWHEEL_EMBEDDING_MODEL="text-embedding-3-small"
+```
+
+Host setup, embedding pre-recall, verification, and troubleshooting live in
 [`docs/integrations.md`](docs/integrations.md).
 
 ## Install Packages
@@ -130,14 +142,14 @@ evolve. See [`docs/evaluation.md`](docs/evaluation.md).
 
 ## Documentation
 
-| Document                                                           | Content                                                                   |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries |
-| [`docs/integrations.md`](docs/integrations.md)                     | Pi, Hermes, OpenCode, and OpenClaw install, SDK hooks, adapter boundary   |
-| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                               |
-| [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                        |
-| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release notes for public npm package versions                             |
-| [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                         |
+| Document                                                           | Content                                                                           |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries         |
+| [`docs/integrations.md`](docs/integrations.md)                     | Pi, Hermes, OpenCode, OpenClaw, embedding pre-recall, SDK hooks, adapter boundary |
+| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                                       |
+| [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                                |
+| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release notes for public npm package versions                                     |
+| [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                                 |
 
 ## Open-Source Boundary
 

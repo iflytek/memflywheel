@@ -165,12 +165,20 @@ function readString(value: unknown, key: string): string | undefined {
 }
 
 function promptQueryFromPiEvent(event: unknown): string | undefined {
-  return (
+  const explicit =
     readString(event, "query") ??
     readString(event, "prompt") ??
     readString(event, "input") ??
-    readString(event, "message")
-  );
+    readString(event, "message");
+  if (explicit) return explicit;
+  const messages = isRecord(event) && Array.isArray(event.messages) ? event.messages : [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!isRecord(message) || message.role !== "user") continue;
+    const text = textFromPiContent(message.content)?.trim();
+    if (text) return text;
+  }
+  return undefined;
 }
 
 function textFromPiContent(content: unknown): string | null {

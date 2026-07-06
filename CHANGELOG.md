@@ -5,6 +5,16 @@ All notable changes to MemFlywheel will be documented in this file.
 The format follows Keep a Changelog, and this project uses semantic versioning
 for published packages.
 
+## [Unreleased]
+
+### Added
+
+- Optional embedding pre-recall for large `MEMORY.md` indexes, configured through
+  OpenAI-compatible embedding endpoint, API key, model, batch size, and retrieval
+  limit environment variables.
+- Documentation for the 200-line direct index limit and the optional
+  endpoint/API-key setup needed to enable pre-recall.
+
 ## [0.1.0] - 2026-07-01
 
 ### Added

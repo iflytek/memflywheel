@@ -38,7 +38,9 @@ import type {
   CanonicalModelCompletion,
   CanonicalModelMessage,
   CanonicalToolCall,
+  OpenAIEmbeddingsModelConfig,
 } from "@memflywheel/model";
+import { createOpenAIEmbeddingsModel } from "@memflywheel/model";
 
 import type { MemFlywheel, MemFlywheelContext, MemFlywheelMessage } from "./adapter.js";
 import {
@@ -168,6 +170,69 @@ export interface MemFlywheelHarnessRuntime {
 
 /** A turn message in either the adapter or core shape. */
 type AnyTurnMessage = MemFlywheelMessage | ExtractionMessage;
+
+const MEMORY_INDEX_RETRIEVAL_ENV = "MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL";
+const MEMORY_INDEX_RETRIEVAL_LIMIT_ENV = "MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_LIMIT";
+const MEMORY_INDEX_RETRIEVAL_MIN_RECORDS_ENV = "MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_MIN_RECORDS";
+
+function readEnv(name: string): string | undefined {
+  const value = process.env[name];
+  return value && value.trim() ? value.trim() : undefined;
+}
+
+function parsePositiveIntegerEnv(name: string): number | undefined {
+  const value = readEnv(name);
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function parseMemoryIndexRetrievalMode(
+  value: string | undefined,
+): MemoryIndexRetrievalOptions["mode"] {
+  if (!value) return "auto";
+  if (value === "auto" || value === "off" || value === "required") return value;
+  throw new Error(`${MEMORY_INDEX_RETRIEVAL_ENV} must be one of: auto, off, required.`);
+}
+
+function resolveEnvMemoryIndexRetrieval(): MemoryIndexRetrievalOptions | undefined {
+  const modeValue = readEnv(MEMORY_INDEX_RETRIEVAL_ENV);
+  const embeddingEndpoint =
+    readEnv("MEMFLYWHEEL_EMBEDDING_ENDPOINT") ?? readEnv("MEMFLYWHEEL_EMBEDDING_BASE_URL");
+  const embeddingApiKey = readEnv("MEMFLYWHEEL_EMBEDDING_API_KEY");
+  const embeddingModel = readEnv("MEMFLYWHEEL_EMBEDDING_MODEL");
+  const embeddingBatchSize = parsePositiveIntegerEnv("MEMFLYWHEEL_EMBEDDING_BATCH_SIZE");
+  const limit = parsePositiveIntegerEnv(MEMORY_INDEX_RETRIEVAL_LIMIT_ENV);
+  const minRecords = parsePositiveIntegerEnv(MEMORY_INDEX_RETRIEVAL_MIN_RECORDS_ENV);
+  const hasEmbeddingConfig =
+    Boolean(embeddingEndpoint) ||
+    Boolean(embeddingApiKey) ||
+    Boolean(embeddingModel) ||
+    embeddingBatchSize !== undefined;
+  const hasRetrievalConfig = Boolean(modeValue) || limit !== undefined || minRecords !== undefined;
+  if (!hasEmbeddingConfig && !hasRetrievalConfig) return undefined;
+
+  const mode = parseMemoryIndexRetrievalMode(modeValue);
+  if (mode === "off") return { mode };
+
+  const embeddingConfig: OpenAIEmbeddingsModelConfig = {};
+  if (embeddingEndpoint) embeddingConfig.endpoint = embeddingEndpoint;
+  if (embeddingApiKey) embeddingConfig.apiKey = embeddingApiKey;
+  if (embeddingModel) embeddingConfig.model = embeddingModel;
+  if (embeddingBatchSize !== undefined) embeddingConfig.batchSize = embeddingBatchSize;
+
+  const retrieval: MemoryIndexRetrievalOptions = {
+    mode,
+    embeddingProvider: createOpenAIEmbeddingsModel(embeddingConfig),
+  };
+  if (embeddingModel) retrieval.model = embeddingModel;
+  if (limit !== undefined) retrieval.limit = limit;
+  if (minRecords !== undefined) retrieval.minRecords = minRecords;
+  return retrieval;
+}
 
 function toExtractionMessages(messages: AnyTurnMessage[]): ExtractionMessage[] {
   const out: ExtractionMessage[] = [];
@@ -593,7 +658,7 @@ export function createMemFlywheelHarnessRuntime(
     skillRecall: sdkSkillRecall,
     skillPreludeBuilder,
     learningLoop: sdkLearningLoop,
-    memoryIndexRetrieval,
+    memoryIndexRetrieval: memoryIndexRetrieval ?? resolveEnvMemoryIndexRetrieval(),
   });
   const scribe = adaptSdkMemFlywheel(sdk);
   const dispose = options.port

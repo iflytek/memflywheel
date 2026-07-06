@@ -34,6 +34,71 @@ skill loops should fail fast instead of parsing free-form model text.
 | OpenClaw | Implemented plugin path      | Load the adapter as OpenClaw's memory slot; hooks provide recall, extraction, and skills |
 | OpenCode | Implemented plugin path      | Load the adapter as an OpenCode plugin; hooks provide recall, extraction, and skills     |
 
+## Large Index Pre-Recall
+
+By default, prompt recall injects the generated `MEMORY.md` index directly. That
+direct path is intentionally capped at 200 index lines and 25 000 bytes. Once a
+memory store grows beyond that size, configure an OpenAI-compatible embeddings
+endpoint so the adapter can pre-recall the most relevant index lines before the
+main Agent sees the prompt.
+
+```text
+prompt build
+   |
+   | <= 200 index lines and <= 25 000 bytes
+   |-----------------------------------------> inject MEMORY.md cues directly
+   |
+   | larger index + embedding env + query
+   v
+embed MEMORY.md index lines -> hybrid search -> inject Relevant Memory Entries
+```
+
+The adapter runtime reads the following environment variables when
+`memoryIndexRetrieval` was not supplied explicitly:
+
+| Variable                                         | Set when                     | Meaning                                                                                |
+| ------------------------------------------------ | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `MEMFLYWHEEL_EMBEDDING_ENDPOINT`                 | Using a provider or gateway  | Base URL without `/embeddings`, for example `https://embedding-gateway.example.com/v1` |
+| `MEMFLYWHEEL_EMBEDDING_BASE_URL`                 | Alias                        | Alias for `MEMFLYWHEEL_EMBEDDING_ENDPOINT`                                             |
+| `MEMFLYWHEEL_EMBEDDING_API_KEY`                  | No `OPENAI_API_KEY` fallback | Sent as `Authorization: Bearer ...`; `OPENAI_API_KEY` is used only as fallback         |
+| `MEMFLYWHEEL_EMBEDDING_MODEL`                    | Using a non-default model    | Embedding model id and index-cache key; default is `text-embedding-3-small`            |
+| `MEMFLYWHEEL_EMBEDDING_BATCH_SIZE`               | Provider needs batching      | Maximum texts per embeddings request                                                   |
+| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL`             | Need explicit behavior       | `auto`, `required`, or `off`; default is `auto` when retrieval config is found         |
+| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_LIMIT`       | Need a different recall size | Retrieved index-line count; default is `30`                                            |
+| `MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_MIN_RECORDS` | Need a different threshold   | Record threshold before pre-recall runs; default is `200`                              |
+
+Example with any OpenAI-compatible embedding service:
+
+```sh
+export MEMFLYWHEEL_EMBEDDING_ENDPOINT="https://embedding-gateway.example.com/v1"
+export MEMFLYWHEEL_EMBEDDING_API_KEY="..."
+export MEMFLYWHEEL_EMBEDDING_MODEL="text-embedding-3-small"
+export MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL="auto"
+export MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_LIMIT="30"
+```
+
+For managed providers, put the provider key in `MEMFLYWHEEL_EMBEDDING_API_KEY`.
+For proxy or gateway setups, point `MEMFLYWHEEL_EMBEDDING_ENDPOINT` at the
+OpenAI-compatible gateway URL. MemFlywheel sends ordinary `/embeddings` requests
+with a Bearer token; provider-specific auth, routing, or network proxy rules
+belong in that gateway or in a custom `memoryIndexRetrieval.embeddingProvider`.
+
+During setup, use `required` instead of `auto` if you want a missing or broken
+embedding service to fail the agent turn immediately:
+
+```sh
+export MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL="required"
+```
+
+To verify pre-recall from the user's point of view:
+
+| Step                                                                    | Expected result                                            |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Configure an OpenAI-compatible embeddings provider or gateway           | `POST /v1/embeddings` succeeds                             |
+| Export the `MEMFLYWHEEL_EMBEDDING_*` variables before starting the host | Host process inherits them                                 |
+| Run a prompt against a memory store with more than 200 index lines      | `.memflywheel/index/memory-index.json` is created          |
+| Ask for a fact that appears after the first 200 index lines             | The agent reads the matched memory file or answers from it |
+
 ## Pi Integration
 
 Pi's public contribution path is a Pi package: an npm or git package that
@@ -179,24 +244,6 @@ Expected behavior after a real session:
 | Hermes skill integration  | Mirrors appear under `~/.hermes/skills/memflywheel/`       |
 | Dream consolidation       | `.dream-state.json` is updated after gated or forced dream |
 
-### Debugging With A Local Model Proxy
-
-Users do not need a proxy for normal use. For end-to-end debugging, start Hermes
-through a wrapper that points both the main model and Hermes auxiliary model
-calls at the same OpenAI-compatible proxy:
-
-```sh
-run-with-deepseek-proxy.sh hermes --tui
-```
-
-That lets request logs show host turns plus MemFlywheel extraction, skill
-evolution, and dream calls in one place. In local development we used the same
-pattern to confirm the full Hermes path:
-
-```text
-Hermes main turn -> extraction -> skill evolution -> dream
-```
-
 ## OpenCode Integration
 
 ```sh
@@ -207,6 +254,18 @@ opencode run --dir /path/to/project "your task"
 OpenCode keeps model configuration, tools, permissions, and sessions. The
 MemFlywheel plugin uses OpenCode hooks for prompt recall, turn-end extraction,
 source traces, skill evolution, and dream consolidation.
+
+If your OpenCode model credentials are stored only inside OpenCode, also export
+an OpenAI-compatible write-side model for MemFlywheel before starting OpenCode:
+
+```sh
+export MEMFLYWHEEL_LLM_ENDPOINT="https://api.example.com/v1"
+export MEMFLYWHEEL_LLM_API_KEY="..."
+export MEMFLYWHEEL_LLM_MODEL="deepseek-chat"
+```
+
+Prompt recall and embedding pre-recall do not need these variables. Turn-end
+extraction, skill evolution, and dream consolidation do.
 
 For non-interactive `opencode run` tests, remember that OpenCode may reject file
 reads outside `--dir`. If the model needs to inspect
@@ -226,6 +285,19 @@ openclaw gateway run --force
 The `plugins.slots.memory` setting is required because OpenClaw enables exactly
 one memory plugin slot. If the slot still points at `memory-core`, the
 MemFlywheel package is installed but inactive.
+
+If your OpenClaw model credentials are stored only inside OpenClaw, also export
+an OpenAI-compatible write-side model for MemFlywheel before starting the
+gateway or running `openclaw agent --local`:
+
+```sh
+export MEMFLYWHEEL_LLM_ENDPOINT="https://api.example.com/v1"
+export MEMFLYWHEEL_LLM_API_KEY="..."
+export MEMFLYWHEEL_LLM_MODEL="deepseek-chat"
+```
+
+Prompt recall and embedding pre-recall do not need these variables. Turn-end
+extraction, skill evolution, and dream consolidation do.
 
 After a real session, MemFlywheel files should appear under
 `~/.openclaw/memflywheel/`, including `MEMORY.md`, typed memory documents,

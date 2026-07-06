@@ -78,6 +78,7 @@ memory bodies and it does not make MemFlywheel a vector database.
 | `MEMFLYWHEEL_EMBEDDING_ENDPOINT` / `MEMFLYWHEEL_EMBEDDING_BASE_URL` | Base URL without `/embeddings`             |
 | `MEMFLYWHEEL_EMBEDDING_API_KEY`                                     | API key, with `OPENAI_API_KEY` as fallback |
 | `MEMFLYWHEEL_EMBEDDING_MODEL`                                       | Embedding model id                         |
+| `MEMFLYWHEEL_EMBEDDING_BATCH_SIZE`                                  | Maximum texts per embeddings request       |
 
 OpenAI-compatible HTTP is just one mapper. Native host adapters should prefer
 the host-owned model/auth/lifecycle channel.

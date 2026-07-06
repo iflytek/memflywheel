@@ -104,7 +104,16 @@ openclaw gateway run --force
 MemFlywheel 会作为原生记忆插件接入各宿主。宿主继续负责模型、工具、权限和会话；MemFlywheel 补上召回、
 turn-end 提取、dream 整理和 learned skills。
 
-源码调试、验证命令和本地代理排查路径放在 [`docs/integrations.md`](docs/integrations.md)。
+embedding 预召回是可选项。不配置也能正常使用，MemFlywheel 会直接注入最多 200 行生成的
+`MEMORY.md` 索引。记忆索引继续增长后，先启动任意 OpenAI-compatible embeddings endpoint，再在启动宿主前导出这些变量；预召回会自动生效，只注入最相关的索引条目。
+
+```sh
+export MEMFLYWHEEL_EMBEDDING_ENDPOINT="https://embedding-gateway.example.com/v1"
+export MEMFLYWHEEL_EMBEDDING_API_KEY="..."
+export MEMFLYWHEEL_EMBEDDING_MODEL="text-embedding-3-small"
+```
+
+宿主配置、embedding 预召回、验证命令和排查路径见 [`docs/integrations.md`](docs/integrations.md)。
 
 ## 安装包
 
@@ -122,14 +131,14 @@ MemFlywheel 使用面向 LoCoMo 的回归检查，让长期记忆能力在召回
 
 ## 文档
 
-| 文档                                                               | 内容                                                           |
-| ------------------------------------------------------------------ | -------------------------------------------------------------- |
-| [`docs/architecture.md`](docs/architecture.md)                     | 存储布局、召回、提取、dream、技能闭环、包边界                  |
-| [`docs/integrations.md`](docs/integrations.md)                     | Pi、Hermes、OpenCode 和 OpenClaw 安装、SDK hooks、adapter 边界 |
-| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo 定位和本地回归检查                                      |
-| [`docs/release.md`](docs/release.md)                               | 版本规范、npm 发布渠道、发布检查清单                           |
-| [`CHANGELOG.md`](CHANGELOG.md)                                     | 公开 npm 包版本变更记录                                        |
-| [`NOTICE`](NOTICE)、[`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | 项目版权告知和三方 license 披露                                |
+| 文档                                                               | 内容                                                                      |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| [`docs/architecture.md`](docs/architecture.md)                     | 存储布局、召回、提取、dream、技能闭环、包边界                             |
+| [`docs/integrations.md`](docs/integrations.md)                     | Pi、Hermes、OpenCode、OpenClaw、embedding 预召回、SDK hooks、adapter 边界 |
+| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo 定位和本地回归检查                                                 |
+| [`docs/release.md`](docs/release.md)                               | 版本规范、npm 发布渠道、发布检查清单                                      |
+| [`CHANGELOG.md`](CHANGELOG.md)                                     | 公开 npm 包版本变更记录                                                   |
+| [`NOTICE`](NOTICE)、[`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | 项目版权告知和三方 license 披露                                           |
 
 ## 开源边界
 
