@@ -156,3 +156,9 @@ evolve. See [`docs/evaluation.md`](docs/evaluation.md).
 MemFlywheel is a foundation component inside an Agent Harness. It stays
 file-native, model-agnostic, and host-first; it does not absorb the main Agent,
 model service, tool permissions, or skill execution into itself.
+
+## 💬 Community
+
+Join the Astron Open Source Community (WeCom Group) to discuss and collaborate:
+
+<img src="https://github.com/iflytek/astron-agent/raw/main/docs/imgs/WeCom_Group.png" alt="WeCom Group" width="300" />
