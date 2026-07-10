@@ -143,3 +143,9 @@ MemFlywheel 使用面向 LoCoMo 的回归检查，让长期记忆能力在召回
 ## 开源边界
 
 MemFlywheel 的目标是成为 Agent Harness 里的长期记忆和技能学习基础组件。它保持文件原生、模型无关、宿主优先，不把主 Agent、模型服务、工具权限或技能执行吞进自己内部。
+
+## 💬 社区交流
+
+欢迎加入 Astron 开源交流群（企业微信），与我们交流与合作：
+
+<img src="https://github.com/iflytek/astron-agent/raw/main/docs/imgs/WeCom_Group.png" alt="加入 Astron 开源交流群" width="300" />
