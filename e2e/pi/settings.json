@@ -1,0 +1,6 @@
+{
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions/memflywheel/index.mjs"]
+  }
+}

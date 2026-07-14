@@ -1,0 +1,24 @@
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: pi-agent
+spec:
+  podTemplate:
+    spec:
+      containers:
+        - name: pi
+          image: pi-memflywheel:e2e
+          imagePullPolicy: Never
+          volumeMounts:
+            - name: data
+              mountPath: /workspace
+      volumes: []
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

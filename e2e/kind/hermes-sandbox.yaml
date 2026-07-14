@@ -1,0 +1,24 @@
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: hermes-agent
+spec:
+  podTemplate:
+    spec:
+      containers:
+        - name: hermes
+          image: hermes-memflywheel:e2e
+          imagePullPolicy: Never
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+      volumes: []
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

@@ -1,0 +1,37 @@
+# Hermes agent image with memflywheel plugin baked in.
+#
+# Build context: repo root.
+# Expected files in build context:
+#   e2e/packages/iflytekopensource-adapters-*.tgz
+#   e2e/packages/iflytekopensource-hermes-*.tgz
+#   e2e/kind/03-memflywheel-install.sh
+
+FROM nousresearch/hermes-agent:latest
+
+USER root
+
+# Copy memflywheel packages
+COPY e2e/packages/iflytekopensource-adapters-*.tgz /tmp/adapters.tgz
+COPY e2e/packages/iflytekopensource-hermes-*.tgz /tmp/hermes.tgz
+
+# Install the packages globally so memflywheel-hermes-install can resolve them
+RUN cd /tmp && npm install --global ./adapters.tgz ./hermes.tgz
+
+# Make globally-installed packages resolvable from any working directory
+ENV NODE_PATH=/usr/local/lib/node_modules
+
+# Add cont-init script to install the plugin at container startup.
+# HERMES_HOME=/opt/data is a VOLUME, so plugin files installed during build
+# would be hidden by the PVC. We re-install at startup to populate the volume.
+COPY e2e/kind/03-memflywheel-install.sh /etc/cont-init.d/03-memflywheel-install
+
+# Auto-start gateway on first boot (seed gateway_state.json as "running")
+ENV HERMES_GATEWAY_BOOTSTRAP_STATE=running
+
+# Point Hermes LLM at the mock service
+ENV OPENAI_API_KEY=mock-key
+ENV OPENAI_BASE_URL=http://mock-llm.default.svc.cluster.local:8080/v1
+
+EXPOSE 8642 9119
+USER hermes
+CMD ["tail", "-f", "/dev/null"]
