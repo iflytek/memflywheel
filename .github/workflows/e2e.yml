@@ -1,0 +1,116 @@
+name: E2E Tests (K8s)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-k8s:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Load environment
+        run: cat .github/env >> $GITHUB_ENV
+
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Pack memflywheel packages
+        run: |
+          mkdir -p e2e/packages
+          pnpm --filter @iflytekopensource/adapters pack --pack-destination e2e/packages/
+          pnpm --filter @iflytekopensource/hermes pack --pack-destination e2e/packages/
+          ls -la e2e/packages/
+
+      - name: Install kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Setup kind cluster + agent-sandbox
+        run: bash e2e/kind/setup.sh
+
+      - name: Build Docker images
+        run: |
+          docker build -t mock-llm:e2e -f e2e/mock-llm/Dockerfile e2e/mock-llm/
+          docker build -t hermes-memflywheel:e2e -f e2e/kind/Dockerfile.hermes .
+          docker build -t pi-memflywheel:e2e -f e2e/kind/Dockerfile.pi .
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image mock-llm:e2e --name memflywheel-e2e
+          kind load docker-image hermes-memflywheel:e2e --name memflywheel-e2e
+          kind load docker-image pi-memflywheel:e2e --name memflywheel-e2e
+
+      - name: Deploy mock LLM
+        run: |
+          kubectl apply -f e2e/kind/mock-llm-deployment.yaml
+          kubectl wait --for=condition=Available deployment/mock-llm --timeout=60s
+
+      - name: Deploy Hermes Sandbox
+        run: |
+          kubectl apply -n hermes-test -f e2e/kind/hermes-sandbox.yaml
+          kubectl wait --for=condition=Ready sandbox/hermes-agent \
+            -n hermes-test --timeout=180s
+
+      - name: Deploy Pi Sandbox
+        run: |
+          kubectl apply -n pi-test -f e2e/kind/pi-sandbox.yaml
+          kubectl wait --for=condition=Ready sandbox/pi-agent \
+            -n pi-test --timeout=180s
+
+      - name: Debug — cluster state
+        if: always()
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -A
+          echo "=== Sandboxes ==="
+          kubectl get sandbox -A 2>/dev/null || echo "no sandbox CRD"
+          echo "=== Services ==="
+          kubectl get svc -A
+
+      - name: Run E2E tests
+        run: node e2e/run.mjs
+
+      - name: Collect pod logs
+        if: always()
+        run: |
+          echo "=== Hermes pod logs ==="
+          kubectl logs -n hermes-test pod/hermes-agent --tail=100 2>/dev/null || true
+          echo "=== Pi pod logs ==="
+          kubectl logs -n pi-test pod/pi-agent --tail=100 2>/dev/null || true
+          echo "=== Mock LLM logs ==="
+          kubectl logs -l app=mock-llm --tail=50 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        run: bash e2e/kind/cleanup.sh

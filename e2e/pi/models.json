@@ -1,0 +1,22 @@
+{
+  "providers": {
+    "openai": {
+      "baseUrl": "http://mock-llm.default.svc.cluster.local:8080/v1",
+      "apiKey": "mock-key",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "mock-llm",
+          "name": "Mock LLM",
+          "provider": "openai",
+          "api": "openai-completions",
+          "baseUrl": "http://mock-llm.default.svc.cluster.local:8080/v1",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 128000,
+          "maxTokens": 4096
+        }
+      ]
+    }
+  }
+}

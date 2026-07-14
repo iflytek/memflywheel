@@ -9,6 +9,10 @@ for published packages.
 
 ### Added
 
+- Kubernetes-level E2E CI workflow using kind and agent-sandbox CRDs. Deploys
+  Pi and Hermes agents in separate namespaces with memflywheel packages baked
+  into custom Docker images, then validates the full memory lifecycle against
+  a mock LLM (offline, no API key required).
 - Optional embedding pre-recall for large `MEMORY.md` indexes, configured through
   OpenAI-compatible embedding endpoint, API key, model, batch size, and retrieval
   limit environment variables.

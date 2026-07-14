@@ -1,0 +1,42 @@
+# Pi coding-agent image with memflywheel extension baked in.
+#
+# Build context: repo root.
+# Expected files in build context:
+#   e2e/packages/iflytekopensource-adapters-*.tgz
+#   e2e/pi/extension.mjs
+#   e2e/pi/settings.json
+
+FROM node:24-bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Pi coding agent
+RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+# Copy memflywheel adapter package
+COPY e2e/packages/iflytekopensource-adapters-*.tgz /tmp/adapters.tgz
+RUN npm install -g /tmp/adapters.tgz
+
+# Make globally-installed packages resolvable from any working directory
+ENV NODE_PATH=/usr/local/lib/node_modules
+
+# Install memflywheel extension into Pi's extension directory
+RUN mkdir -p /root/.pi/agent/extensions/memflywheel
+COPY e2e/pi/extension.mjs /root/.pi/agent/extensions/memflywheel/index.mjs
+COPY e2e/pi/settings.json /root/.pi/agent/settings.json
+COPY e2e/pi/models.json /root/.pi/agent/models.json
+COPY e2e/pi/extract.mjs /e2e/pi/extract.mjs
+# Node.js ESM import does NOT respect NODE_PATH — symlink global node_modules
+RUN ln -sf /usr/local/lib/node_modules /root/.pi/agent/extensions/memflywheel/node_modules
+
+# Point Pi LLM at the mock service
+ENV ANTHROPIC_API_KEY=mock-key
+ENV OPENAI_API_KEY=mock-key
+ENV OPENAI_BASE_URL=http://mock-llm.default.svc.cluster.local:8080/v1
+
+WORKDIR /workspace
+
+# Keep container alive for kubectl exec; Pi is invoked per-test via --print
+CMD ["tail", "-f", "/dev/null"]
