@@ -135,6 +135,58 @@ async function piAfterTurns(testCase) {
   await delay(2000);
 }
 
+// ─── OpenClaw ───────────────────────────────────────────────────────────────
+
+const OPENCLAW_NS = "openclaw-test";
+const OPENCLAW_POD = "openclaw-agent";
+const OPENCLAW_WORKSPACE = "/home/node/.openclaw/workspace";
+const OPENCLAW_MEMORY_ROOT = "/home/node/.openclaw/memflywheel";
+
+function openclawChat(prompt) {
+  return kubectlExec(OPENCLAW_NS, OPENCLAW_POD, "node", "/e2e/openclaw/chat.mjs", prompt);
+}
+
+function openclawVerifySetup() {
+  try {
+    const nodeVersion = kubectlExec(OPENCLAW_NS, OPENCLAW_POD, "node", "--version");
+    check("node binary available", Boolean(nodeVersion), nodeVersion?.slice(0, 50));
+  } catch (e) {
+    check("node binary available", false, e.message?.slice(0, 100));
+  }
+  try {
+    const adapterList = kubectlExec(
+      OPENCLAW_NS,
+      OPENCLAW_POD,
+      "ls",
+      "/usr/local/lib/node_modules/@iflytekopensource/",
+    );
+    check("adapters package installed", adapterList.includes("adapters"));
+  } catch {
+    check("adapters package installed", false, "node_modules not found");
+  }
+  try {
+    const scripts = kubectlExec(OPENCLAW_NS, OPENCLAW_POD, "ls", "/e2e/openclaw/");
+    check("chat.mjs present", scripts.includes("chat.mjs"));
+    check("extract.mjs present", scripts.includes("extract.mjs"));
+  } catch {
+    check("chat.mjs present", false, "e2e scripts not found");
+    check("extract.mjs present", false);
+  }
+}
+
+async function openclawAfterTurns(testCase) {
+  const prompts = testCase.prompts.map((p) => p.text);
+  kubectlExec(
+    OPENCLAW_NS,
+    OPENCLAW_POD,
+    "node",
+    "/e2e/openclaw/extract.mjs",
+    OPENCLAW_WORKSPACE,
+    ...prompts,
+  );
+  await delay(2000);
+}
+
 // ─── exports ───────────────────────────────────────────────────────────────
 
 export const AGENTS = [
@@ -165,5 +217,17 @@ export const AGENTS = [
     ],
     memoryDirs: ["/root/.memflywheel", "/workspace", "/root/.pi/agent/memflywheel"],
     debugDir: "/workspace",
+  },
+  {
+    name: "OpenClaw",
+    namespace: OPENCLAW_NS,
+    sandbox: OPENCLAW_POD,
+    chatFn: openclawChat,
+    waitForSetup: null,
+    verifySetup: openclawVerifySetup,
+    afterTurns: openclawAfterTurns,
+    memoryPaths: [`${OPENCLAW_MEMORY_ROOT}/MEMORY.md`, `${OPENCLAW_WORKSPACE}/MEMORY.md`],
+    memoryDirs: [OPENCLAW_MEMORY_ROOT, OPENCLAW_WORKSPACE],
+    debugDir: OPENCLAW_MEMORY_ROOT,
   },
 ];

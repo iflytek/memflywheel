@@ -19,6 +19,7 @@ kubectl wait --for=condition=Ready pod -l app=agent-sandbox-controller \
 echo "==> Creating test namespaces"
 kubectl create namespace hermes-test --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace pi-test --dry-run=client -o yaml | kubectl apply -f -
+kubectl create namespace openclaw-test --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> Setup complete"
 kubectl get pods -A
