@@ -1,0 +1,32 @@
+# OpenClaw agent image with memflywheel adapter baked in.
+#
+# Build context: repo root.
+# Expected files in build context:
+#   e2e/packages/iflytekopensource-adapters-*.tgz
+#   e2e/openclaw/chat.mjs
+#   e2e/openclaw/extract.mjs
+
+FROM ghcr.io/openclaw/openclaw:2026.3.23
+
+USER root
+
+# Copy memflywheel adapter package
+COPY e2e/packages/iflytekopensource-adapters-*.tgz /tmp/adapters.tgz
+RUN npm install -g /tmp/adapters.tgz
+
+# Make globally-installed packages resolvable from any working directory
+ENV NODE_PATH=/usr/local/lib/node_modules
+
+# Copy memflywheel e2e scripts
+RUN mkdir -p /e2e/openclaw
+COPY e2e/openclaw/chat.mjs /e2e/openclaw/chat.mjs
+COPY e2e/openclaw/extract.mjs /e2e/openclaw/extract.mjs
+# Node.js ESM import does NOT respect NODE_PATH — symlink global node_modules
+RUN ln -sf /usr/local/lib/node_modules /e2e/openclaw/node_modules
+
+# Point OpenClaw LLM at the mock service
+ENV OPENAI_API_KEY=mock-key
+ENV OPENAI_BASE_URL=http://mock-llm.default.svc.cluster.local:8080/v1
+
+USER 1000
+CMD ["tail", "-f", "/dev/null"]

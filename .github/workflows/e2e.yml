@@ -64,12 +64,14 @@ jobs:
           docker build -t mock-llm:e2e -f e2e/mock-llm/Dockerfile e2e/mock-llm/
           docker build -t hermes-memflywheel:e2e -f e2e/kind/Dockerfile.hermes .
           docker build -t pi-memflywheel:e2e -f e2e/kind/Dockerfile.pi .
+          docker build -t openclaw-memflywheel:e2e -f e2e/kind/Dockerfile.openclaw .
 
       - name: Load images into kind
         run: |
           kind load docker-image mock-llm:e2e --name memflywheel-e2e
           kind load docker-image hermes-memflywheel:e2e --name memflywheel-e2e
           kind load docker-image pi-memflywheel:e2e --name memflywheel-e2e
+          kind load docker-image openclaw-memflywheel:e2e --name memflywheel-e2e
 
       - name: Deploy mock LLM
         run: |
@@ -87,6 +89,13 @@ jobs:
           kubectl apply -n pi-test -f e2e/kind/pi-sandbox.yaml
           kubectl wait --for=condition=Ready sandbox/pi-agent \
             -n pi-test --timeout=180s
+
+      - name: Deploy OpenClaw Sandbox
+        run: |
+          kubectl apply -n openclaw-test -f e2e/kind/openclaw-config.yaml
+          kubectl apply -n openclaw-test -f e2e/kind/openclaw-sandbox.yaml
+          kubectl wait --for=condition=Ready sandbox/openclaw-agent \
+            -n openclaw-test --timeout=180s
 
       - name: Debug — cluster state
         if: always()
@@ -108,6 +117,8 @@ jobs:
           kubectl logs -n hermes-test pod/hermes-agent --tail=100 2>/dev/null || true
           echo "=== Pi pod logs ==="
           kubectl logs -n pi-test pod/pi-agent --tail=100 2>/dev/null || true
+          echo "=== OpenClaw pod logs ==="
+          kubectl logs -n openclaw-test pod/openclaw-agent --tail=100 2>/dev/null || true
           echo "=== Mock LLM logs ==="
           kubectl logs -l app=mock-llm --tail=50 2>/dev/null || true
 
