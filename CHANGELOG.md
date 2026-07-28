@@ -11,13 +11,15 @@ for published packages.
 
 ### Added
 
-- Kubernetes-level E2E CI using kind and agent-sandbox CRDs for Pi, Hermes,
-  and OpenClaw, validating the memory lifecycle against an offline mock LLM.
+- Kubernetes-level E2E CI workflow using kind and agent-sandbox CRDs. Deploys
+  Pi, Hermes, and OpenClaw agents in separate namespaces with the MemFlywheel
+  package baked into custom Docker images, then validates the full memory
+  lifecycle against a mock LLM (offline, no API key required).
 - Optional embedding pre-recall for large `MEMORY.md` indexes, configured through
   OpenAI-compatible embedding endpoint, API key, model, batch size, and retrieval
   limit environment variables.
-- Documentation for the 200-line direct index limit and the optional embedding
-  endpoint and API-key setup used to enable pre-recall.
+- Documentation for the 200-line direct index limit and the optional
+  endpoint/API-key setup needed to enable pre-recall.
 - Hermes host-write guard and learned-skill synchronization for native host
   integration.
 
