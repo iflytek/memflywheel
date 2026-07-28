@@ -19,6 +19,9 @@ for published packages.
 
 ### Changed
 
+- Consolidated the former `@iflytekopensource/adapters` and
+  `@iflytekopensource/hermes` distributions into the single public
+  `@iflytekopensource/memflywheel` package for all four hosts.
 - Unified extraction, dream, and skill evolution on Pi Agent Core with
   host-resolved `pi-ai` model bindings.
 - Reused each host's active model, endpoint, credentials, headers, protocol, and

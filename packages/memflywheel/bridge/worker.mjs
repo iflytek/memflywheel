@@ -12,11 +12,11 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-const adapters = await import(
-  process.env.MEMFLYWHEEL_ADAPTERS_IMPORT || "@iflytekopensource/adapters"
+const memflywheel = await import(
+  process.env.MEMFLYWHEEL_PACKAGE_IMPORT || "@iflytekopensource/memflywheel"
 );
 const { createAssistantMessageEventStream, createMemFlywheelHarnessRuntime, normalizeMessages } =
-  adapters;
+  memflywheel;
 
 let runtime;
 let runtimeKey = "";

@@ -14,8 +14,8 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@iflytekopensource/adapters"><img alt="npm" src="https://img.shields.io/npm/v/%40iflytekopensource%2Fadapters?label=npm"></a>
-  <a href="https://www.npmjs.com/package/@iflytekopensource/adapters"><img alt="npm downloads" src="https://img.shields.io/npm/dm/%40iflytekopensource%2Fadapters?label=downloads"></a>
+  <a href="https://www.npmjs.com/package/@iflytekopensource/memflywheel"><img alt="npm" src="https://img.shields.io/npm/v/%40iflytekopensource%2Fmemflywheel?label=npm"></a>
+  <a href="https://www.npmjs.com/package/@iflytekopensource/memflywheel"><img alt="npm downloads" src="https://img.shields.io/npm/dm/%40iflytekopensource%2Fmemflywheel?label=downloads"></a>
   <a href="https://github.com/iflytek/memflywheel/releases"><img alt="release" src="https://img.shields.io/github/v/release/iflytek/memflywheel?include_prereleases&label=release"></a>
   <a href="https://github.com/iflytek/memflywheel/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/iflytek/memflywheel/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="node" src="https://img.shields.io/badge/node-%3E%3D22.19.0-339933">
@@ -35,7 +35,7 @@ skills.
   </tr>
   <tr>
     <td><strong>Post-run learning</strong><br>Turn-end extraction and dream consolidation keep memory moving.</td>
-    <td><strong>Harness-native</strong><br>Pi, Hermes, OpenCode, and OpenClaw are supported through npm packages.</td>
+    <td><strong>Harness-native</strong><br>Pi, Hermes, OpenCode, and OpenClaw are supported through one npm package.</td>
   </tr>
 </table>
 
@@ -77,13 +77,13 @@ MemFlywheel
 Pi:
 
 ```sh
-pi install npm:@iflytekopensource/adapters
+pi install npm:@iflytekopensource/memflywheel
 ```
 
 Hermes:
 
 ```sh
-npm install -g @iflytekopensource/hermes
+npm install -g @iflytekopensource/memflywheel
 memflywheel-hermes-install
 hermes config set memory.provider memflywheel
 ```
@@ -91,14 +91,14 @@ hermes config set memory.provider memflywheel
 OpenCode:
 
 ```sh
-opencode plugin @iflytekopensource/adapters --global
+opencode plugin @iflytekopensource/memflywheel --global
 opencode run --dir /path/to/project "your task"
 ```
 
 OpenClaw:
 
 ```sh
-openclaw plugins install npm:@iflytekopensource/adapters
+openclaw plugins install npm:@iflytekopensource/memflywheel
 openclaw config set plugins.slots.memory memflywheel
 openclaw config set plugins.entries.memflywheel.hooks.allowConversationAccess true
 openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
@@ -124,15 +124,14 @@ export MEMFLYWHEEL_EMBEDDING_MODEL="text-embedding-3-small"
 Host setup, embedding pre-recall, verification, and troubleshooting live in
 [`docs/integrations.md`](docs/integrations.md).
 
-## Install Packages
+## Install Package
 
-| Package                                                                                    | Role                                                                       |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| [`@iflytekopensource/adapters`](https://www.npmjs.com/package/@iflytekopensource/adapters) | Pi, OpenCode, OpenClaw, and the shared host-adapter runtime used by Hermes |
-| [`@iflytekopensource/hermes`](https://www.npmjs.com/package/@iflytekopensource/hermes)     | Hermes MemoryProvider installer and skill mirror                           |
+| Package                                                                                          | Role                                                                                                            |
+| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| [`@iflytekopensource/memflywheel`](https://www.npmjs.com/package/@iflytekopensource/memflywheel) | Pi, Hermes, OpenCode, and OpenClaw integrations, including the Hermes MemoryProvider installer and skill mirror |
 
 Internal workspace packages keep the code split by responsibility; users install
-only the host package they need.
+the same public package for every supported host.
 
 ## Evaluation
 

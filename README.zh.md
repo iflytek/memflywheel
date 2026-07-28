@@ -14,8 +14,8 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@iflytekopensource/adapters"><img alt="npm" src="https://img.shields.io/npm/v/%40iflytekopensource%2Fadapters?label=npm"></a>
-  <a href="https://www.npmjs.com/package/@iflytekopensource/adapters"><img alt="npm downloads" src="https://img.shields.io/npm/dm/%40iflytekopensource%2Fadapters?label=downloads"></a>
+  <a href="https://www.npmjs.com/package/@iflytekopensource/memflywheel"><img alt="npm" src="https://img.shields.io/npm/v/%40iflytekopensource%2Fmemflywheel?label=npm"></a>
+  <a href="https://www.npmjs.com/package/@iflytekopensource/memflywheel"><img alt="npm downloads" src="https://img.shields.io/npm/dm/%40iflytekopensource%2Fmemflywheel?label=downloads"></a>
   <a href="https://github.com/iflytek/memflywheel/releases"><img alt="release" src="https://img.shields.io/github/v/release/iflytek/memflywheel?include_prereleases&label=release"></a>
   <a href="https://github.com/iflytek/memflywheel/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/iflytek/memflywheel/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="node" src="https://img.shields.io/badge/node-%3E%3D22.19.0-339933">
@@ -33,7 +33,7 @@ MemFlywheel 给 Agent Harness 增加一层文件原生记忆飞轮：执行前�
   </tr>
   <tr>
     <td><strong>执行后学习</strong><br>turn-end 提取和 dream 整理让记忆持续流动。</td>
-    <td><strong>宿主原生</strong><br>Pi、Hermes、OpenCode 和 OpenClaw 均通过 npm 包接入。</td>
+    <td><strong>宿主原生</strong><br>Pi、Hermes、OpenCode 和 OpenClaw 均通过同一个 npm 包接入。</td>
   </tr>
 </table>
 
@@ -73,13 +73,13 @@ MemFlywheel
 Pi：
 
 ```sh
-pi install npm:@iflytekopensource/adapters
+pi install npm:@iflytekopensource/memflywheel
 ```
 
 Hermes：
 
 ```sh
-npm install -g @iflytekopensource/hermes
+npm install -g @iflytekopensource/memflywheel
 memflywheel-hermes-install
 hermes config set memory.provider memflywheel
 ```
@@ -87,14 +87,14 @@ hermes config set memory.provider memflywheel
 OpenCode：
 
 ```sh
-opencode plugin @iflytekopensource/adapters --global
+opencode plugin @iflytekopensource/memflywheel --global
 opencode run --dir /path/to/project "你的任务"
 ```
 
 OpenClaw：
 
 ```sh
-openclaw plugins install npm:@iflytekopensource/adapters
+openclaw plugins install npm:@iflytekopensource/memflywheel
 openclaw config set plugins.slots.memory memflywheel
 openclaw config set plugins.entries.memflywheel.hooks.allowConversationAccess true
 openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
@@ -117,12 +117,11 @@ export MEMFLYWHEEL_EMBEDDING_MODEL="text-embedding-3-small"
 
 ## 安装包
 
-| Package                                                                                    | 作用                                                            |
-| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| [`@iflytekopensource/adapters`](https://www.npmjs.com/package/@iflytekopensource/adapters) | Pi、OpenCode、OpenClaw，以及 Hermes bridge 复用的宿主适配运行层 |
-| [`@iflytekopensource/hermes`](https://www.npmjs.com/package/@iflytekopensource/hermes)     | Hermes MemoryProvider 安装器和 skill 镜像                       |
+| Package                                                                                          | 作用                                                                                  |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| [`@iflytekopensource/memflywheel`](https://www.npmjs.com/package/@iflytekopensource/memflywheel) | Pi、Hermes、OpenCode 和 OpenClaw 集成，包含 Hermes MemoryProvider 安装器和 skill 镜像 |
 
-内部 workspace 包按职责拆代码；普通用户只安装自己宿主需要的包。
+内部 workspace 包按职责拆代码；四个宿主的用户都安装同一个公开包。
 
 ## 评测
 

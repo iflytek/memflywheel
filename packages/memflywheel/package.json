@@ -1,11 +1,14 @@
 {
-  "name": "@iflytekopensource/adapters",
+  "name": "@iflytekopensource/memflywheel",
   "version": "0.1.1",
-  "description": "Host lifecycle adapters for wiring MemFlywheel into agent runtimes.",
+  "description": "File-native long-term memory for Pi, Hermes, OpenCode, and OpenClaw.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "memflywheel-hermes-install": "bin/install.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,6 +21,12 @@
   "files": [
     "NOTICE",
     "THIRD_PARTY_LICENSES",
+    "bin/**/*.mjs",
+    "bridge/**/*.mjs",
+    "guard/**/*.py",
+    "guard/plugin.yaml",
+    "provider/**/*.py",
+    "plugin.yaml",
     "pi-extension/**/*.mjs",
     "!pi-extension/**/*.test.mjs",
     "opencode-plugin/**/*.js",
@@ -30,7 +39,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/iflytek/memflywheel.git",
-    "directory": "packages/adapters"
+    "directory": "packages/memflywheel"
   },
   "bugs": {
     "url": "https://github.com/iflytek/memflywheel/issues"
@@ -39,8 +48,12 @@
   "keywords": [
     "agent-memory",
     "adapters",
+    "hermes",
     "llm",
     "memory",
+    "openclaw",
+    "opencode",
+    "pi",
     "pi-package",
     "typescript"
   ],
@@ -64,8 +77,10 @@
     "node": ">=22.19"
   },
   "scripts": {
-    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b && tsup src/index.ts --format esm --target node22 --dts --dts-resolve --out-dir dist --no-splitting --clean false --tsconfig tsconfig.bundle.json --external @earendil-works/pi-ai --external @earendil-works/pi-agent-core --external proper-lockfile --external openclaw --external 'openclaw/*'",
-    "test": "pnpm run build && node --test \"dist/**/*.test.js\" \"pi-extension/**/*.test.mjs\"",
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b && tsup src/index.ts --format esm --target node22 --dts --dts-resolve --out-dir dist --no-splitting --clean false --tsconfig tsconfig.bundle.json --external @earendil-works/pi-ai --external @earendil-works/pi-agent-core --external proper-lockfile --external openclaw --external 'openclaw/*' && node --check bridge/worker.mjs && node --check bin/install.mjs && python3 - <<'PY'\nfrom pathlib import Path\nfor file in ('provider/__init__.py', 'guard/__init__.py'):\n    compile(Path(file).read_text(), file, 'exec')\nPY",
+    "install:hermes": "node bin/install.mjs",
+    "install:local": "node bin/install.mjs",
+    "test": "pnpm run build && node --test \"dist/**/*.test.js\" \"pi-extension/**/*.test.mjs\" && PYTHONDONTWRITEBYTECODE=1 python3 tests/provider_contract_test.py",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {

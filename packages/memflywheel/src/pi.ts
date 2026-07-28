@@ -49,7 +49,7 @@ const basePiAdapter = makeAdapter({
   lifecycle,
   defaultConfigRelPath: ".pi/agent/settings.json",
   integrationNote:
-    "Native integration: a Pi extension builds `createPiHarnessPort(pi, { completeSimple })` and passes it to `createMemFlywheelHarnessRuntime`; settings.json carries the wiring marker.",
+    "Native integration: a Pi extension builds `createPiHarnessPort(pi, { streamSimple })` and passes it to `createMemFlywheelHarnessRuntime`; settings.json carries the wiring marker.",
   translators: {
     sessionId: (payload) => readString(payload, "sessionId"),
     turnEnd: (payload) => ({

@@ -99,7 +99,7 @@ test("OpenCode port injects recall and forwards the real idle transcript", async
   ]);
 });
 
-test("OpenCode serializes text-complete and idle through one deduplicated turn submitter", async () => {
+test("OpenCode buffers text-complete without blocking output, then serializes idle delivery", async () => {
   let transcript = {
     data: [{ info: { role: "user" }, parts: [{ type: "text", text: "remember tea" }] }],
   };
@@ -114,7 +114,7 @@ test("OpenCode serializes text-complete and idle through one deduplicated turn s
     { sessionID: "oc-idle", messageID: "m1", partID: "p1" },
     { text: "noted" },
   );
-  assert.equal(turns.length, 1);
+  assert.equal(turns.length, 0);
 
   const idle = { event: { type: "session.idle", properties: { sessionID: "oc-idle" } } };
   await Promise.all([port.hooks.event(idle), port.hooks.event(idle)]);

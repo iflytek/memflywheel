@@ -113,13 +113,13 @@ declares its extension entry under the `pi` key in `package.json`.
 }
 ```
 
-Install the published adapter package into Pi:
+Install the published MemFlywheel package into Pi:
 
 ```sh
-pi install npm:@iflytekopensource/adapters
+pi install npm:@iflytekopensource/memflywheel
 ```
 
-Pi then loads `packages/adapters/pi-extension/index.mjs` from the npm package.
+Pi then loads `packages/memflywheel/pi-extension/index.mjs` from the npm package.
 That extension maps Pi lifecycle and tool-calling model access into
 `HostHarnessPort`, then builds the MemFlywheel runtime:
 
@@ -130,7 +130,7 @@ Pi package
    v
 pi-extension/index.mjs
    |
-   | createPiHarnessPort(pi, { completeSimple })
+   | createPiHarnessPort(pi, { streamSimple })
    v
 createMemFlywheelHarnessRuntime({ port })
    |
@@ -143,14 +143,13 @@ createMemFlywheelHarnessRuntime({ port })
 Source checkout smoke test:
 
 ```sh
-pnpm -r build
-USE_FAKE=1 node examples/pi/run.mjs
+pnpm --dir examples smoke
 ```
 
-`@earendil-works/pi-ai` is a runtime dependency of the adapter package. The Pi
-extension imports `completeSimple` from `@earendil-works/pi-ai/compat`, while the
+`@earendil-works/pi-ai` is a runtime dependency of the package. The Pi
+extension imports `streamSimple` from `@earendil-works/pi-ai/compat`, while the
 OpenCode bridge uses pi-ai's provider APIs. The dependency remains external to
-the adapter bundle and is installed alongside it.
+the runtime bundle and is installed alongside it.
 
 ## Hermes Integration
 
@@ -159,7 +158,7 @@ npm, run the installer once, then select it through Hermes' native memory
 config.
 
 ```sh
-npm install -g @iflytekopensource/hermes
+npm install -g @iflytekopensource/memflywheel
 memflywheel-hermes-install
 hermes config set memory.provider memflywheel
 hermes memory status
@@ -196,8 +195,8 @@ Source checkout uses the same installer path as npm; the only difference is that
 the package is executed from the workspace instead of a global npm install:
 
 ```sh
-pnpm --filter @iflytekopensource/hermes run build
-pnpm --filter @iflytekopensource/hermes run install:local
+pnpm --filter @iflytekopensource/memflywheel run build
+pnpm --filter @iflytekopensource/memflywheel run install:local
 hermes config set memory.provider memflywheel
 ```
 
@@ -247,7 +246,7 @@ Expected behavior after a real session:
 ## OpenCode Integration
 
 ```sh
-opencode plugin @iflytekopensource/adapters --global
+opencode plugin @iflytekopensource/memflywheel --global
 opencode run --dir /path/to/project "your task"
 ```
 
@@ -300,7 +299,7 @@ your test harness' explicit permission override.
 ## OpenClaw Integration
 
 ```sh
-openclaw plugins install npm:@iflytekopensource/adapters
+openclaw plugins install npm:@iflytekopensource/memflywheel
 openclaw config set plugins.slots.memory memflywheel
 openclaw config set plugins.entries.memflywheel.hooks.allowConversationAccess true
 openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true

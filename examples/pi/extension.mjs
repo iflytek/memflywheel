@@ -7,12 +7,15 @@
  * events: context / agent_end / session_shutdown / tool_call / tool_result.
  */
 
-import { completeSimple } from "@earendil-works/pi-ai/compat";
-import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@iflytekopensource/adapters";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
+import {
+  createMemFlywheelHarnessRuntime,
+  createPiHarnessPort,
+} from "@iflytekopensource/memflywheel";
 
 /** @param {any} pi - the Pi ExtensionAPI */
 export default function memFlywheelExtension(pi) {
-  const port = createPiHarnessPort(pi, { completeSimple });
+  const port = createPiHarnessPort(pi, { streamSimple });
   const runtime = createMemFlywheelHarnessRuntime({ port });
 
   // Pi disposes extensions on shutdown; return the disposer when supported.

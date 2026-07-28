@@ -15,7 +15,7 @@ import {
   createMemFlywheelHarnessRuntime,
   openclawAdapter,
   connect,
-} from "@iflytekopensource/adapters";
+} from "@iflytekopensource/memflywheel";
 import { transcript } from "../shared/transcript.mjs";
 
 function createMockOpenClawHost() {

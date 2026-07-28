@@ -121,11 +121,11 @@ with tempfile.TemporaryDirectory() as tmp:
     assert (guard / "__init__.py").exists()
     assert (guard / "plugin.yaml").exists()
     install_metadata = json.loads((installed / "install.json").read_text(encoding="utf-8"))
-    assert "adaptersImport" in install_metadata
+    assert "packageImport" in install_metadata
     installed_worker = subprocess.run(
         ["node", str(installed / "worker.mjs")],
         cwd=installed,
-        env={**env, "MEMFLYWHEEL_ADAPTERS_IMPORT": install_metadata["adaptersImport"]},
+        env={**env, "MEMFLYWHEEL_PACKAGE_IMPORT": install_metadata["packageImport"]},
         input=json.dumps(
             {
                 "type": "command",

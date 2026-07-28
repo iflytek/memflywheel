@@ -1,9 +1,9 @@
-# @iflytekopensource/adapters
+# @iflytekopensource/memflywheel
 
-Host lifecycle mappings and native model bindings for MemFlywheel. Each adapter
-translates host lifecycle events onto MemFlywheel hooks and resolves the host's
-active model into a `pi-ai` stream. Core memory semantics remain in the bundled
-MemFlywheel Core and SDK layers.
+The single public MemFlywheel package for Pi, Hermes, OpenCode, and OpenClaw. It
+contains the host lifecycle mappings, native model bindings, direct package
+entrypoints, and the Hermes MemoryProvider installer. Core memory semantics
+remain in the bundled MemFlywheel Core and SDK layers.
 
 The package installs Pi Agent Core, `pi-ai`, and `proper-lockfile` as runtime
 dependencies.
@@ -17,20 +17,26 @@ dependencies.
 | `openclaw` | OpenClaw | `before_prompt_build`                | `agent_end`                                   | `session_end`      | real        |
 | `opencode` | OpenCode | `experimental.chat.system.transform` | `experimental.text.complete` / `session.idle` | `session.deleted`  | real        |
 
-`@iflytekopensource/adapters` owns the shared host adapter/runtime layer. Host-specific
-install shape still differs: Pi, OpenCode, and OpenClaw can load package
-entrypoints directly, while Hermes needs the `@iflytekopensource/hermes` package to
-install its Python `MemoryProvider`, config wiring, and skill mirror.
+Host-specific installation still differs: Pi, OpenCode, and OpenClaw load
+package entrypoints directly, while Hermes runs the included
+`memflywheel-hermes-install` command to install its Python `MemoryProvider`,
+config wiring, and skill mirror.
 
-- **`pi`** — real: `@iflytekopensource/adapters` is a Pi package. Its
+- **`pi`** — real: `@iflytekopensource/memflywheel` is a Pi package. Its
   `package.json` declares `pi.extensions`, and Pi installs it with
-  `pi install npm:@iflytekopensource/adapters`.
+  `pi install npm:@iflytekopensource/memflywheel`.
   `context` → `onPromptBuild`; `agent_end` → `onTurnEnd`; and
   `session_shutdown` → `onSessionEnd`.
-- **`hermes`** — real: `@iflytekopensource/hermes` installs a Hermes
-  `MemoryProvider`, and its bridge imports `@iflytekopensource/adapters` for the
-  shared runtime. `prefetch` builds recall context, `sync_turn` runs the
+- **`hermes`** — real: `memflywheel-hermes-install` installs a Hermes
+  `MemoryProvider`, whose bridge imports this package's shared runtime.
+  `prefetch` builds recall context, `sync_turn` runs the
   write-side lifecycle, and session end coordinates idle consolidation.
+
+```sh
+npm install -g @iflytekopensource/memflywheel
+memflywheel-hermes-install
+hermes config set memory.provider memflywheel
+```
 
 Each adapter declares a `defaultConfigRelPath` (the host config under `$HOME`) and
 an `integrationNote` describing how the host actually consumes the scribe.
@@ -58,7 +64,7 @@ object with the lifecycle hooks satisfies it, including the runtime assembled by
 `createMemFlywheelHarnessRuntime(...)`.
 
 ```ts
-import { piAdapter } from "@iflytekopensource/adapters";
+import { piAdapter } from "@iflytekopensource/memflywheel";
 
 const dispose = piAdapter.attach(scribe, host);
 // ... later
@@ -113,7 +119,7 @@ for (const f of await piAdapter.doctor({ configPath })) {
 Build one from a lifecycle map + payload translators with `makeAdapter`:
 
 ```ts
-import { makeAdapter, normalizeMessages, readString } from "@iflytekopensource/adapters";
+import { makeAdapter, normalizeMessages, readString } from "@iflytekopensource/memflywheel";
 
 export const myAdapter = makeAdapter({
   id: "my-host",
@@ -144,7 +150,7 @@ pi-ai `Model` + `StreamFn` and exposes lifecycle events through `HostHarnessPort
 Evolution on the single Pi Agent Core runner.
 
 ```ts
-import { createMemFlywheelHarnessRuntime } from "@iflytekopensource/adapters";
+import { createMemFlywheelHarnessRuntime } from "@iflytekopensource/memflywheel";
 
 const { scribe, sdk } = createMemFlywheelHarnessRuntime({ port });
 ```
@@ -152,7 +158,10 @@ const { scribe, sdk } = createMemFlywheelHarnessRuntime({ port });
 Pi phase-1 native integration uses a host port:
 
 ```ts
-import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@iflytekopensource/adapters";
+import {
+  createMemFlywheelHarnessRuntime,
+  createPiHarnessPort,
+} from "@iflytekopensource/memflywheel";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 
 export default function memFlywheelExtension(pi) {
@@ -237,7 +246,7 @@ const { scribe } = createMemFlywheelHarnessRuntime({ mode: "recall-only" });
 applies it and immediately re-reads from disk to verify the marker round-trips:
 
 ```ts
-import { connect, piAdapter } from "@iflytekopensource/adapters";
+import { connect, piAdapter } from "@iflytekopensource/memflywheel";
 
 const plan = await connect(piAdapter); // plan only, no writes
 const res = await connect(piAdapter, { apply: true }); // write + verify

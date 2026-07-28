@@ -2,7 +2,7 @@
 #
 # Build context: repo root.
 # Expected files in build context:
-#   e2e/packages/iflytekopensource-adapters-*.tgz
+#   e2e/packages/iflytekopensource-memflywheel-*.tgz
 #   e2e/openclaw/chat.mjs
 #   e2e/openclaw/extract.mjs
 
@@ -10,9 +10,9 @@ FROM ghcr.io/openclaw/openclaw:2026.3.23
 
 USER root
 
-# Copy memflywheel adapter package
-COPY e2e/packages/iflytekopensource-adapters-*.tgz /tmp/adapters.tgz
-RUN npm install -g /tmp/adapters.tgz
+# Copy the unified memflywheel package
+COPY e2e/packages/iflytekopensource-memflywheel-*.tgz /tmp/memflywheel.tgz
+RUN npm install -g /tmp/memflywheel.tgz
 
 # Make globally-installed packages resolvable from any working directory
 ENV NODE_PATH=/usr/local/lib/node_modules

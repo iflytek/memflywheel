@@ -527,7 +527,6 @@ export function createOpenCodeHarnessPort(
           : { messageId: input.messageID, parts: new Map<string, string>() };
       pending.parts.set(input.partID, output.text);
       pendingCompletedText.set(input.sessionID, pending);
-      await dispatchCompletedTurn(input.sessionID);
     },
     async "tool.execute.before"(input, output) {
       for (const handler of toolCallHandlers) {

@@ -50,9 +50,9 @@ importers:
 
   examples:
     dependencies:
-      '@iflytekopensource/adapters':
+      '@iflytekopensource/memflywheel':
         specifier: workspace:*
-        version: link:../packages/adapters
+        version: link:../packages/memflywheel
       '@memflywheel/core':
         specifier: workspace:*
         version: link:../packages/core
@@ -62,28 +62,6 @@ importers:
       '@memflywheel/skills':
         specifier: workspace:*
         version: link:../packages/skills
-
-  packages/adapters:
-    dependencies:
-      '@earendil-works/pi-agent-core':
-        specifier: ^0.82.1
-        version: 0.82.1(ws@8.21.1)(zod@4.4.3)
-      '@earendil-works/pi-ai':
-        specifier: ^0.82.1
-        version: 0.82.1(ws@8.21.1)(zod@4.4.3)
-      proper-lockfile:
-        specifier: ^4.1.2
-        version: 4.1.2
-    devDependencies:
-      '@types/node':
-        specifier: ^22.20.1
-        version: 22.20.1
-      tsup:
-        specifier: ^8.5.1
-        version: 8.5.1(typescript@5.9.3)(yaml@2.9.0)
-      typescript:
-        specifier: ^5.5.4
-        version: 5.9.3
 
   packages/core:
     dependencies:
@@ -110,14 +88,27 @@ importers:
         specifier: ^5.5.4
         version: 5.9.3
 
-  packages/hermes-plugin:
+  packages/memflywheel:
     dependencies:
+      '@earendil-works/pi-agent-core':
+        specifier: ^0.82.1
+        version: 0.82.1(ws@8.21.1)(zod@4.4.3)
       '@earendil-works/pi-ai':
         specifier: ^0.82.1
         version: 0.82.1(ws@8.21.1)(zod@4.4.3)
-      '@iflytekopensource/adapters':
-        specifier: workspace:*
-        version: link:../adapters
+      proper-lockfile:
+        specifier: ^4.1.2
+        version: 4.1.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
 
   packages/sdk:
     dependencies:

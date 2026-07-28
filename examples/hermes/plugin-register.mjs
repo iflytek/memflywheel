@@ -10,7 +10,7 @@
  * the host's active model transport, over the single Pi Agent Core runner.
  */
 
-import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@iflytekopensource/adapters";
+import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@iflytekopensource/memflywheel";
 
 /** @param {any} ctx - the Hermes PluginContext */
 export function register(ctx) {

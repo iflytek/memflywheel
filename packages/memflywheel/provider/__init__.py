@@ -80,10 +80,10 @@ def _worker_import_ok() -> bool:
     if not shutil.which("node") or not _worker_path().exists():
         return False
     env = os.environ.copy()
-    adapters_import = _install_config().get("adaptersImport")
-    if adapters_import:
-        env["MEMFLYWHEEL_ADAPTERS_IMPORT"] = adapters_import
-    script = "await import(process.env.MEMFLYWHEEL_ADAPTERS_IMPORT || '@iflytekopensource/adapters')"
+    package_import = _install_config().get("packageImport")
+    if package_import:
+        env["MEMFLYWHEEL_PACKAGE_IMPORT"] = package_import
+    script = "await import(process.env.MEMFLYWHEEL_PACKAGE_IMPORT || '@iflytekopensource/memflywheel')"
     try:
         return (
             subprocess.run(
@@ -268,9 +268,9 @@ class _MemFlywheelBridge:
         if self._proc and self._proc.poll() is None:
             return self._proc
         env = os.environ.copy()
-        adapters_import = _install_config().get("adaptersImport")
-        if adapters_import:
-            env["MEMFLYWHEEL_ADAPTERS_IMPORT"] = adapters_import
+        package_import = _install_config().get("packageImport")
+        if package_import:
+            env["MEMFLYWHEEL_PACKAGE_IMPORT"] = package_import
         self._proc = subprocess.Popen(
             ["node", str(_worker_path())],
             stdin=subprocess.PIPE,

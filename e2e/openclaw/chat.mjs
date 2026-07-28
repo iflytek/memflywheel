@@ -11,7 +11,7 @@
  * Usage: node /e2e/openclaw/chat.mjs "prompt text"
  */
 
-import { createMemFlywheelHarnessRuntime, openclawAdapter } from "@iflytekopensource/adapters";
+import { createMemFlywheelHarnessRuntime, openclawAdapter } from "@iflytekopensource/memflywheel";
 
 const prompt = process.argv[2];
 if (!prompt) {

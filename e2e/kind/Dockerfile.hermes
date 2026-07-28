@@ -2,20 +2,18 @@
 #
 # Build context: repo root.
 # Expected files in build context:
-#   e2e/packages/iflytekopensource-adapters-*.tgz
-#   e2e/packages/iflytekopensource-hermes-*.tgz
+#   e2e/packages/iflytekopensource-memflywheel-*.tgz
 #   e2e/kind/03-memflywheel-install.sh
 
 FROM nousresearch/hermes-agent:latest
 
 USER root
 
-# Copy memflywheel packages
-COPY e2e/packages/iflytekopensource-adapters-*.tgz /tmp/adapters.tgz
-COPY e2e/packages/iflytekopensource-hermes-*.tgz /tmp/hermes.tgz
+# Copy the unified memflywheel package
+COPY e2e/packages/iflytekopensource-memflywheel-*.tgz /tmp/memflywheel.tgz
 
-# Install the packages globally so memflywheel-hermes-install can resolve them
-RUN cd /tmp && npm install --global ./adapters.tgz ./hermes.tgz
+# Install it globally so memflywheel-hermes-install is available
+RUN npm install --global /tmp/memflywheel.tgz
 
 # Make globally-installed packages resolvable from any working directory
 ENV NODE_PATH=/usr/local/lib/node_modules

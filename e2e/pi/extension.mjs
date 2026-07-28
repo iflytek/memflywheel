@@ -6,22 +6,26 @@
  * `pi --print` waits for extraction before exiting.
  */
 
-import { completeSimple } from "@earendil-works/pi-ai/compat";
-import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@iflytekopensource/adapters";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
+import {
+  createMemFlywheelHarnessRuntime,
+  createPiHarnessPort,
+} from "@iflytekopensource/memflywheel";
 
 /** @param {any} pi - the Pi ExtensionAPI */
 export default function memFlywheelExtension(pi) {
   const pendingPromises = new Set();
 
-  // Wrap completeSimple to track extraction model calls
-  const trackedCompleteSimple = (model, context, options) => {
-    const promise = completeSimple(model, context, options);
+  // Wrap streamSimple to track extraction model calls
+  const trackedStreamSimple = (model, context, options) => {
+    const stream = streamSimple(model, context, options);
+    const promise = stream.result();
     pendingPromises.add(promise);
     promise.finally(() => pendingPromises.delete(promise));
-    return promise;
+    return stream;
   };
 
-  const port = createPiHarnessPort(pi, { completeSimple: trackedCompleteSimple });
+  const port = createPiHarnessPort(pi, { streamSimple: trackedStreamSimple });
   const runtime = createMemFlywheelHarnessRuntime({ port });
 
   const originalDispose = runtime.dispose;

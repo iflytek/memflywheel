@@ -154,15 +154,15 @@ function openclawVerifySetup() {
     check("node binary available", false, e.message?.slice(0, 100));
   }
   try {
-    const adapterList = kubectlExec(
+    const packageList = kubectlExec(
       OPENCLAW_NS,
       OPENCLAW_POD,
       "ls",
       "/usr/local/lib/node_modules/@iflytekopensource/",
     );
-    check("adapters package installed", adapterList.includes("adapters"));
+    check("memflywheel package installed", packageList.includes("memflywheel"));
   } catch {
-    check("adapters package installed", false, "node_modules not found");
+    check("memflywheel package installed", false, "node_modules not found");
   }
   try {
     const scripts = kubectlExec(OPENCLAW_NS, OPENCLAW_POD, "ls", "/e2e/openclaw/");

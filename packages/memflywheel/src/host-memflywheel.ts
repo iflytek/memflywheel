@@ -51,7 +51,7 @@ import {
 } from "./harness-port.js";
 
 /**
- * Re-exported SDK contracts so hosts/adapters depend only on `@iflytekopensource/adapters`.
+ * Re-exported SDK contracts so hosts/adapters depend only on `@iflytekopensource/memflywheel`.
  */
 export type {
   MemFlywheelLearningLoopConfig,

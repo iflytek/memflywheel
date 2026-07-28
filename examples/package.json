@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@memflywheel/core": "workspace:*",
-    "@iflytekopensource/adapters": "workspace:*",
+    "@iflytekopensource/memflywheel": "workspace:*",
     "@memflywheel/skills": "workspace:*",
     "@memflywheel/sdk": "workspace:*"
   }

@@ -32,7 +32,7 @@ If HERMES_HOME is unset, the installer uses ~/.hermes.`);
 const hermesHome = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const target = join(hermesHome, "plugins", "memflywheel");
 const guardTarget = join(hermesHome, "plugins", "memflywheel-guard");
-const adaptersImport = await import.meta.resolve("@iflytekopensource/adapters");
+const packageImport = new URL("../dist/index.js", import.meta.url).href;
 
 function disableHermesNativeMemoryTool(configPath) {
   if (!existsSync(configPath)) return false;
@@ -80,7 +80,7 @@ mkdirSync(target, { recursive: true });
 copyFileSync(join(root, "provider", "__init__.py"), join(target, "__init__.py"));
 copyFileSync(join(root, "bridge", "worker.mjs"), join(target, "worker.mjs"));
 copyFileSync(join(root, "plugin.yaml"), join(target, "plugin.yaml"));
-writeFileSync(join(target, "install.json"), `${JSON.stringify({ adaptersImport }, null, 2)}\n`, {
+writeFileSync(join(target, "install.json"), `${JSON.stringify({ packageImport }, null, 2)}\n`, {
   mode: 0o600,
 });
 
@@ -90,7 +90,7 @@ copyFileSync(join(root, "guard", "plugin.yaml"), join(guardTarget, "plugin.yaml"
 
 const enabled = spawnSync(
   "hermes",
-  ["plugins", "enable", "memflywheel-guard", "--no-allow-tool-override"],
+  ["plugins", "enable", "memflywheel-guard", "--allow-tool-override"],
   { env: { ...process.env, HERMES_HOME: hermesHome }, encoding: "utf8" },
 );
 if (enabled.status !== 0) {

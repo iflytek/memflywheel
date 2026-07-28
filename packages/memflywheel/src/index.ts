@@ -1,5 +1,5 @@
 /**
- * @iflytekopensource/adapters — host lifecycle mappings.
+ * @iflytekopensource/memflywheel — host lifecycle mappings.
  *
  * Each adapter maps a host's lifecycle events (session start, prompt build,
  * turn end, idle/scheduled) onto a MemFlywheel's hooks. Adapters contain NO
