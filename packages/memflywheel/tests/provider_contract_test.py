@@ -96,6 +96,14 @@ module.register(collector)
 assert collector.provider.name == "memflywheel"
 
 with tempfile.TemporaryDirectory() as tmp:
+    fake_bin = Path(tmp) / "bin"
+    fake_bin.mkdir()
+    fake_hermes = fake_bin / "hermes"
+    fake_hermes.write_text(
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HERMES_HOME/hermes-enable-args\"\n",
+        encoding="utf-8",
+    )
+    fake_hermes.chmod(0o755)
     native_memory = Path(tmp) / "memories" / "MEMORY.md"
     native_memory.parent.mkdir(parents=True)
     native_memory.write_text("native hermes memory\n", encoding="utf-8")
@@ -104,7 +112,11 @@ with tempfile.TemporaryDirectory() as tmp:
     config = Path(tmp) / "config.yaml"
     config.write_text("_config_version: 27\nagent:\n  disabled_toolsets: []\n", encoding="utf-8")
 
-    env = {**os.environ, "HERMES_HOME": tmp}
+    env = {
+        **os.environ,
+        "HERMES_HOME": tmp,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+    }
     subprocess.run(
         ["node", str(Path(__file__).resolve().parents[1] / "bin" / "install.mjs")],
         cwd=Path(__file__).resolve().parents[1],
@@ -120,6 +132,12 @@ with tempfile.TemporaryDirectory() as tmp:
     guard = Path(tmp) / "plugins" / "memflywheel-guard"
     assert (guard / "__init__.py").exists()
     assert (guard / "plugin.yaml").exists()
+    assert (Path(tmp) / "hermes-enable-args").read_text(encoding="utf-8").splitlines() == [
+        "plugins",
+        "enable",
+        "memflywheel-guard",
+        "--allow-tool-override",
+    ]
     install_metadata = json.loads((installed / "install.json").read_text(encoding="utf-8"))
     assert "packageImport" in install_metadata
     installed_worker = subprocess.run(
