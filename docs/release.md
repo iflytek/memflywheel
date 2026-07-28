@@ -13,9 +13,9 @@ MemFlywheel publishes npm packages from GitHub Actions.
 | Preview package         | Push a `v*` git tag    | `.github/workflows/preview-release.yml` | `pkg-pr-new` preview output |
 | Pull request validation | Pull request to `main` | `.github/workflows/ci.yml`              | Build, test, pack dry run   |
 
-The root `memflywheel` package is private and is not published. Only the two
-host-facing packages are published; internal workspace packages stay private and
-are bundled into the host packages when needed.
+The root `memflywheel` package is private and is not published. The single
+host-facing package is published; internal workspace packages stay private and
+are bundled into it.
 
 Pull requests do not publish to npmjs. A PR only proves that the packages can be
 built, tested, and packed. The npmjs publish happens only after a maintainer
@@ -24,29 +24,18 @@ GitHub Action.
 
 ## Published packages
 
-| Package                       | Purpose                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------- |
-| `@iflytekopensource/adapters` | Pi, OpenCode, OpenClaw, and the shared host-adapter runtime used by Hermes |
-| `@iflytekopensource/hermes`   | Hermes MemoryProvider installer and skill mirror                           |
+| Package                          | Purpose                                                                                                         |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `@iflytekopensource/memflywheel` | Pi, Hermes, OpenCode, and OpenClaw integrations, including the Hermes MemoryProvider installer and skill mirror |
 
 Internal workspace packages:
 
-| Package               | Purpose                                                                 |
-| --------------------- | ----------------------------------------------------------------------- |
-| `@memflywheel/core`   | File-backed memory kernel                                               |
-| `@memflywheel/model`  | Provider-neutral model protocol and OpenAI-compatible mappers           |
-| `@memflywheel/sdk`    | Host lifecycle SDK and memory/dream/skill loops                         |
-| `@memflywheel/skills` | Learned-skill package store, validation, finalize, rollback, and recall |
-
-Publish packages in dependency order:
-
-```text
-@iflytekopensource/adapters
-@iflytekopensource/hermes
-```
-
-`@iflytekopensource/hermes` depends on `@iflytekopensource/adapters`, so it cannot be
-published or installed first on a clean npm registry.
+| Package                   | Purpose                                                                 |
+| ------------------------- | ----------------------------------------------------------------------- |
+| `@memflywheel/core`       | File-backed memory kernel                                               |
+| `@memflywheel/embeddings` | Optional embedding pre-recall provider                                  |
+| `@memflywheel/sdk`        | Host lifecycle SDK and memory/dream/skill loops                         |
+| `@memflywheel/skills`     | Learned-skill package store, validation, finalize, rollback, and recall |
 
 ## Versioning rule
 
@@ -77,7 +66,7 @@ separate release-infra PR.
 
 ## npm dist-tag rule
 
-`pnpm run publish:npm` publishes both public packages with the npm `latest`
+`pnpm run publish:npm` publishes the public package with the npm `latest`
 dist-tag by default. Pass a tag explicitly for prerelease channels:
 
 ```sh
@@ -108,15 +97,15 @@ pnpm run pack:dry-run
 
 Before tagging, confirm:
 
-| Check            | Expected result                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------ |
-| Package versions | Root and all `packages/*` versions match                                                   |
-| Package metadata | Repository URLs point to `iflytek/memflywheel`                                             |
-| Package contents | Dry-run output includes only `@iflytekopensource/adapters` and `@iflytekopensource/hermes` |
-| Secrets          | No credentials, private paths, or local-only files are included                            |
-| Notices          | `NOTICE` and `THIRD_PARTY_LICENSES` are current                                            |
-| Publish order    | `pnpm run publish:npm -- --dry-run` publishes adapters, then Hermes                        |
-| CI               | GitHub PR checks pass before merge                                                         |
+| Check            | Expected result                                                          |
+| ---------------- | ------------------------------------------------------------------------ |
+| Package versions | Root and all `packages/*` versions match                                 |
+| Package metadata | Repository URLs point to `iflytek/memflywheel`                           |
+| Package contents | Dry-run output includes only `@iflytekopensource/memflywheel`            |
+| Host entries     | Pi, Hermes, OpenCode, and OpenClaw files are present in the same tarball |
+| Secrets          | No credentials, private paths, or local-only files are included          |
+| Notices          | `NOTICE` and `THIRD_PARTY_LICENSES` are current                          |
+| CI               | GitHub PR checks pass before merge                                       |
 
 ## Release steps
 
@@ -158,8 +147,7 @@ repository URL when needed.
 After the workflow finishes:
 
 ```sh
-npm view @iflytekopensource/adapters version
-npm view @iflytekopensource/hermes version
+npm view @iflytekopensource/memflywheel version
 ```
 
 Confirm the npm versions match the tag and that GitHub Actions completed
@@ -167,11 +155,10 @@ successfully.
 
 ## Failure handling
 
-| Failure                                             | Action                                                                                                                  |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| CI fails before tagging                             | Fix in a normal PR; do not tag                                                                                          |
-| Release workflow fails before any package publishes | Fix the workflow or token, then rerun the failed workflow                                                               |
-| Some packages publish and others fail               | Do not delete published versions; fix the cause and publish the missing packages with the same version if npm allows it |
-| Wrong package content is published                  | Deprecate the bad npm version and publish a corrected patch version                                                     |
+| Failure                         | Action                                                              |
+| ------------------------------- | ------------------------------------------------------------------- |
+| CI fails before tagging         | Fix in a normal PR; do not tag                                      |
+| Release workflow fails          | Fix the workflow or token, then rerun the failed workflow           |
+| Wrong package content published | Deprecate the bad npm version and publish a corrected patch version |
 
 Never rewrite public release tags after a tag has triggered a publish workflow.

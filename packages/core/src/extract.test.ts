@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -73,6 +73,75 @@ test("cleanMessages preserves the per-turn timestamp anchor", () => {
   assert.equal(cleaned.length, 2);
   assert.equal(cleaned[0]!.timestamp, "2023-05-08");
   assert.equal(cleaned[1]!.timestamp, "2023-05-08");
+});
+
+test("cleanMessages redacts private spans from text and tool payloads", () => {
+  const cleaned = cleanMessages([
+    { role: "user", text: "keep <private>user-secret</private> visible" },
+    {
+      role: "assistant",
+      text: "tool <private>assistant-secret</private>",
+      toolCalls: [
+        {
+          name: "read",
+          input: { path: "<private>private-path</private>" },
+          output: ["<private>private-output</private>"],
+        },
+      ],
+    },
+  ]);
+  assert.equal(cleaned[0]!.text, "keep [REDACTED] visible");
+  assert.equal(cleaned[1]!.text, "tool [REDACTED]");
+  assert.deepEqual(cleaned[1]!.toolCalls?.[0]?.input, { path: "[REDACTED]" });
+  assert.deepEqual(cleaned[1]!.toolCalls?.[0]?.output, ["[REDACTED]"]);
+});
+
+test("runExtractionSession never persists private spans in source traces", async () => {
+  const root = await makeRoot();
+  try {
+    await writeRaw(
+      root,
+      ".memflywheel/sources/legacy.jsonl",
+      '{"role":"user","text":"legacy <private>legacy-secret</private>"}\n',
+    );
+    let observed = "";
+    const agent: ExtractionAgentRunner = async (input) => {
+      observed = JSON.stringify(input.messages);
+      return { changed: [] };
+    };
+    await runExtractionSession({
+      ctx: ctxFor(root),
+      agent,
+      messages: [
+        { role: "user", text: "public <private>source-secret</private>" },
+        {
+          role: "assistant",
+          text: "done",
+          toolCalls: [
+            {
+              name: "read",
+              input: "<private>input-secret</private>",
+              output: "<private>output-secret</private>",
+            },
+          ],
+        },
+      ],
+      sessionId: "private-source-trace",
+      cursorStore: createMemoryCursorStore(),
+    });
+    assert.doesNotMatch(observed, /source-secret|input-secret|output-secret/);
+    const sourceDir = path.join(root, ".memflywheel", "sources");
+    const sourceNames = await readdir(sourceDir);
+    assert.equal(sourceNames.length, 2);
+    const sources = await Promise.all(
+      sourceNames.map((sourceName) => readFile(path.join(sourceDir, sourceName), "utf8")),
+    );
+    const source = sources.join("\n");
+    assert.doesNotMatch(source, /legacy-secret|source-secret|input-secret|output-secret/);
+    assert.match(source, /\[REDACTED\]/);
+  } finally {
+    await cleanup(root);
+  }
 });
 
 test("relocateRootFiles moves stray root .md into typed dir", async () => {

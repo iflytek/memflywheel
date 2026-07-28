@@ -11,7 +11,7 @@
  *  - binds `openclawAdapter` to OpenClaw's hooks.
  */
 
-import { createMemFlywheelHarnessRuntime, openclawAdapter } from "@iflytekopensource/adapters";
+import { createMemFlywheelHarnessRuntime, openclawAdapter } from "@iflytekopensource/memflywheel";
 
 const plugin = {
   id: "memflywheel",

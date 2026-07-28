@@ -7,17 +7,45 @@ for published packages.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-28
+
 ### Added
 
 - Kubernetes-level E2E CI workflow using kind and agent-sandbox CRDs. Deploys
-  Pi and Hermes agents in separate namespaces with memflywheel packages baked
-  into custom Docker images, then validates the full memory lifecycle against
-  a mock LLM (offline, no API key required).
+  Pi, Hermes, and OpenClaw agents in separate namespaces with the MemFlywheel
+  package baked into custom Docker images, then validates the full memory
+  lifecycle against a mock LLM (offline, no API key required).
 - Optional embedding pre-recall for large `MEMORY.md` indexes, configured through
   OpenAI-compatible embedding endpoint, API key, model, batch size, and retrieval
   limit environment variables.
 - Documentation for the 200-line direct index limit and the optional
   endpoint/API-key setup needed to enable pre-recall.
+- Hermes host-write guard and learned-skill synchronization for native host
+  integration.
+
+### Changed
+
+- Consolidated the former `@iflytekopensource/adapters` and
+  `@iflytekopensource/hermes` distributions into the single public
+  `@iflytekopensource/memflywheel` package for all four hosts.
+- Unified extraction, dream, and skill evolution on Pi Agent Core with
+  host-resolved `pi-ai` model bindings.
+- Reused each host's active model, endpoint, credentials, headers, protocol, and
+  provider options across Pi, OpenCode, Hermes, and OpenClaw.
+- Replaced the internal provider-neutral model package with the optional
+  embeddings package and provider-native transports.
+- Moved cross-process memory locking to `proper-lockfile` and raised the Node.js
+  requirement to 22.19.
+
+### Fixed
+
+- Preserved provider-native assistant replay fields across multi-step tool loops.
+- Made OpenCode turn completion and idle delivery serial and idempotent, while
+  supporting OpenAI-compatible, Responses, Anthropic, Google, Bedrock, and
+  Mistral transports without silent protocol fallback.
+- Reused OpenCode and Pi host credentials on every background model turn.
+- Declared the OpenClaw plugin API as a compatible semver floor so current
+  OpenClaw releases can install the package.
 
 ### Security
 

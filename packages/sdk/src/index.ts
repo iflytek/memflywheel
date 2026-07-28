@@ -17,7 +17,7 @@
  * tool-calling loop: it calls ordinary file tools, which WRITE FILES directly.
  * Dream consolidation is the same kind of subagent over the same channel. The
  * SDK ships the extraction / dream / skill loops over a provider-neutral
- * canonical model contract. Providers and host runtimes live outside the SDK.
+ * host-resolved pi-ai model binding. Providers and host runtimes live outside the SDK.
  *
  * The host gathers the conversation turn into ExtractionMessage[] and calls the
  * hooks; core does the rest (write lock, atomic writes, index sync, cursor).
@@ -93,40 +93,28 @@ export {
   buildExtractionAgentUserMessage,
 } from "@memflywheel/core";
 
-// Provider-neutral model protocol plus provider mappers.
+// Optional embedding infrastructure. Write-side LLM execution uses Pi Agent Core.
 export {
-  type JsonSchemaObject,
-  type CanonicalModelRole,
-  type CanonicalToolCall,
-  type CanonicalModelMessage,
-  type CanonicalToolDefinition,
-  type CanonicalModelRequest,
-  type CanonicalModelResponse,
-  type CanonicalModelCompletion,
-  type CanonicalModelComplete,
-  type CanonicalEmbeddingProvider,
-  type OpenAIChatCompletionsModelConfig,
   type OpenAIEmbeddingsModelConfig,
-  createOpenAIChatCompletionsModel,
   createOpenAIEmbeddingsModel,
-} from "@memflywheel/model";
+} from "@memflywheel/embeddings";
 
-// Runtime assembly layer: the extraction & dream subagents over the canonical
-// model protocol (both the same tool-calling loop, seeded differently).
+// Runtime assembly layer: every write-side task runs on Pi Agent Core.
 export {
-  type RunToolAgentOptions,
-  type ToolAgentResult,
-  type AgentToolCall,
-  runToolAgent,
-  MAX_TOOL_AGENT_STEPS,
-} from "./tool-agent.js";
+  type PiAgentModelBinding,
+  type ResolvePiAgentModel,
+  type MemoryAgentToolResult,
+  type MemoryAgentTool,
+  type MemoryAgentResult,
+  type RunMemoryAgentOptions,
+  runMemoryAgent,
+} from "./agent-runner.js";
 export {
   type RunExtractionAgentOptions,
   type ExtractionAgentResult,
   type CreateExtractionAgentRunnerOptions,
   runExtractionAgent,
   createExtractionAgentRunner,
-  MAX_EXTRACTION_STEPS,
 } from "./extraction-agent.js";
 export {
   type RunDreamAgentOptions,
@@ -677,11 +665,7 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
         lastSkillEvolutionTurn.delete(sessionId);
         // Count this ended session toward the dream gate's session threshold.
         if (enabled) {
-          try {
-            await bumpDreamSessions(root);
-          } catch {
-            // Bookkeeping is best-effort; never let it break session teardown.
-          }
+          await bumpDreamSessions(root);
         }
       });
     },
@@ -701,9 +685,8 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
 
     async save(options: SaveOptions): Promise<ExtractionResult> {
       if (!enabled) return ExtractionResult.Skipped;
-      const { acquireLock, releaseLock } = await import("@memflywheel/core");
+      const { acquireLock } = await import("@memflywheel/core");
       const handle = await acquireLock(root, "save");
-      if (!handle.acquired) return ExtractionResult.Queued;
       try {
         await ensureMemoryDir(root);
         const toolCtx = createMemoryFileToolContext({ ctx, refuseSecrets });
@@ -732,7 +715,7 @@ export function createMemFlywheel(config: MemFlywheelConfig = {}): MemFlywheel {
         await syncMemoryIndex(root);
         return changed.length > 0 ? ExtractionResult.Completed : ExtractionResult.Skipped;
       } finally {
-        await releaseLock(root);
+        await handle.release();
       }
     },
 

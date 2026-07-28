@@ -28,7 +28,7 @@ if [ -f "$CONFIG" ] && ! grep -q "disabled_toolsets" "$CONFIG"; then
     echo "[memflywheel] Added agent.disabled_toolsets to config.yaml"
 fi
 
-# Run the install script (installed globally from @iflytekopensource/hermes)
+# Run the install script (installed globally from @iflytekopensource/memflywheel)
 memflywheel-hermes-install || {
     echo "[memflywheel] ERROR: memflywheel-hermes-install failed"
     exit 1
@@ -36,7 +36,7 @@ memflywheel-hermes-install || {
 
 # Ensure globally-installed Node modules are resolvable from the plugin dir.
 # Node.js ESM import does NOT respect NODE_PATH — we need a real node_modules
-# directory/symlink for the plugin to resolve @iflytekopensource/adapters.
+# directory/symlink for the plugin to resolve @iflytekopensource/memflywheel.
 PLUGIN_DIR="${HERMES_HOME}/plugins/memflywheel"
 if [ -d "$PLUGIN_DIR" ]; then
     ln -sf /usr/local/lib/node_modules "${PLUGIN_DIR}/node_modules" 2>/dev/null || true

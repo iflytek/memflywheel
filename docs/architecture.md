@@ -5,10 +5,10 @@ MemFlywheel is a file-backed long-term memory kernel. It has four moving parts �
 atomic writes, audit) that every write path shares.
 
 The core (`@memflywheel/core`) is pure filesystem logic plus injected ports. It never owns
-model transport, provider auth, or provider wire shapes. The two generative steps
-(extraction, dream) reach the model only through injected function contracts; optional
+model transport, provider auth, or provider wire shapes. The generative steps
+(extraction, dream, and skill evolution) reach the model only through injected function contracts; optional
 index-layer retrieval consumes a host-supplied embedding provider. Hosts wire those
-contracts and the turn lifecycle through `@memflywheel/sdk` and `@iflytekopensource/adapters`.
+contracts and the turn lifecycle through `@memflywheel/sdk` and `@iflytekopensource/memflywheel`.
 
 ## Memory root and layout
 
@@ -185,9 +185,9 @@ reusable skill route for future turns.
 
 ## Package boundaries
 
-Only `@iflytekopensource/adapters` and `@iflytekopensource/hermes` are public npm packages.
-The layers below remain private workspace packages; release builds bundle the
-runtime pieces into the host-facing packages.
+`@iflytekopensource/memflywheel` is the only public npm package. The layers below
+remain private workspace packages; the release build bundles their runtime pieces,
+all four host entrypoints, and the Hermes installer into that package.
 
 ```
 @memflywheel/core      filesystem only, no LLM, no host coupling
@@ -197,7 +197,7 @@ runtime pieces into the host-facing packages.
 @memflywheel/sdk       wires injection points + turn lifecycle
    ▲
    │
-@iflytekopensource/adapters  per-host lifecycle mapping
+@iflytekopensource/memflywheel  host mappings + native model bindings + installers
 ```
 
 See [`integrations.md`](integrations.md) for the SDK and host adapter surfaces.

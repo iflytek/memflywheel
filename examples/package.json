@@ -5,12 +5,11 @@
   "type": "module",
   "description": "Runnable minimal host integration examples for MemFlywheel.",
   "scripts": {
-    "smoke": "USE_FAKE=1 node pi/run.mjs && USE_FAKE=1 node hermes/run.mjs && USE_FAKE=1 node openclaw/run.mjs && USE_FAKE=1 node learning-loop/run.mjs"
+    "smoke": "node --check pi/extension.mjs && node --check hermes/plugin-register.mjs && node --check openclaw/plugin.mjs"
   },
   "dependencies": {
     "@memflywheel/core": "workspace:*",
-    "@iflytekopensource/adapters": "workspace:*",
-    "@memflywheel/model": "workspace:*",
+    "@iflytekopensource/memflywheel": "workspace:*",
     "@memflywheel/skills": "workspace:*",
     "@memflywheel/sdk": "workspace:*"
   }

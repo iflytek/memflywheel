@@ -29,7 +29,7 @@ skill loops should fail fast instead of parsing free-form model text.
 
 | Host     | Status                       | Notes                                                                                    |
 | -------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
-| Pi       | Implemented first-class path | Adapter, HarnessPort, lifecycle mapping, and canonical model mapping are implemented     |
+| Pi       | Implemented first-class path | Adapter, HarnessPort, lifecycle mapping, and native pi-ai model binding are implemented  |
 | Hermes   | Implemented plugin path      | MemoryProvider plugin uses Hermes' host-owned model/auth channel for write-side loops    |
 | OpenClaw | Implemented plugin path      | Load the adapter as OpenClaw's memory slot; hooks provide recall, extraction, and skills |
 | OpenCode | Implemented plugin path      | Load the adapter as an OpenCode plugin; hooks provide recall, extraction, and skills     |
@@ -113,13 +113,13 @@ declares its extension entry under the `pi` key in `package.json`.
 }
 ```
 
-Install the published adapter package into Pi:
+Install the published MemFlywheel package into Pi:
 
 ```sh
-pi install npm:@iflytekopensource/adapters
+pi install npm:@iflytekopensource/memflywheel
 ```
 
-Pi then loads `packages/adapters/pi-extension/index.mjs` from the npm package.
+Pi then loads `packages/memflywheel/pi-extension/index.mjs` from the npm package.
 That extension maps Pi lifecycle and tool-calling model access into
 `HostHarnessPort`, then builds the MemFlywheel runtime:
 
@@ -130,7 +130,7 @@ Pi package
    v
 pi-extension/index.mjs
    |
-   | createPiHarnessPort(pi, { completeSimple })
+   | createPiHarnessPort(pi, { streamSimple })
    v
 createMemFlywheelHarnessRuntime({ port })
    |
@@ -143,14 +143,13 @@ createMemFlywheelHarnessRuntime({ port })
 Source checkout smoke test:
 
 ```sh
-pnpm -r build
-USE_FAKE=1 node examples/pi/run.mjs
+pnpm --dir examples smoke
 ```
 
-`@earendil-works/pi-ai` is declared as a Pi peer dependency because Pi provides
-its own core packages to extensions. The extension imports `completeSimple` from
-`@earendil-works/pi-ai/compat`; MemFlywheel must not bundle Pi core packages into
-its tarball.
+`@earendil-works/pi-ai` is a runtime dependency of the package. The Pi
+extension imports `streamSimple` from `@earendil-works/pi-ai/compat`, while the
+OpenCode bridge uses pi-ai's provider APIs. The dependency remains external to
+the runtime bundle and is installed alongside it.
 
 ## Hermes Integration
 
@@ -159,7 +158,7 @@ npm, run the installer once, then select it through Hermes' native memory
 config.
 
 ```sh
-npm install -g @iflytekopensource/hermes
+npm install -g @iflytekopensource/memflywheel
 memflywheel-hermes-install
 hermes config set memory.provider memflywheel
 hermes memory status
@@ -196,8 +195,8 @@ Source checkout uses the same installer path as npm; the only difference is that
 the package is executed from the workspace instead of a global npm install:
 
 ```sh
-pnpm --filter @iflytekopensource/hermes run build
-pnpm --filter @iflytekopensource/hermes run install:local
+pnpm --filter @iflytekopensource/memflywheel run build
+pnpm --filter @iflytekopensource/memflywheel run install:local
 hermes config set memory.provider memflywheel
 ```
 
@@ -247,7 +246,7 @@ Expected behavior after a real session:
 ## OpenCode Integration
 
 ```sh
-opencode plugin @iflytekopensource/adapters --global
+opencode plugin @iflytekopensource/memflywheel --global
 opencode run --dir /path/to/project "your task"
 ```
 
@@ -255,17 +254,42 @@ OpenCode keeps model configuration, tools, permissions, and sessions. The
 MemFlywheel plugin uses OpenCode hooks for prompt recall, turn-end extraction,
 source traces, skill evolution, and dream consolidation.
 
-If your OpenCode model credentials are stored only inside OpenCode, also export
-an OpenAI-compatible write-side model for MemFlywheel before starting OpenCode:
+The plugin resolves a pi-ai `Model` and `StreamFn` from OpenCode's active
+`chat.params` model context. The model id, resolved endpoint, and credential
+therefore come from OpenCode; no separate `MEMFLYWHEEL_LLM_*` configuration is
+read. Pi Agent Core owns the extraction, skill-evolution, and dream tool loops.
 
-```sh
-export MEMFLYWHEEL_LLM_ENDPOINT="https://api.example.com/v1"
-export MEMFLYWHEEL_LLM_API_KEY="..."
-export MEMFLYWHEEL_LLM_MODEL="deepseek-chat"
+On load, the plugin adds a narrow global `external_directory` allow rule for
+the active MemFlywheel root. This lets OpenCode's own Agent use its native
+`read` tool for progressive recall in every Session while leaving all other
+external directories unchanged. For the default macOS path, the equivalent
+manual configuration is:
+
+```json
+{
+  "permission": {
+    "external_directory": {
+      "*": "ask",
+      "/Users/you/.config/opencode/memflywheel/*": "allow"
+    }
+  }
+}
 ```
 
-Prompt recall and embedding pre-recall do not need these variables. Turn-end
-extraction, skill evolution, and dream consolidation do.
+The automatic rule follows `MEMFLYWHEEL_HOME`, `OPENCODE_CONFIG_DIR`, and
+`XDG_CONFIG_HOME` when those variables change the memory root.
+
+The OpenCode bridge maps the active host transport to pi-ai's native provider
+streams. OpenAI-compatible, OpenAI Responses, Anthropic, Google Gemini,
+Google Vertex, Amazon Bedrock, and Mistral transports are supported. The model
+id, endpoint, credential, headers, token limits, and relevant provider options
+still come from OpenCode. An unmapped transport fails during model binding
+instead of silently switching models or protocols.
+
+For `@ai-sdk/anthropic`, configure OpenCode's `baseURL` through the `/v1` prefix.
+OpenCode appends `/messages`; the MemFlywheel bridge removes that terminal `/v1`
+before handing the same endpoint to pi-ai, whose Anthropic SDK appends
+`/v1/messages` itself. Both paths therefore reach the same Messages endpoint.
 
 For non-interactive `opencode run` tests, remember that OpenCode may reject file
 reads outside `--dir`. If the model needs to inspect
@@ -275,7 +299,7 @@ your test harness' explicit permission override.
 ## OpenClaw Integration
 
 ```sh
-openclaw plugins install npm:@iflytekopensource/adapters
+openclaw plugins install npm:@iflytekopensource/memflywheel
 openclaw config set plugins.slots.memory memflywheel
 openclaw config set plugins.entries.memflywheel.hooks.allowConversationAccess true
 openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
@@ -286,18 +310,11 @@ The `plugins.slots.memory` setting is required because OpenClaw enables exactly
 one memory plugin slot. If the slot still points at `memory-core`, the
 MemFlywheel package is installed but inactive.
 
-If your OpenClaw model credentials are stored only inside OpenClaw, also export
-an OpenAI-compatible write-side model for MemFlywheel before starting the
-gateway or running `openclaw agent --local`:
-
-```sh
-export MEMFLYWHEEL_LLM_ENDPOINT="https://api.example.com/v1"
-export MEMFLYWHEEL_LLM_API_KEY="..."
-export MEMFLYWHEEL_LLM_MODEL="deepseek-chat"
-```
-
-Prompt recall and embedding pre-recall do not need these variables. Turn-end
-extraction, skill evolution, and dream consolidation do.
+The plugin uses OpenClaw's native
+`prepareSimpleCompletionModelForAgent`/`completeWithPreparedSimpleCompletionModel`
+path. OpenClaw resolves the active agent model and credential; no separate
+write-side LLM configuration is read. The adapter exposes that transport as a
+pi-ai stream; Pi Agent Core remains the only tool-loop implementation.
 
 After a real session, MemFlywheel files should appear under
 `~/.openclaw/memflywheel/`, including `MEMORY.md`, typed memory documents,
@@ -309,7 +326,7 @@ source traces, and learned skills.
 | --------------------- | ------------------------------------------------------------------ |
 | Lifecycle mapping     | Translate host events into SDK hooks                               |
 | Payload normalization | Convert host transcript/tool trajectory into `ExtractionMessage[]` |
-| Model port            | Wrap host-owned model access into the canonical tool-call protocol |
+| Model binding         | Resolve host-owned access into a pi-ai `Model` + `StreamFn`        |
 | Capability gate       | Report recall-only, memory-loop, or skill-loop support             |
 | Installation          | Apply and verify host-side wiring without changing core semantics  |
 

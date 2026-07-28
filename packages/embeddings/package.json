@@ -1,0 +1,52 @@
+{
+  "name": "@memflywheel/embeddings",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Optional embedding retrieval provider for MemFlywheel.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "NOTICE",
+    "THIRD_PARTY_LICENSES",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.d.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iflytek/memflywheel.git",
+    "directory": "packages/embeddings"
+  },
+  "bugs": {
+    "url": "https://github.com/iflytek/memflywheel/issues"
+  },
+  "homepage": "https://github.com/iflytek/memflywheel#readme",
+  "keywords": [
+    "agent-memory",
+    "embeddings",
+    "memory",
+    "retrieval",
+    "typescript"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b",
+    "test": "tsc -b && node --test \"dist/**/*.test.js\"",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.5.4"
+  }
+}

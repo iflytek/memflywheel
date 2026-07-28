@@ -7,7 +7,7 @@ import { join } from "node:path";
 const GHP_REGISTRY = "https://npm.pkg.github.com";
 const SCOPE_FROM = "@iflytekopensource/";
 const SCOPE_TO = "@iflytek/";
-const TARGET_PACKAGES = ["@iflytekopensource/adapters", "@iflytekopensource/hermes"];
+const TARGET_PACKAGES = ["@iflytekopensource/memflywheel"];
 
 function rewriteScope(value) {
   return value.split(SCOPE_FROM).join(SCOPE_TO);
@@ -84,8 +84,8 @@ function publishToGitHubPackages(publishArgs) {
       }
       writeFileSync(pjPath, JSON.stringify(pj, null, 2) + "\n");
 
-      // Rewrite runtime imports in hermes package
-      if (pj.name === `${SCOPE_TO}hermes`) {
+      // Rewrite the unified package's runtime fallback imports.
+      if (pj.name === `${SCOPE_TO}memflywheel`) {
         for (const rel of ["bin/install.mjs", "bridge/worker.mjs", "provider/__init__.py"]) {
           try {
             const fp = join(pkgDir, rel);

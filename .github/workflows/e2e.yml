@@ -43,11 +43,10 @@ jobs:
       - name: Build
         run: pnpm run build
 
-      - name: Pack memflywheel packages
+      - name: Pack memflywheel package
         run: |
           mkdir -p e2e/packages
-          pnpm --filter @iflytekopensource/adapters pack --pack-destination e2e/packages/
-          pnpm --filter @iflytekopensource/hermes pack --pack-destination e2e/packages/
+          pnpm --filter @iflytekopensource/memflywheel pack --pack-destination e2e/packages/
           ls -la e2e/packages/
 
       - name: Install kind

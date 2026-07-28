@@ -2,15 +2,15 @@
  * Hermes plugin glue (real integration).
  *
  * A Hermes plugin's `register(ctx)` maps the host LLM facade into the canonical
- * model protocol, builds a MemFlywheel harness runtime, and binds `hermesAdapter`
+ * model transport, builds a MemFlywheel harness runtime, and binds `hermesAdapter`
  * so the scribe's hooks fire on Hermes' real events.
  *
  * Because Hermes owns the credentials, no API key is needed — both subagents
  * (extraction and dream consolidation) run on Hermes' own model through
- * `ctx.llm.completeWithTools`, over the single canonical model channel.
+ * the host's active model transport, over the single Pi Agent Core runner.
  */
 
-import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@iflytekopensource/adapters";
+import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@iflytekopensource/memflywheel";
 
 /** @param {any} ctx - the Hermes PluginContext */
 export function register(ctx) {

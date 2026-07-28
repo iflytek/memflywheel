@@ -45,6 +45,8 @@ test("buildMemoryInstructionPrompt is stable rules with no index", () => {
   assert.ok(rules.includes("Recall Rules"));
   assert.ok(rules.includes("## Sources"));
   assert.ok(rules.includes("absolute source trace"));
+  assert.ok(rules.includes("routing metadata only"));
+  assert.ok(rules.includes("must successfully call Read on the exact listed file path"));
   assert.ok(!rules.includes("<system-reminder>"));
 });
 

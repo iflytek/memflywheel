@@ -7,7 +7,9 @@ packages:
 minimumReleaseAge: 60
 
 allowBuilds:
+  "@google/genai": true
   esbuild: true
+  protobufjs: true
 autoInstallPeers: false
 
 overrides:

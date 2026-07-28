@@ -10,48 +10,12 @@ import {
   type SkillEvolutionStore,
   type SkillEvolutionTool,
 } from "./skill-evolution-agent.js";
-import type {
-  CanonicalModelCompletion,
-  CanonicalModelRequest,
-  CanonicalModelResponse,
-} from "@memflywheel/model";
-
-function scriptedModel(responses: CanonicalModelResponse[]): {
-  model: CanonicalModelCompletion;
-  requests: () => CanonicalModelRequest[];
-} {
-  const seen: CanonicalModelRequest[] = [];
-  let i = 0;
-  const model: CanonicalModelCompletion = {
-    complete: async (req) => {
-      seen.push({
-        ...req,
-        messages: req.messages.map((message) => ({
-          ...message,
-          toolCalls: message.toolCalls?.map((call) => ({ ...call })),
-        })),
-        tools: req.tools.map((tool) => ({ ...tool })),
-      });
-      const response = responses[i];
-      i += 1;
-      if (!response) throw new Error("unexpected skill evolution completion call");
-      return response;
-    },
-  };
-  return { model, requests: () => seen };
-}
-
-function toolCallResponse(name: string, args: unknown, id = "c1"): CanonicalModelResponse {
-  return {
-    message: { role: "assistant", content: null, toolCalls: [{ id, name, input: args }] },
-    finishReason: "tool-calls",
-  };
-}
-
-const STOP_RESPONSE: CanonicalModelResponse = {
-  message: { role: "assistant", content: "done" },
-  finishReason: "stop",
-};
+import type { ResolvePiAgentModel } from "./agent-runner.js";
+import {
+  scriptedBinding,
+  stopTurn as STOP_RESPONSE,
+  toolTurn as toolCallResponse,
+} from "./agent-test-support.test.js";
 
 /**
  * A mock store whose tools operate on an in-memory staged file map seeded from the
@@ -178,9 +142,9 @@ function makeStore(opts: { catalog?: string[]; finalizeResult: LearnedSkillChang
 const REVIEW = "memflywheel-learned-review";
 const DEBUG = "memflywheel-learned-debug";
 
-function run(store: SkillEvolutionStore, model: CanonicalModelCompletion) {
+function run(store: SkillEvolutionStore, resolveModel: ResolvePiAgentModel) {
   return runSkillEvolutionAgent({
-    model,
+    resolveModel,
     store,
     sessionId: "s1",
     reviewPacket: { summary: "review packet" },
@@ -195,12 +159,12 @@ test("runSkillEvolutionAgent: a new skill file derives a create coordination (no
     catalog: [],
     finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
   });
-  const { model, requests } = scriptedModel([
+  const { resolveModel, contexts } = scriptedBinding([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "new body" }, "u1"),
     STOP_RESPONSE,
   ]);
 
-  const result = await run(store, model);
+  const result = await run(store, resolveModel);
 
   assert.equal(state.checkpointed, 1);
   assert.equal(state.finalized, 1);
@@ -213,7 +177,7 @@ test("runSkillEvolutionAgent: a new skill file derives a create coordination (no
   assert.equal(result.coordination.memoryAction, "compress-memory");
   assert.ok(result.coordination.memoryTopics.length > 0);
 
-  const seed = String(requests()[0].messages[1].content);
+  const seed = JSON.stringify(contexts()[0]?.messages[0]?.content);
   for (const section of [
     /# Review packet/,
     /# Learned skill index/,
@@ -223,8 +187,7 @@ test("runSkillEvolutionAgent: a new skill file derives a create coordination (no
   ]) {
     assert.match(seed, section);
   }
-  const specs = requests()[0].tools;
-  assert.ok(specs.every((tool) => tool.strict === true));
+  const specs = contexts()[0]?.tools ?? [];
   assert.ok(specs.some((tool) => tool.name === "write"));
 });
 
@@ -233,12 +196,12 @@ test("runSkillEvolutionAgent: editing an existing catalog skill derives an updat
     catalog: [REVIEW],
     finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
   });
-  const { model } = scriptedModel([
+  const { resolveModel } = scriptedBinding([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "improved body" }, "u1"),
     STOP_RESPONSE,
   ]);
 
-  const result = await run(store, model);
+  const result = await run(store, resolveModel);
 
   assert.equal(state.rolledBack, 0);
   assert.equal(result.coordination.decision, "update");
@@ -250,12 +213,12 @@ test("runSkillEvolutionAgent: a skill change auto-links memory via a compress-me
     catalog: [REVIEW],
     finalizeResult: { changedSkills: [REVIEW], changedFiles: [`${REVIEW}/SKILL.md`] },
   });
-  const { model } = scriptedModel([
+  const { resolveModel } = scriptedBinding([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "improved" }, "u1"),
     STOP_RESPONSE,
   ]);
 
-  const result = await run(store, model);
+  const result = await run(store, resolveModel);
 
   // The memory↔skill link: a real skill change always triggers a follow-up memory
   // compression with a topic derived from the skill.
@@ -269,9 +232,9 @@ test("runSkillEvolutionAgent: making no file change is a graceful noop, not a th
     catalog: [],
     finalizeResult: { changedSkills: [], changedFiles: [] },
   });
-  const { model } = scriptedModel([STOP_RESPONSE]);
+  const { resolveModel } = scriptedBinding([STOP_RESPONSE]);
 
-  const result = await run(store, model);
+  const result = await run(store, resolveModel);
 
   assert.equal(state.finalized, 1);
   assert.equal(state.rolledBack, 0);
@@ -284,13 +247,13 @@ test("runSkillEvolutionAgent: deleting a duplicate directory derives a merge coo
     catalog: [REVIEW, DEBUG],
     finalizeResult: { changedSkills: [REVIEW, DEBUG], changedFiles: [`${REVIEW}/SKILL.md`] },
   });
-  const { model } = scriptedModel([
+  const { resolveModel } = scriptedBinding([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "merged body" }, "u1"),
     toolCallResponse("bash", { command: `rm -rf ${DEBUG}` }, "a1"),
     STOP_RESPONSE,
   ]);
 
-  const result = await run(store, model);
+  const result = await run(store, resolveModel);
 
   assert.equal(state.rolledBack, 0);
   assert.equal(result.coordination.decision, "merge");
@@ -307,13 +270,13 @@ test("runSkillEvolutionAgent: keeps finalized skill changes even when multiple s
       changedFiles: [`${REVIEW}/SKILL.md`, `${DEBUG}/SKILL.md`],
     },
   });
-  const { model } = scriptedModel([
+  const { resolveModel } = scriptedBinding([
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "a" }, "u1"),
     toolCallResponse("write", { filePath: `${DEBUG}/SKILL.md`, content: "b" }, "u2"),
     STOP_RESPONSE,
   ]);
 
-  const result = await run(store, model);
+  const result = await run(store, resolveModel);
 
   assert.equal(state.rolledBack, 0);
   assert.deepEqual(result.changedSkills, [REVIEW, DEBUG]);
@@ -335,19 +298,19 @@ test("runSkillEvolutionAgent: feeds skill tool validation errors back so the mod
       return { ok: false, text: "filePath must be memflywheel-learned-<slug>/SKILL.md" };
     return originalWrite(args);
   };
-  const { model, requests } = scriptedModel([
+  const { resolveModel, contexts } = scriptedBinding([
     toolCallResponse("write", { filePath: "review/SKILL.md", content: "bad" }, "bad"),
     toolCallResponse("write", { filePath: `${REVIEW}/SKILL.md`, content: "good" }, "good"),
     STOP_RESPONSE,
   ]);
 
-  const result = await run(store, model);
+  const result = await run(store, resolveModel);
 
   assert.equal(state.rolledBack, 0);
   assert.equal(result.coordination.targetSkill, REVIEW);
   // the tool error was surfaced back to the model as a tool result
   assert.match(
-    String(requests()[1].messages.at(-1)?.content),
+    JSON.stringify(contexts()[1]?.messages.at(-1)?.content),
     /memflywheel-learned-<slug>\/SKILL\.md/,
   );
 });

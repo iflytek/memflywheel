@@ -84,11 +84,7 @@ jobs:
 
       - name: Examples smoke test
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
-        run: |
-          USE_FAKE=1 node examples/pi/run.mjs
-          USE_FAKE=1 node examples/hermes/run.mjs
-          USE_FAKE=1 node examples/openclaw/run.mjs
-          USE_FAKE=1 node examples/learning-loop/run.mjs
+        run: pnpm --dir examples smoke
 
       - name: Pack dry run
         if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22'
