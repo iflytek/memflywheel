@@ -11,9 +11,13 @@ for published packages.
 
 ### Added
 
+- Kubernetes-level E2E CI using kind and agent-sandbox CRDs for Pi, Hermes,
+  and OpenClaw, validating the memory lifecycle against an offline mock LLM.
 - Optional embedding pre-recall for large `MEMORY.md` indexes, configured through
   OpenAI-compatible embedding endpoint, API key, model, batch size, and retrieval
   limit environment variables.
+- Documentation for the 200-line direct index limit and the optional embedding
+  endpoint and API-key setup used to enable pre-recall.
 - Hermes host-write guard and learned-skill synchronization for native host
   integration.
 
