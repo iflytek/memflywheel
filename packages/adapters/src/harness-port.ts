@@ -1,13 +1,20 @@
-import type { CanonicalModelCompletion, CanonicalModelMessage } from "@memflywheel/model";
+import type { ResolvePiAgentModel } from "@memflywheel/sdk";
+
+export interface HostToolCall {
+  id: string;
+  name: string;
+  input: unknown;
+}
+
+export interface HostMessage {
+  role: "user" | "assistant" | "tool";
+  content?: string | null;
+  toolCalls?: HostToolCall[];
+  toolCallId?: string;
+}
 
 export type HostCapability =
-  | "prompt-build"
-  | "turn-end"
-  | "session-end"
-  | "idle"
-  | "single-tool-completion"
-  | "agentic-tool-loop"
-  | "tool-trajectory";
+  "prompt-build" | "turn-end" | "session-end" | "idle" | "agentic-tool-loop" | "tool-trajectory";
 
 export type HostIntegrationMode = "none" | "recall-only" | "memory-loop" | "skill-loop";
 
@@ -26,7 +33,7 @@ export interface HostPromptBuildResult {
 
 export interface HostTurnEndEvent {
   sessionId: string;
-  messages: CanonicalModelMessage[];
+  messages: HostMessage[];
 }
 
 export interface HostSessionEvent {
@@ -65,7 +72,7 @@ export interface HostHarnessPort {
   readonly name: string;
   readonly capabilities: ReadonlySet<HostCapability>;
   readonly lifecycle: HostLifecyclePort;
-  readonly model: CanonicalModelCompletion;
+  readonly resolveModel: ResolvePiAgentModel;
   readonly telemetry?: HostTelemetryPort;
 }
 

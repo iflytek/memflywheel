@@ -1,6 +1,6 @@
 {
   "name": "@iflytekopensource/hermes",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Hermes MemoryProvider plugin for MemFlywheel.",
   "license": "Apache-2.0",
   "type": "module",
@@ -13,16 +13,19 @@
     "THIRD_PARTY_LICENSES",
     "bin/**/*.mjs",
     "bridge/**/*.mjs",
+    "guard/**/*.py",
+    "guard/plugin.yaml",
     "provider/**/*.py",
     "plugin.yaml",
     "README.md"
   ],
   "scripts": {
-    "build": "node --check bridge/worker.mjs && node --check bin/install.mjs && python3 - <<'PY'\nfrom pathlib import Path\ncompile(Path('provider/__init__.py').read_text(), 'provider/__init__.py', 'exec')\nPY",
+    "build": "node --check bridge/worker.mjs && node --check bin/install.mjs && python3 - <<'PY'\nfrom pathlib import Path\nfor file in ('provider/__init__.py', 'guard/__init__.py'):\n    compile(Path(file).read_text(), file, 'exec')\nPY",
     "install:local": "node bin/install.mjs",
     "test": "PYTHONDONTWRITEBYTECODE=1 python3 tests/provider_contract_test.py"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "^0.82.1",
     "@iflytekopensource/adapters": "workspace:*"
   },
   "engines": {

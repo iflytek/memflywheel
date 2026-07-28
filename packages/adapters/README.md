@@ -1,20 +1,21 @@
 # @iflytekopensource/adapters
 
-Host lifecycle mappings for MemFlywheel. Each adapter translates a host's lifecycle
-events — session start, prompt assembly, turn end, idle/scheduled — onto a
-`MemFlywheel`'s hooks. Adapters contain **no memory logic**: they are pure event
-translation plus a real, round-trippable install of the host-side wiring.
+Host lifecycle mappings and native model bindings for MemFlywheel. Each adapter
+translates host lifecycle events onto MemFlywheel hooks and resolves the host's
+active model into a `pi-ai` stream. Core memory semantics remain in the bundled
+MemFlywheel Core and SDK layers.
 
-Zero runtime dependencies (Node stdlib + TypeScript only).
+The package installs Pi Agent Core, `pi-ai`, and `proper-lockfile` as runtime
+dependencies.
 
 ## Built-in adapters
 
-| id         | host      | session start        | prompt build     | turn end            | idle/scheduled     | integration |
-| ---------- | --------- | -------------------- | ---------------- | ------------------- | ------------------ | ----------- |
-| `pi`       | Pi kernel | `session:ensure`     | `turn:build`     | `agent_end`         | `learning:idle`    | real        |
-| `hermes`   | Hermes    | `on_session_start`   | `pre_llm_call`   | `post_llm_call`     | `on_session_end`   | real        |
-| `openclaw` | OpenClaw  | `before_agent_start` | `context:inject` | `agent_end`         | `idle:watch`       | real        |
-| `opencode` | OpenCode  | `session.init`       | `message.build`  | `response.complete` | `timer.background` | real        |
+| id         | host     | prompt recall                        | turn end                                      | session end        | integration |
+| ---------- | -------- | ------------------------------------ | --------------------------------------------- | ------------------ | ----------- |
+| `pi`       | Pi       | `context`                            | `agent_end`                                   | `session_shutdown` | real        |
+| `hermes`   | Hermes   | `prefetch`                           | `sync_turn`                                   | `on_session_end`   | real        |
+| `openclaw` | OpenClaw | `before_prompt_build`                | `agent_end`                                   | `session_end`      | real        |
+| `opencode` | OpenCode | `experimental.chat.system.transform` | `experimental.text.complete` / `session.idle` | `session.deleted`  | real        |
 
 `@iflytekopensource/adapters` owns the shared host adapter/runtime layer. Host-specific
 install shape still differs: Pi, OpenCode, and OpenClaw can load package
@@ -24,16 +25,12 @@ install its Python `MemoryProvider`, config wiring, and skill mirror.
 - **`pi`** — real: `@iflytekopensource/adapters` is a Pi package. Its
   `package.json` declares `pi.extensions`, and Pi installs it with
   `pi install npm:@iflytekopensource/adapters`.
-  `session:ensure` → `onSessionStart`; per-turn assembly → `onPromptBuild` (the
-  scribe's `systemPrompt` merges into the per-session system prompt and
-  `preludePrompt` is prepended to the prelude list); `agent_end` →
-  `onTurnEnd` (fire-and-forget); learning-loop idle tick → `onIdle`.
+  `context` → `onPromptBuild`; `agent_end` → `onTurnEnd`; and
+  `session_shutdown` → `onSessionEnd`.
 - **`hermes`** — real: `@iflytekopensource/hermes` installs a Hermes
   `MemoryProvider`, and its bridge imports `@iflytekopensource/adapters` for the
-  shared runtime. `on_session_start` → `onSessionStart`; `pre_llm_call` →
-  `onPromptBuild` (inject prelude as `{"context": ...}`); `post_llm_call` →
-  `onTurnEnd` (reads `user_message` + `assistant_response`, or an explicit
-  `transcript`); `on_session_end` → `onIdle`.
+  shared runtime. `prefetch` builds recall context, `sync_turn` runs the
+  write-side lifecycle, and session end coordinates idle consolidation.
 
 Each adapter declares a `defaultConfigRelPath` (the host config under `$HOME`) and
 an `integrationNote` describing how the host actually consumes the scribe.
@@ -141,34 +138,25 @@ Install/verify/doctor come for free.
 
 ## Direct integration: `createMemFlywheelHarnessRuntime`
 
-An adapter contains no memory or provider-specific LLM logic. To make a host
-work out of the box, expose a host-owned `CanonicalModelCompletion` or a
-`HostHarnessPort` and pass it to `createMemFlywheelHarnessRuntime`. That builds
-the SDK default extraction AND dream consolidation subagents (default prompts +
-ordinary file tools) on top of the single canonical model channel, assembles a real
-`createMemFlywheel`, and returns an adapter-ready `MemFlywheel` plus the underlying
-SDK scribe for explicit ops. One channel drives both subagents:
+An adapter contains no memory loop. It resolves the host's active model into a
+pi-ai `Model` + `StreamFn` and exposes lifecycle events through `HostHarnessPort`.
+`createMemFlywheelHarnessRuntime` then builds Extraction, Dream, and Skill
+Evolution on the single Pi Agent Core runner.
 
 ```ts
-import { createMemFlywheelHarnessRuntime, hermesAdapter } from "@iflytekopensource/adapters";
+import { createMemFlywheelHarnessRuntime } from "@iflytekopensource/adapters";
 
-// Host-owned model channel. The host owns auth, transport, policy, and lifecycle.
-const model = {
-  complete: (req) => ctx.llm.completeWithTools(req),
-};
-
-const { scribe, sdk } = createMemFlywheelHarnessRuntime({ model });
-const dispose = hermesAdapter.attach(scribe, host); // session/prompt/turn-end/idle
+const { scribe, sdk } = createMemFlywheelHarnessRuntime({ port });
 ```
 
 Pi phase-1 native integration uses a host port:
 
 ```ts
 import { createMemFlywheelHarnessRuntime, createPiHarnessPort } from "@iflytekopensource/adapters";
-import { completeSimple } from "@earendil-works/pi-ai/compat";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
 
 export default function memFlywheelExtension(pi) {
-  const port = createPiHarnessPort(pi, { completeSimple });
+  const port = createPiHarnessPort(pi, { streamSimple });
   const runtime = createMemFlywheelHarnessRuntime({ port });
   return runtime.dispose;
 }
@@ -208,7 +196,7 @@ learned-skill store:
 
 ```ts
 const { scribe } = createMemFlywheelHarnessRuntime({
-  model,
+  port,
   learnedSkills: {
     skillsRoot: "/path/to/skills",
     checkpointRoot: "/path/to/.skill-checkpoints",
@@ -219,7 +207,7 @@ const { scribe } = createMemFlywheelHarnessRuntime({
 });
 ```
 
-- With `model` or `port`: real semantic extraction AND dream consolidation run
+- With `resolveModel` or `port`: real semantic extraction AND dream consolidation run
   as tool-calling subagents on the **host's own model**, writing memory files directly.
 - With `learnedSkills`: the bridge creates a learned-skill store, recall
   provider, and `runSkillEvolutionAgent`; turn-end can run extraction -> skill
@@ -228,15 +216,15 @@ const { scribe } = createMemFlywheelHarnessRuntime({
   routes through the same SDK prompt context.
 - With custom `learningLoop.skillEvolution`: hosts may replace the default
   learned-skill runner while keeping SDK gate/dream coordination.
-- Without `model`/`port` and without an explicit `agent`: construction fails
+- Without `resolveModel`/`port` and without an explicit `agent`: construction fails
   unless `mode: "recall-only"` is set explicitly. Recall-only injects memory on
   prompt build, turns never extract, and dream runs only its deterministic structural pre-pass.
 - The adapter-facing `onSessionEnd` runs a final agent-end sweep (extracting any
   not-yet-processed messages) before dropping the session.
 
-Hosts with no in-process model-call API (for example a hook-only plugin surface)
-must either run recall-only or expose a real canonical model port through a
-sidecar/upstream host API. MemFlywheel does not parse text as fake tool calls.
+Hosts with no in-process model-call API must either run recall-only or expose a
+real pi-ai stream through a sidecar/upstream host API. MemFlywheel does not parse
+text as fake tool calls.
 
 ```ts
 const { scribe } = createMemFlywheelHarnessRuntime({ mode: "recall-only" });

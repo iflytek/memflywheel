@@ -31,6 +31,7 @@ you need to disable skill learning explicitly.
 
 ```text
 $HERMES_HOME/plugins/memflywheel
+$HERMES_HOME/plugins/memflywheel-guard
 ```
 
 If `HERMES_HOME` is unset, Hermes' default home is used:
@@ -41,12 +42,13 @@ If `HERMES_HOME` is unset, Hermes' default home is used:
 
 The installer also:
 
-| Step                       | Effect                                                              |
-| -------------------------- | ------------------------------------------------------------------- |
-| Copy provider files        | Installs `__init__.py`, `worker.mjs`, and `plugin.yaml`             |
-| Pin adapter import         | Writes `install.json` so the worker loads the npm-installed adapter |
-| Disable native memory tool | Adds `memory` to `agent.disabled_toolsets`                          |
-| Preserve old native memory | Moves `memories/MEMORY.md` to `memories.disabled-by-memflywheel/`   |
+| Step                       | Effect                                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------------------------- |
+| Copy provider files        | Installs `__init__.py`, `worker.mjs`, and `plugin.yaml`                                         |
+| Enforce single-writer      | Enables `memflywheel-guard`; host reads stay native, host writes to the memory root are blocked |
+| Pin adapter import         | Writes `install.json` so the worker loads the npm-installed adapter                             |
+| Disable native memory tool | Adds `memory` to `agent.disabled_toolsets`                                                      |
+| Preserve old native memory | Moves `memories/MEMORY.md` to `memories.disabled-by-memflywheel/`                               |
 
 ## Runtime Files
 

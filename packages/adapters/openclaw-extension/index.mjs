@@ -1,5 +1,10 @@
 import { definePluginEntry } from "openclaw/plugin-sdk/core";
-import { createOpenClawPluginRuntime } from "../dist/index.js";
+import {
+  completeWithPreparedSimpleCompletionModel,
+  prepareSimpleCompletionModelForAgent,
+  resolveDefaultAgentId,
+} from "openclaw/plugin-sdk/agent-runtime";
+import { createOpenClawPluginRuntime, openClawHostMemoryPaths } from "../dist/index.js";
 
 export default definePluginEntry({
   id: "memflywheel",
@@ -7,7 +12,16 @@ export default definePluginEntry({
   description: "File-native long-term memory and learned skills for OpenClaw.",
   kind: "memory",
   register(api) {
-    const dispose = createOpenClawPluginRuntime(api);
+    const nativeModelRuntime = {
+      currentConfig: () => api.runtime.config.current(),
+      resolveDefaultAgentId,
+      prepareForAgent: prepareSimpleCompletionModelForAgent,
+      completePrepared: completeWithPreparedSimpleCompletionModel,
+    };
+    const dispose = createOpenClawPluginRuntime(api, {
+      nativeModelRuntime,
+      protectedMemoryPaths: openClawHostMemoryPaths(nativeModelRuntime.currentConfig()),
+    });
     api.lifecycle?.registerRuntimeLifecycle?.({
       id: "memflywheel-runtime",
       cleanup: () => dispose(),

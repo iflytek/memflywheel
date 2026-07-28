@@ -2,14 +2,20 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  canonicalMessagesFromOpenClawMessages,
+  hostMessagesFromOpenClawMessages,
   createOpenClawHarnessPort,
   registerOpenClawMemoryCapability,
+  registerOpenClawSingleWriterGuard,
+  openClawHostMemoryPaths,
   type OpenClawApiLike,
 } from "./openclaw-port.js";
-import type { CanonicalModelCompletion } from "@memflywheel/model";
+import {
+  createOpenClawHostModel,
+  type OpenClawNativeModelRuntime,
+} from "./openclaw-native-model.js";
+import { resolveTestModel, type TestModelCompletion } from "./model-test-support.test.js";
 
-const fakeModel: CanonicalModelCompletion = {
+const fakeModel: TestModelCompletion = {
   async complete() {
     return { message: { role: "assistant", content: "done" } };
   },
@@ -53,8 +59,8 @@ function createLegacyFakeApi() {
   return { api, hooks };
 }
 
-test("canonicalMessagesFromOpenClawMessages maps OpenAI-style tool calls", () => {
-  const messages = canonicalMessagesFromOpenClawMessages([
+test("hostMessagesFromOpenClawMessages maps OpenAI-style tool calls", () => {
+  const messages = hostMessagesFromOpenClawMessages([
     { role: "user", content: "inspect repo" },
     {
       role: "assistant",
@@ -80,8 +86,8 @@ test("canonicalMessagesFromOpenClawMessages maps OpenAI-style tool calls", () =>
   ]);
 });
 
-test("canonicalMessagesFromOpenClawMessages maps OpenClaw native tool calls", () => {
-  const messages = canonicalMessagesFromOpenClawMessages([
+test("hostMessagesFromOpenClawMessages maps OpenClaw native tool calls", () => {
+  const messages = hostMessagesFromOpenClawMessages([
     { role: "user", content: [{ type: "text", text: "inspect repo" }] },
     {
       role: "assistant",
@@ -111,12 +117,12 @@ test("canonicalMessagesFromOpenClawMessages maps OpenClaw native tool calls", ()
 
 test("createOpenClawHarnessPort registers prompt and turn hooks", async () => {
   const { api, typedHooks, legacyHooks } = createFakeApi();
-  const port = createOpenClawHarnessPort(api, { model: fakeModel });
+  const port = createOpenClawHarnessPort(api, { resolveModel: resolveTestModel(fakeModel) });
   const seenTurns: unknown[] = [];
 
   port.lifecycle.onPromptBuild(async (event) => ({
     systemPrompt: `system:${event.sessionId}:${event.query}`,
-    preludePrompt: "memory",
+    preludePrompt: "memory\n\nskill",
     skillPreludePrompt: "skill",
   }));
   port.lifecycle.onTurnEnd(async (event) => {
@@ -158,9 +164,9 @@ test("createOpenClawHarnessPort registers prompt and turn hooks", async () => {
   ]);
 });
 
-test("createOpenClawHarnessPort runs agent_end work after the hook returns", async () => {
+test("createOpenClawHarnessPort keeps gateway agent_end work in its ordered background queue", async () => {
   const { api, typedHooks } = createFakeApi();
-  const port = createOpenClawHarnessPort(api, { model: fakeModel });
+  const port = createOpenClawHarnessPort(api, { resolveModel: resolveTestModel(fakeModel) });
   const releases: (() => void)[] = [];
   let started = 0;
   let finished = 0;
@@ -201,11 +207,31 @@ test("createOpenClawHarnessPort runs agent_end work after the hook returns", asy
   await new Promise<void>((resolve) => setImmediate(resolve));
 
   assert.equal(finished, 1);
+  assert.equal(hookReturned, true);
+});
+
+test("createOpenClawHarnessPort reports background lifecycle failures through the host logger", async () => {
+  const { api, typedHooks } = createFakeApi();
+  const errors: string[] = [];
+  Object.assign(api, { logger: { error: (message: string) => errors.push(message) } });
+  const port = createOpenClawHarnessPort(api, { resolveModel: resolveTestModel(fakeModel) });
+  port.lifecycle.onTurnEnd(async () => {
+    throw new Error("extraction failed");
+  });
+
+  const turnHook = typedHooks.get("agent_end");
+  assert.ok(turnHook);
+  await turnHook({ messages: [] }, { sessionKey: "agent:main:failure" });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(errors, [
+    "MemFlywheel OpenClaw background lifecycle failed: Error: extraction failed",
+  ]);
 });
 
 test("createOpenClawHarnessPort falls back to legacy hook registration", () => {
   const { api, hooks } = createLegacyFakeApi();
-  const port = createOpenClawHarnessPort(api, { model: fakeModel });
+  const port = createOpenClawHarnessPort(api, { resolveModel: resolveTestModel(fakeModel) });
 
   port.lifecycle.onSessionEnd(async () => undefined);
 
@@ -221,4 +247,136 @@ test("registerOpenClawMemoryCapability marks MemFlywheel as a memory capability"
   assert.deepEqual((capabilities[0] as { promptBuilder: () => string[] }).promptBuilder(), [
     "MemFlywheel long-term memory is active.",
   ]);
+});
+
+test("OpenClaw single-writer guard blocks host writes inside memory and permits reads", async () => {
+  const { api, typedHooks } = createFakeApi();
+  registerOpenClawSingleWriterGuard(api, "/home/user/.openclaw/memflywheel", [
+    "/home/user/.openclaw/workspace/MEMORY.md",
+    "/home/user/.openclaw/workspace/memory",
+  ]);
+  const guard = typedHooks.get("before_tool_call");
+  assert.ok(guard);
+
+  assert.deepEqual(
+    await guard({
+      toolName: "write",
+      params: { path: "/home/user/.openclaw/memflywheel/context/probe.md" },
+    }),
+    {
+      block: true,
+      blockReason:
+        "MemFlywheel is single-writer: the host agent may read memory files, but only MemFlywheel memory agents may modify the memory repository.",
+    },
+  );
+  assert.equal(
+    await guard({
+      toolName: "read",
+      params: { path: "/home/user/.openclaw/memflywheel/context/probe.md" },
+    }),
+    undefined,
+  );
+  assert.equal(
+    await guard({ toolName: "write", params: { path: "/home/user/project/output.md" } }),
+    undefined,
+  );
+  assert.equal(
+    (
+      (await guard({
+        toolName: "edit",
+        params: { path: "/home/user/.openclaw/workspace/MEMORY.md" },
+      })) as { block?: boolean }
+    ).block,
+    true,
+  );
+});
+
+test("openClawHostMemoryPaths protects default and per-agent native memory stores", () => {
+  assert.deepEqual(
+    openClawHostMemoryPaths({
+      agents: {
+        defaults: { workspace: "/home/user/default" },
+        list: [{ id: "ops", workspace: "/home/user/ops" }],
+      },
+    }),
+    [
+      "/home/user/default/MEMORY.md",
+      "/home/user/default/memory",
+      "/home/user/ops/MEMORY.md",
+      "/home/user/ops/memory",
+    ],
+  );
+});
+
+test("createOpenClawHostModel uses one host-native structured completion", async () => {
+  const calls: Array<{ kind: string; input: unknown }> = [];
+  const runtime: OpenClawNativeModelRuntime = {
+    currentConfig() {
+      return { agents: { defaults: { model: "deepseek/deepseek-chat" } } };
+    },
+    resolveDefaultAgentId() {
+      return "main";
+    },
+    async prepareForAgent(input) {
+      calls.push({ kind: "prepare", input });
+      return {
+        model: { api: "openai-completions", provider: "deepseek", id: "deepseek-chat" },
+        auth: { mode: "api-key", apiKey: "host-owned" },
+      };
+    },
+    async completePrepared(input) {
+      calls.push({ kind: "complete", input });
+      return {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call-2",
+            name: "write",
+            arguments: { path: "MEMORY.md", content: "tea" },
+          },
+        ],
+        stopReason: "toolUse",
+      };
+    },
+  };
+  const resolveModel = createOpenClawHostModel(runtime, () => ({
+    agentId: "work",
+    modelRef: "deepseek/deepseek-chat",
+  }));
+
+  const binding = await resolveModel();
+  const response = await (
+    await binding.streamFn(
+      binding.model,
+      {
+        systemPrompt: "Extract durable memory.",
+        messages: [{ role: "user", content: "Remember tea.", timestamp: Date.now() }],
+        tools: [],
+      },
+      {},
+    )
+  ).result();
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0], {
+    kind: "prepare",
+    input: {
+      cfg: { agents: { defaults: { model: "deepseek/deepseek-chat" } } },
+      agentId: "work",
+      modelRef: "deepseek/deepseek-chat",
+    },
+  });
+  const context = (calls[1]?.input as { context: Record<string, unknown> }).context;
+  assert.equal(context.systemPrompt, "Extract durable memory.");
+  assert.equal((context.messages as unknown[]).length, 1);
+  assert.deepEqual(context.tools, []);
+  assert.ok(response.content.some((part) => part.type === "toolCall" && part.name === "write"));
+});
+
+test("createOpenClawHarnessPort fails without the host native model runtime", () => {
+  assert.throws(
+    () => createOpenClawHarnessPort(createFakeApi().api),
+    /requires OpenClaw's native structured model runtime/,
+  );
 });

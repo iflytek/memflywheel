@@ -1,8 +1,8 @@
 /**
  * Hermes adapter (real integration).
  *
- * A Hermes plugin's `register(ctx)` maps the host LLM facade into the canonical
- * model protocol and binds the scribe to Hermes' real hooks:
+ * A Hermes plugin's `register(ctx)` exposes its model transport as a pi-ai
+ * StreamFn and binds the scribe to Hermes' real hooks:
  *
  *  - `on_session_start` → onSessionStart
  *  - `pre_llm_call`     → onPromptBuild  (inject prelude as {"context": ...} into
@@ -48,7 +48,7 @@ export const hermesAdapter: HostAdapter = makeAdapter({
   lifecycle,
   defaultConfigRelPath: ".hermes/config.json",
   integrationNote:
-    "Real integration path: a Hermes plugin must expose `ctx.llm.completeWithTools` as a canonical model; the plugin config block carries the wiring marker.",
+    "Real integration path: the Hermes MemoryProvider bridges call_llm into the shared Pi Agent Core runner; the plugin config block carries the wiring marker.",
   translators: {
     sessionId: (payload) =>
       readString(payload, "session_id") ||

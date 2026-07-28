@@ -52,6 +52,12 @@ export {
 // Factory + translator helpers (for building custom adapters).
 export { type AdapterSpec, makeAdapter, readString, normalizeMessages } from "./make-adapter.js";
 
+// Hermes installs its bridge worker outside the pnpm workspace. Re-export the
+// pi-ai stream primitive through this already-resolved adapter entrypoint so
+// the installed worker has one dependency boundary instead of reaching back
+// into workspace node_modules by package name.
+export { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+
 // Host harness port: stable host boundary + capability gates.
 export {
   type HostCapability,
@@ -59,6 +65,8 @@ export {
   type Dispose,
   type HostPromptBuildEvent,
   type HostPromptBuildResult,
+  type HostToolCall,
+  type HostMessage,
   type HostTurnEndEvent,
   type HostSessionEvent,
   type HostIdleEvent,
@@ -81,20 +89,19 @@ export {
   type PiToolResultMessage,
   type PiAssistantMessage,
   type PiAgentMessage,
-  type PiModelContext,
   type PiModelAuthResult,
   type PiExtensionContextLike,
   type PiExtensionHandler,
   type PiExtensionApiLike,
-  type PiCompleteSimple,
+  type PiStreamSimple,
   type PiSessionIdResolver,
-  type CreatePiModelCompletionOptions,
+  type CreatePiAgentModelResolverOptions,
   type CreatePiHarnessPortOptions,
   type PiScribeLike,
-  canonicalMessagesFromPi,
+  hostMessagesFromPi,
   memScribeMessagesFromPi,
   buildPiPromptInjection,
-  createPiModelCompletion,
+  createPiAgentModelResolver,
   attachPiScribe,
   createPiHarnessPort,
 } from "./pi-port.js";
@@ -105,29 +112,31 @@ export {
   type OpenCodeHarnessPortOptions,
   type OpenCodeHooks,
   defaultOpenCodeMemFlywheelRoot,
-  canonicalMessagesFromOpenCodeSessionMessages,
+  configureOpenCodeMemoryPermission,
+  hostMessagesFromOpenCodeSessionMessages,
+  createOpenCodeHostModel,
   createOpenCodeHarnessPort,
   createOpenCodePluginServer,
   createOpenCodePluginServer as server,
 } from "./opencode-port.js";
 
 export {
+  type OpenClawNativeModelSelection,
+  type OpenClawNativeModelRuntime,
+  createOpenClawHostModel,
+} from "./openclaw-native-model.js";
+
+export {
   type OpenClawApiLike,
   type OpenClawHarnessPortOptions,
   defaultOpenClawMemFlywheelRoot,
-  canonicalMessagesFromOpenClawMessages,
+  hostMessagesFromOpenClawMessages,
   createOpenClawHarnessPort,
   registerOpenClawMemoryCapability,
+  registerOpenClawSingleWriterGuard,
+  openClawHostMemoryPaths,
   createOpenClawPluginRuntime,
 } from "./openclaw-port.js";
-
-export {
-  type EnvLike,
-  type OpenAICompatibleEnvModelOptions,
-  type ResolvedOpenAICompatibleEnvModelConfig,
-  resolveOpenAICompatibleEnvModelConfig,
-  createOpenAICompatibleEnvModel,
-} from "./openai-env-model.js";
 
 // Host-scribe bridge: wrap a canonical host model into a batteries-included scribe.
 export {
@@ -141,8 +150,8 @@ export {
   type MemoryIndexRetrievalOptions,
   type SkillPreludeBuilder,
   type SkillRecallProvider,
-  type CanonicalModelCompletion,
-  canonicalMessagesToMemFlywheelMessages,
+  type ResolvePiAgentModel,
+  hostMessagesToMemFlywheelMessages,
   attachMemFlywheelToHostPort,
   createMemFlywheelHarnessRuntime,
   adaptSdkMemFlywheel,

@@ -1,15 +1,15 @@
 /**
- * Host harness runtime — turn a host-owned canonical model channel into a
+ * Host harness runtime — turn a host-owned pi-ai model binding into a
  * fully-wired memory scribe the adapters can drive directly.
  *
  * Both memory subagents are tool-calling loops: the SDK ships
  * `createExtractionAgentRunner({ model })` and `createDreamAgentRunner({ model })`,
  * loops that call core's memory-write tools to write files directly. The only
- * model contract here is @memflywheel/model's canonical protocol; provider wire
- * shapes and host runtimes are mapped before they enter this file.
+ * model contract is Pi's native Model + StreamFn; provider wire shapes stay in
+ * the host adapters.
  *
  * Nothing here owns provider auth or performs model transport by itself. The
- * host supplies the canonical model object, usually via a HostHarnessPort.
+ * host resolves the active model binding, usually via a HostHarnessPort.
  */
 
 import {
@@ -28,19 +28,15 @@ import {
   createExtractionAgentRunner,
   createMemFlywheel,
   runSkillEvolutionAgent,
+  type ResolvePiAgentModel,
 } from "@memflywheel/sdk";
 import {
   type LearnedSkillStoreCheckpoint,
   createLearnedSkillRecallProvider,
   createLearnedSkillStore,
 } from "@memflywheel/skills";
-import type {
-  CanonicalModelCompletion,
-  CanonicalModelMessage,
-  CanonicalToolCall,
-  OpenAIEmbeddingsModelConfig,
-} from "@memflywheel/model";
-import { createOpenAIEmbeddingsModel } from "@memflywheel/model";
+import type { OpenAIEmbeddingsModelConfig } from "@memflywheel/embeddings";
+import { createOpenAIEmbeddingsModel } from "@memflywheel/embeddings";
 
 import type { MemFlywheel, MemFlywheelContext, MemFlywheelMessage } from "./adapter.js";
 import {
@@ -49,6 +45,8 @@ import {
   type HostToolCallEvent,
   type HostToolResultEvent,
   type HostHarnessPort,
+  type HostMessage,
+  type HostToolCall,
   type HostIntegrationMode,
 } from "./harness-port.js";
 
@@ -62,7 +60,7 @@ export type {
   SkillPreludeBuilder,
   SkillRecallProvider,
 } from "@memflywheel/sdk";
-export type { CanonicalModelCompletion } from "@memflywheel/model";
+export type { ResolvePiAgentModel } from "@memflywheel/sdk";
 
 export interface HostLearnedSkillEvolutionInput {
   sessionId: string;
@@ -98,15 +96,14 @@ export type MemFlywheelHarnessMode = "native" | "recall-only";
 /** Options for {@link createMemFlywheelHarnessRuntime}. */
 export interface MemFlywheelHarnessRuntimeOptions {
   /**
-   * Optional host port. Phase 1 uses the port's canonical model; lifecycle
+   * Optional host port. The runtime uses its model resolver and lifecycle
    * binding remains explicit so existing adapter attach tests stay focused.
    */
   port?: HostHarnessPort;
   /**
-   * Host-owned canonical model channel. Drives BOTH subagents — extraction and
-   * dream consolidation — which write memories directly via core's tools.
+   * Host-owned pi-ai model resolver. Drives extraction, dream, and skill evolution.
    */
-  model?: CanonicalModelCompletion;
+  resolveModel?: ResolvePiAgentModel;
   /** Explicit runtime mode. No implicit recall-only fallback. */
   mode?: MemFlywheelHarnessMode;
   /** Memory root override. Falls back to MEMFLYWHEEL_HOME / OS data dir. */
@@ -252,8 +249,8 @@ function toExtractionMessages(messages: AnyTurnMessage[]): ExtractionMessage[] {
   return out;
 }
 
-export function canonicalMessagesToMemFlywheelMessages(
-  messages: readonly CanonicalModelMessage[],
+export function hostMessagesToMemFlywheelMessages(
+  messages: readonly HostMessage[],
 ): MemFlywheelMessage[] {
   const outputs = new Map<string, string | null | undefined>();
   for (const message of messages) {
@@ -282,7 +279,7 @@ export function canonicalMessagesToMemFlywheelMessages(
   return out;
 }
 
-interface BufferedToolCall extends CanonicalToolCall {
+interface BufferedToolCall extends HostToolCall {
   output?: unknown;
 }
 
@@ -300,7 +297,7 @@ function contentFromToolOutput(output: unknown): string | null {
   }
 }
 
-function existingToolCallIds(messages: readonly CanonicalModelMessage[]): Set<string> {
+function existingToolCallIds(messages: readonly HostMessage[]): Set<string> {
   const ids = new Set<string>();
   for (const message of messages) {
     for (const call of message.toolCalls ?? []) ids.add(call.id);
@@ -351,8 +348,8 @@ function recordToolResult(
 function drainTelemetryMessages(
   toolCallsBySession: Map<string, Map<string, BufferedToolCall>>,
   sessionId: string,
-  baseMessages: readonly CanonicalModelMessage[],
-): CanonicalModelMessage[] {
+  baseMessages: readonly HostMessage[],
+): HostMessage[] {
   const calls = toolCallsBySession.get(sessionKey(sessionId));
   if (!calls || calls.size === 0) return [];
   toolCallsBySession.delete(sessionKey(sessionId));
@@ -361,7 +358,7 @@ function drainTelemetryMessages(
   const unique = [...calls.values()].filter((call) => !seen.has(call.id));
   if (unique.length === 0) return [];
 
-  const messages: CanonicalModelMessage[] = [
+  const messages: HostMessage[] = [
     {
       role: "assistant",
       content: null,
@@ -403,7 +400,7 @@ export function attachMemFlywheelToHostPort(
       );
       await scribe.onTurnEnd({
         sessionId: event.sessionId,
-        messages: canonicalMessagesToMemFlywheelMessages([...event.messages, ...telemetryMessages]),
+        messages: hostMessagesToMemFlywheelMessages([...event.messages, ...telemetryMessages]),
       });
     }),
   );
@@ -537,12 +534,15 @@ export function adaptSdkMemFlywheel(sdk: SdkMemFlywheel): MemFlywheelHarnessRunt
       sessionId: string;
       messages: MemFlywheelMessage[];
     }): Promise<TurnEndResult> {
-      return sdk.onTurnEnd(input.sessionId, toExtractionMessages(input.messages));
+      const result = await sdk.onTurnEnd(input.sessionId, toExtractionMessages(input.messages));
+      await sdk.onIdle();
+      return result;
     },
     async onSessionEnd(input: { sessionId: string }): Promise<void> {
       // Final sweep over any messages not yet behind the cursor, then drop state.
       await sdk.onAgentEnd(input.sessionId);
       await sdk.onSessionEnd(input.sessionId);
+      await sdk.onIdle();
     },
     async onIdle(input?: { force?: boolean }): Promise<void> {
       await sdk.onIdle({ force: input?.force });
@@ -551,7 +551,7 @@ export function adaptSdkMemFlywheel(sdk: SdkMemFlywheel): MemFlywheelHarnessRunt
 }
 
 /**
- * Build a batteries-included scribe from a host's canonical model channel.
+ * Build a batteries-included scribe from a host's active pi-ai model binding.
  *
  * - With `model`: real semantic extraction + consolidation run as
  *   tool-calling subagents on the host's own model, writing memory files directly.
@@ -571,12 +571,12 @@ export function createMemFlywheelHarnessRuntime(
     memoryIndexRetrieval,
     learnedSkills,
   } = options;
-  const model = options.model ?? options.port?.model;
+  const resolveModel = options.resolveModel ?? options.port?.resolveModel;
   const requestedMode = options.mode ?? "native";
 
-  if (requestedMode !== "recall-only" && !model && !options.agent) {
+  if (requestedMode !== "recall-only" && !resolveModel && !options.agent) {
     throw new Error(
-      'createMemFlywheelHarnessRuntime requires a canonical model or explicit extraction agent; pass mode:"recall-only" to disable extraction.',
+      'createMemFlywheelHarnessRuntime requires a Pi model resolver or explicit extraction agent; pass mode:"recall-only" to disable extraction.',
     );
   }
   if (options.port && requestedMode !== "recall-only") {
@@ -589,24 +589,24 @@ export function createMemFlywheelHarnessRuntime(
 
   const agent =
     options.agent ??
-    (requestedMode === "recall-only" || !model
+    (requestedMode === "recall-only" || !resolveModel
       ? undefined
-      : createExtractionAgentRunner({ model }));
+      : createExtractionAgentRunner({ resolveModel }));
 
   let dreamRunner: DreamAgentRunner | undefined;
   if (options.dreamRunner === null) {
     dreamRunner = undefined;
   } else if (options.dreamRunner) {
     dreamRunner = options.dreamRunner;
-  } else if (requestedMode !== "recall-only" && model) {
-    dreamRunner = createDreamAgentRunner({ model });
+  } else if (requestedMode !== "recall-only" && resolveModel) {
+    dreamRunner = createDreamAgentRunner({ resolveModel });
   }
 
   let sdkSkillRecall = skillRecall;
   let sdkLearningLoop = learningLoop;
   if (learnedSkills) {
-    if (!model) {
-      throw new Error("learnedSkills requires a canonical model");
+    if (!resolveModel) {
+      throw new Error("learnedSkills requires a Pi model resolver");
     }
     if (options.port) {
       requireHostCapabilities(options.port.name, options.port.capabilities, [
@@ -627,7 +627,7 @@ export function createMemFlywheelHarnessRuntime(
     });
     const assembledSkillEvolution = async (input: HostLearnedSkillEvolutionInput) =>
       runSkillEvolutionAgent<LearnedSkillStoreCheckpoint>({
-        model,
+        resolveModel,
         store,
         sessionId: input.sessionId,
         reviewPacket: (learnedSkills.reviewPacket ?? defaultReviewPacket)(input),

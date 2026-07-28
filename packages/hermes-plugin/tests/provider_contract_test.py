@@ -31,6 +31,43 @@ module = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
 spec.loader.exec_module(module)
 
+guard_path = Path(__file__).resolve().parents[1] / "guard" / "__init__.py"
+guard_spec = importlib.util.spec_from_file_location("memflywheel_guard", guard_path)
+guard_module = importlib.util.module_from_spec(guard_spec)
+assert guard_spec and guard_spec.loader
+guard_spec.loader.exec_module(guard_module)
+
+
+class HookCollector:
+    def __init__(self):
+        self.hooks = {}
+
+    def register_hook(self, name, callback):
+        self.hooks[name] = callback
+
+
+hook_collector = HookCollector()
+guard_module.register(hook_collector)
+assert "pre_tool_call" in hook_collector.hooks
+
+with tempfile.TemporaryDirectory() as tmp:
+    previous_home = os.environ.get("HERMES_HOME")
+    os.environ["HERMES_HOME"] = tmp
+    try:
+        root = str((Path(tmp) / "memflywheel").resolve())
+        guard = hook_collector.hooks["pre_tool_call"]
+        assert guard("read_file", {"path": f"{root}/preference/test.md"}) is None
+        assert guard("patch", {"path": f"{root}/preference/test.md"})["action"] == "block"
+        assert guard("write_file", {"path": str(Path(tmp) / "outside.md")}) is None
+        assert guard(
+            "terminal", {"command": f"sed -i '' s/a/b/ {root}/preference/test.md"}
+        )["action"] == "block"
+    finally:
+        if previous_home is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = previous_home
+
 provider = module.MemFlywheelMemoryProvider()
 assert provider.name == "memflywheel"
 assert provider.is_available()
@@ -53,7 +90,6 @@ class Collector:
 
     def register_memory_provider(self, provider):
         self.provider = provider
-
 
 collector = Collector()
 module.register(collector)
@@ -81,7 +117,38 @@ with tempfile.TemporaryDirectory() as tmp:
     assert (installed / "worker.mjs").exists()
     assert (installed / "plugin.yaml").exists()
     assert (installed / "install.json").exists()
-    assert "adaptersImport" in json.loads((installed / "install.json").read_text(encoding="utf-8"))
+    guard = Path(tmp) / "plugins" / "memflywheel-guard"
+    assert (guard / "__init__.py").exists()
+    assert (guard / "plugin.yaml").exists()
+    install_metadata = json.loads((installed / "install.json").read_text(encoding="utf-8"))
+    assert "adaptersImport" in install_metadata
+    installed_worker = subprocess.run(
+        ["node", str(installed / "worker.mjs")],
+        cwd=installed,
+        env={**env, "MEMFLYWHEEL_ADAPTERS_IMPORT": install_metadata["adaptersImport"]},
+        input=json.dumps(
+            {
+                "type": "command",
+                "id": "installed-init",
+                "command": "initialize",
+                "payload": {
+                    "sessionId": "installed-contract",
+                    "hermesHome": tmp,
+                    "root": str(Path(tmp) / "memflywheel"),
+                    "refuseSecrets": True,
+                    "learnedSkills": True,
+                },
+            }
+        ) + "\n",
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=True,
+    )
+    installed_response = json.loads(installed_worker.stdout.strip())
+    assert installed_response["type"] == "command_response"
+    assert installed_response["id"] == "installed-init"
+    assert installed_response.get("error") is None
     disabled_memory = Path(tmp) / "memories.disabled-by-memflywheel" / "MEMORY.md"
     assert disabled_memory.read_text(encoding="utf-8") == "native hermes memory\n"
     assert not native_memory.exists()

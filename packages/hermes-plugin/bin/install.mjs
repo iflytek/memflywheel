@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -21,12 +22,16 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 Installs the MemFlywheel Hermes MemoryProvider plugin into:
   $HERMES_HOME/plugins/memflywheel
 
+Installs and enables the companion host-write guard in:
+  $HERMES_HOME/plugins/memflywheel-guard
+
 If HERMES_HOME is unset, the installer uses ~/.hermes.`);
   process.exit(0);
 }
 
 const hermesHome = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const target = join(hermesHome, "plugins", "memflywheel");
+const guardTarget = join(hermesHome, "plugins", "memflywheel-guard");
 const adaptersImport = await import.meta.resolve("@iflytekopensource/adapters");
 
 function disableHermesNativeMemoryTool(configPath) {
@@ -79,5 +84,19 @@ writeFileSync(join(target, "install.json"), `${JSON.stringify({ adaptersImport }
   mode: 0o600,
 });
 
+mkdirSync(guardTarget, { recursive: true });
+copyFileSync(join(root, "guard", "__init__.py"), join(guardTarget, "__init__.py"));
+copyFileSync(join(root, "guard", "plugin.yaml"), join(guardTarget, "plugin.yaml"));
+
+const enabled = spawnSync(
+  "hermes",
+  ["plugins", "enable", "memflywheel-guard", "--no-allow-tool-override"],
+  { env: { ...process.env, HERMES_HOME: hermesHome }, encoding: "utf8" },
+);
+if (enabled.status !== 0) {
+  throw new Error(enabled.stderr || enabled.stdout || "Failed to enable memflywheel-guard");
+}
+
 console.log(`Installed MemFlywheel Hermes provider to ${target}`);
+console.log(`Installed MemFlywheel host write guard to ${guardTarget}`);
 console.log("Activate with: hermes config set memory.provider memflywheel");

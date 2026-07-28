@@ -2,7 +2,7 @@
  * The dream-consolidation subagent: the shared tool-calling loop, seeded for
  * dream.
  *
- * Seeds {@link runToolAgent} with the dream system prompt + a user message
+ * Seeds {@link runMemoryAgent} with the dream system prompt + a user message
  * rendering the structural packets (index / manifest / health / type-review),
  * then drives the model to consolidate by calling ordinary file tools directly —
  * reading full bodies before merging or compressing. `createDreamAgentRunner`
@@ -21,13 +21,16 @@ import {
   buildDreamAgentUserMessage,
 } from "@memflywheel/core";
 
-import type { CanonicalModelCompletion } from "@memflywheel/model";
-import { type ToolAgentResult, runToolAgent } from "./tool-agent.js";
+import {
+  type MemoryAgentResult,
+  type ResolvePiAgentModel,
+  runMemoryAgent,
+} from "./agent-runner.js";
 
 /** Options for {@link runDreamAgent}. */
 export interface RunDreamAgentOptions {
-  /** The host-owned canonical model channel. */
-  model: CanonicalModelCompletion;
+  /** Resolve the host's active pi-ai model binding for this run. */
+  resolveModel: ResolvePiAgentModel;
   /** The file tools (from core.createFileTools()), advertised + executed. */
   tools: FileTool[];
   /** The context the handlers write through (shares the held lock). */
@@ -51,13 +54,17 @@ export interface RunDreamAgentOptions {
 }
 
 /** Run the tool-calling dream loop. The subagent consolidates via ordinary file tools. */
-export async function runDreamAgent(options: RunDreamAgentOptions): Promise<ToolAgentResult> {
-  return runToolAgent({
-    model: options.model,
-    tools: options.tools,
-    toolCtx: options.toolCtx,
+export async function runDreamAgent(options: RunDreamAgentOptions): Promise<MemoryAgentResult> {
+  return runMemoryAgent({
+    resolveModel: options.resolveModel,
+    tools: options.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      execute: (args) => tool.handler(args, options.toolCtx),
+    })),
     systemPrompt: options.systemPrompt ?? DEFAULT_DREAM_SYSTEM_PROMPT,
-    seedUserMessage: buildDreamAgentUserMessage({
+    userMessage: buildDreamAgentUserMessage({
       health: options.health,
       typeReview: options.typeReview,
       manifest: options.manifest,
@@ -71,8 +78,8 @@ export async function runDreamAgent(options: RunDreamAgentOptions): Promise<Tool
 
 /** Options for {@link createDreamAgentRunner}. */
 export interface CreateDreamAgentRunnerOptions {
-  /** The host-owned canonical model channel. */
-  model: CanonicalModelCompletion;
+  /** Resolve the host's active pi-ai model binding for this run. */
+  resolveModel: ResolvePiAgentModel;
   /** Override the tool-use system prompt. */
   systemPrompt?: string;
   /** Max model round-trips per dream pass. Defaults to 12, hard-capped at 20. */
@@ -87,7 +94,7 @@ export interface CreateDreamAgentRunnerOptions {
 export function createDreamAgentRunner(options: CreateDreamAgentRunnerOptions): DreamAgentRunner {
   return async function dreamRunner(input) {
     const result = await runDreamAgent({
-      model: options.model,
+      resolveModel: options.resolveModel,
       tools: input.tools,
       toolCtx: input.toolCtx,
       systemPrompt: options.systemPrompt,

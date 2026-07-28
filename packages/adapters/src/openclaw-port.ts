@@ -1,13 +1,19 @@
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
-import type { CanonicalModelCompletion, CanonicalModelMessage } from "@memflywheel/model";
+import type { ResolvePiAgentModel } from "@memflywheel/sdk";
 
 import { createMemFlywheelHarnessRuntime } from "./host-memflywheel.js";
-import { createCapabilitySet, type Dispose, type HostHarnessPort } from "./harness-port.js";
 import {
-  createOpenAICompatibleEnvModel,
-  type OpenAICompatibleEnvModelOptions,
-} from "./openai-env-model.js";
+  createCapabilitySet,
+  type Dispose,
+  type HostHarnessPort,
+  type HostMessage,
+} from "./harness-port.js";
+import {
+  createOpenClawHostModel,
+  type OpenClawNativeModelRuntime,
+  type OpenClawNativeModelSelection,
+} from "./openclaw-native-model.js";
 
 type RawRecord = Record<string, unknown>;
 type OpenClawHookHandler = (event: unknown, context?: unknown) => Promise<unknown> | unknown;
@@ -20,12 +26,91 @@ export interface OpenClawApiLike {
     opts?: unknown,
   ) => void;
   readonly registerMemoryCapability?: (capability: unknown) => void;
+  readonly logger?: {
+    error(message: string): void;
+  };
+}
+
+const OPENCLAW_FILE_MUTATION_TOOLS = new Set([
+  "write",
+  "edit",
+  "apply_patch",
+  "write_file",
+  "edit_file",
+]);
+
+function isPathInside(root: string, candidate: string): boolean {
+  const rel = relative(resolve(root), resolve(candidate));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function mutationTargetPaths(event: unknown): string[] {
+  if (!isRecord(event)) return [];
+  const paths = new Set<string>();
+  if (Array.isArray(event.derivedPaths)) {
+    for (const path of event.derivedPaths) {
+      if (typeof path === "string" && path.trim()) paths.add(path);
+    }
+  }
+  if (isRecord(event.params)) {
+    for (const key of ["path", "file_path", "filePath"]) {
+      const path = event.params[key];
+      if (typeof path === "string" && path.trim()) paths.add(path);
+    }
+  }
+  return [...paths];
+}
+
+export function openClawHostMemoryPaths(config: unknown): string[] {
+  if (!isRecord(config) || !isRecord(config.agents)) return [];
+  const workspaces = new Set<string>();
+  if (isRecord(config.agents.defaults)) {
+    const workspace = readString(config.agents.defaults, "workspace");
+    if (workspace) workspaces.add(workspace);
+  }
+  if (Array.isArray(config.agents.list)) {
+    for (const agent of config.agents.list) {
+      const workspace = readString(agent, "workspace");
+      if (workspace) workspaces.add(workspace);
+    }
+  }
+  return [...workspaces].flatMap((workspace) => [
+    join(workspace, "MEMORY.md"),
+    join(workspace, "memory"),
+  ]);
+}
+
+export function registerOpenClawSingleWriterGuard(
+  api: OpenClawApiLike,
+  root: string,
+  protectedMemoryPaths: readonly string[] = [],
+): void {
+  const protectedPaths = [root, ...protectedMemoryPaths];
+  registerOpenClawHook(
+    api,
+    "before_tool_call",
+    (event) => {
+      const toolName = readString(event, "toolName");
+      if (!toolName || !OPENCLAW_FILE_MUTATION_TOOLS.has(toolName)) return undefined;
+      const targets = mutationTargetPaths(event);
+      if (!targets.some((target) => protectedPaths.some((path) => isPathInside(path, target)))) {
+        return undefined;
+      }
+      return {
+        block: true,
+        blockReason:
+          "MemFlywheel is single-writer: the host agent may read memory files, but only MemFlywheel memory agents may modify the memory repository.",
+      };
+    },
+    "memflywheel-single-writer",
+  );
 }
 
 export interface OpenClawHarnessPortOptions {
   readonly root?: string;
-  readonly model?: CanonicalModelCompletion;
-  readonly modelEnv?: OpenAICompatibleEnvModelOptions;
+  readonly protectedMemoryPaths?: readonly string[];
+  readonly resolveModel?: ResolvePiAgentModel;
+  readonly nativeModelRuntime?: OpenClawNativeModelRuntime;
 }
 
 function isRecord(value: unknown): value is RawRecord {
@@ -62,8 +147,8 @@ function parseToolInput(argumentsJson: unknown, callId: string): unknown {
   }
 }
 
-function canonicalToolCalls(message: RawRecord): NonNullable<CanonicalModelMessage["toolCalls"]> {
-  const calls: NonNullable<CanonicalModelMessage["toolCalls"]> = [];
+function hostToolCalls(message: RawRecord): NonNullable<HostMessage["toolCalls"]> {
+  const calls: NonNullable<HostMessage["toolCalls"]> = [];
   if (Array.isArray(message.toolCalls)) {
     for (const raw of message.toolCalls) {
       if (!isRecord(raw)) continue;
@@ -94,9 +179,9 @@ function canonicalToolCalls(message: RawRecord): NonNullable<CanonicalModelMessa
   return calls;
 }
 
-export function canonicalMessagesFromOpenClawMessages(raw: unknown): CanonicalModelMessage[] {
+export function hostMessagesFromOpenClawMessages(raw: unknown): HostMessage[] {
   if (!Array.isArray(raw)) return [];
-  const messages: CanonicalModelMessage[] = [];
+  const messages: HostMessage[] = [];
   for (const item of raw) {
     if (!isRecord(item)) continue;
     const role = item.role;
@@ -112,7 +197,7 @@ export function canonicalMessagesFromOpenClawMessages(raw: unknown): CanonicalMo
     }
     if (role !== "user" && role !== "assistant") continue;
     const content = textFromContent(item.content, item.text);
-    const toolCalls = role === "assistant" ? canonicalToolCalls(item) : [];
+    const toolCalls = role === "assistant" ? hostToolCalls(item) : [];
     if (!content && toolCalls.length === 0) continue;
     messages.push(
       toolCalls.length > 0 ? { role, content: content || null, toolCalls } : { role, content },
@@ -134,15 +219,27 @@ function openClawSessionId(event: unknown, context: unknown): string {
   );
 }
 
-function messagesFromAgentEnd(event: unknown): CanonicalModelMessage[] {
+function messagesFromAgentEnd(event: unknown): HostMessage[] {
   if (!isRecord(event)) return [];
-  return canonicalMessagesFromOpenClawMessages(event.messages ?? event.history);
+  return hostMessagesFromOpenClawMessages(event.messages ?? event.history);
 }
 
-function joinSections(sections: readonly (string | undefined)[]): string | undefined {
-  const text = sections
-    .filter((section): section is string => Boolean(section?.trim()))
-    .join("\n\n");
+function nativeModelSelection(event: unknown, context: unknown): OpenClawNativeModelSelection {
+  const agentId = readString(context, "agentId") ?? readString(event, "agentId");
+  const provider =
+    readString(context, "modelProviderId") ??
+    readString(event, "modelProviderId") ??
+    readString(event, "provider");
+  const modelId =
+    readString(context, "modelId") ?? readString(event, "modelId") ?? readString(event, "model");
+  return {
+    ...(agentId ? { agentId } : {}),
+    ...(provider && modelId ? { modelRef: `${provider}/${modelId}` } : {}),
+  };
+}
+
+function trimmedPrompt(value: string | undefined): string | undefined {
+  const text = value?.trim();
   return text || undefined;
 }
 
@@ -175,7 +272,17 @@ export function createOpenClawHarnessPort(
   api: OpenClawApiLike,
   options: OpenClawHarnessPortOptions = {},
 ): HostHarnessPort {
-  const model = options.model ?? createOpenAICompatibleEnvModel(options.modelEnv);
+  let selection: OpenClawNativeModelSelection = {};
+  const resolveModel =
+    options.resolveModel ??
+    (options.nativeModelRuntime
+      ? createOpenClawHostModel(options.nativeModelRuntime, () => selection)
+      : undefined);
+  if (!resolveModel) {
+    throw new Error(
+      "MemFlywheel OpenClaw integration requires OpenClaw's native structured model runtime.",
+    );
+  }
   let backgroundQueue: Promise<void> = Promise.resolve();
 
   function enqueueBackground(task: () => Promise<void>): void {
@@ -185,9 +292,7 @@ export function createOpenClawHarnessPort(
       () => undefined,
     );
     void run.catch((error: unknown) => {
-      queueMicrotask(() => {
-        throw error;
-      });
+      api.logger?.error(`MemFlywheel OpenClaw background lifecycle failed: ${String(error)}`);
     });
   }
 
@@ -197,24 +302,24 @@ export function createOpenClawHarnessPort(
       "prompt-build",
       "turn-end",
       "session-end",
-      "single-tool-completion",
       "agentic-tool-loop",
       "tool-trajectory",
     ]),
-    model,
+    resolveModel,
     lifecycle: {
       onPromptBuild(handler) {
         registerOpenClawHook(
           api,
           "before_prompt_build",
           async (event, context) => {
+            selection = nativeModelSelection(event, context);
             const result = await handler({
               sessionId: openClawSessionId(event, context),
               query: readString(event, "prompt"),
             });
             return {
-              prependSystemContext: joinSections([result.systemPrompt]),
-              prependContext: joinSections([result.preludePrompt, result.skillPreludePrompt]),
+              prependSystemContext: trimmedPrompt(result.systemPrompt),
+              prependContext: trimmedPrompt(result.preludePrompt),
             };
           },
           "memflywheel-before-prompt-build",
@@ -226,6 +331,7 @@ export function createOpenClawHarnessPort(
           api,
           "agent_end",
           (event, context) => {
+            selection = nativeModelSelection(event, context);
             enqueueBackground(() =>
               handler({
                 sessionId: openClawSessionId(event, context),
@@ -264,6 +370,7 @@ export function createOpenClawPluginRuntime(
 ): Dispose {
   registerOpenClawMemoryCapability(api);
   const root = options.root ?? defaultOpenClawMemFlywheelRoot();
+  registerOpenClawSingleWriterGuard(api, root, options.protectedMemoryPaths);
   const port = createOpenClawHarnessPort(api, options);
   const runtime = createMemFlywheelHarnessRuntime({
     port,

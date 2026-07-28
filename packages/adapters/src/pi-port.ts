@@ -1,16 +1,12 @@
-import type {
-  CanonicalModelCompletion,
-  CanonicalModelMessage,
-  CanonicalModelRequest,
-  CanonicalModelResponse,
-  CanonicalToolDefinition,
-} from "@memflywheel/model";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { PiAgentModelBinding, ResolvePiAgentModel } from "@memflywheel/sdk";
 
 import {
   createCapabilitySet,
   type Dispose,
   type HostCapability,
   type HostHarnessPort,
+  type HostMessage,
   type HostPromptBuildResult,
 } from "./harness-port.js";
 import type { MemFlywheelMessage } from "./adapter.js";
@@ -49,26 +45,9 @@ export interface PiToolResultMessage {
   timestamp?: number;
 }
 
-export interface PiAssistantMessage {
-  role: "assistant";
-  content: Array<PiTextContent | PiToolCallContent | { type: string; [key: string]: unknown }>;
-  stopReason?: string;
-  timestamp?: number;
-}
+export type PiAssistantMessage = AssistantMessage;
 
 export type PiAgentMessage = PiUserMessage | PiAssistantMessage | PiToolResultMessage;
-
-export interface PiModelContext {
-  systemPrompt?: string;
-  messages: PiAgentMessage[];
-  tools?: PiToolDefinition[];
-}
-
-export interface PiToolDefinition {
-  name: string;
-  description: string;
-  parameters: CanonicalToolDefinition["inputSchema"];
-}
 
 export interface PiModelAuthResult {
   ok: boolean;
@@ -78,6 +57,7 @@ export interface PiModelAuthResult {
 }
 
 export interface PiExtensionContextLike {
+  mode?: "tui" | "rpc" | "json" | "print";
   cwd?: string;
   model?: unknown;
   signal?: AbortSignal;
@@ -101,19 +81,15 @@ export interface PiExtensionApiLike {
   off?(event: string, handler: PiExtensionHandler): void;
 }
 
-export type PiCompleteSimple = (
-  model: unknown,
-  context: PiModelContext,
-  options?: Record<string, unknown>,
-) => Promise<PiAssistantMessage>;
+export type PiStreamSimple = PiAgentModelBinding["streamFn"];
 
 export type PiSessionIdResolver =
   string | ((input: { event?: unknown; context?: PiExtensionContextLike }) => string | undefined);
 
 export type PiLifecycleAfterHook = () => void | Promise<void>;
 
-export interface CreatePiModelCompletionOptions {
-  completeSimple: PiCompleteSimple;
+export interface CreatePiAgentModelResolverOptions {
+  streamSimple: PiStreamSimple;
   /** Explicit Pi model; when absent, the current ExtensionContext model is used. */
   model?: unknown;
   /** Latest Pi ExtensionContext, captured by lifecycle events. */
@@ -123,10 +99,9 @@ export interface CreatePiModelCompletionOptions {
 }
 
 export interface CreatePiHarnessPortOptions {
-  /** Use an already canonical host-owned model channel. */
-  model?: CanonicalModelCompletion;
-  /** Use Pi's native completeSimple(model, context, options) function. */
-  completeSimple?: PiCompleteSimple;
+  resolveModel?: ResolvePiAgentModel;
+  /** Use Pi's native streamSimple(model, context, options) function. */
+  streamSimple?: PiStreamSimple;
   /** Explicit Pi model for background MemFlywheel loops. Defaults to ctx.model. */
   piModel?: unknown;
   /** Resolve the MemFlywheel session id from Pi event/context. Defaults to Pi session id, else "pi". */
@@ -218,98 +193,9 @@ function piUserMessage(content: string): PiUserMessage {
   };
 }
 
-function piMessageFromCanonical(
-  message: CanonicalModelMessage,
-  toolNamesById: Map<string, string>,
-): PiAgentMessage {
-  if (message.role === "tool") {
-    return {
-      role: "toolResult",
-      toolCallId: message.toolCallId ?? "",
-      toolName: message.toolCallId ? (toolNamesById.get(message.toolCallId) ?? "tool") : "tool",
-      content: message.content ? [{ type: "text", text: message.content }] : [],
-      isError: false,
-      timestamp: Date.now(),
-    };
-  }
-
-  if (message.role !== "assistant") {
-    return {
-      role: "user",
-      content: message.content ? [{ type: "text", text: message.content }] : [],
-      timestamp: Date.now(),
-    };
-  }
-
-  const content: Array<PiTextContent | PiToolCallContent> = [];
-  if (message.content) content.push({ type: "text", text: message.content });
-  for (const call of message.toolCalls ?? []) {
-    toolNamesById.set(call.id, call.name);
-    content.push({
-      type: "toolCall",
-      id: call.id,
-      name: call.name,
-      arguments: isRecord(call.input) ? call.input : { value: call.input },
-    });
-  }
-  return {
-    role: "assistant",
-    content,
-    timestamp: Date.now(),
-  };
-}
-
-function piToolFromCanonical(tool: CanonicalToolDefinition): PiToolDefinition {
-  return {
-    name: tool.name,
-    description: tool.description,
-    parameters: tool.inputSchema,
-  };
-}
-
-function piContextFromCanonical(req: CanonicalModelRequest): PiModelContext {
-  const systemPrompt = req.messages
-    .filter((message) => message.role === "system" && message.content)
-    .map((message) => message.content)
-    .join("\n\n");
-  const toolNamesById = new Map<string, string>();
-  const messages = req.messages
-    .filter((message) => message.role !== "system")
-    .map((message) => piMessageFromCanonical(message, toolNamesById));
-
-  return {
-    ...(systemPrompt ? { systemPrompt } : {}),
-    messages,
-    tools: req.tools.map(piToolFromCanonical),
-  };
-}
-
-function canonicalResponseFromPi(message: PiAssistantMessage): CanonicalModelResponse {
-  const toolCalls = message.content
-    .filter(
-      (part): part is PiToolCallContent =>
-        isRecord(part) &&
-        part.type === "toolCall" &&
-        typeof part.id === "string" &&
-        typeof part.name === "string" &&
-        isRecord(part.arguments),
-    )
-    .map((part) => ({
-      id: part.id,
-      name: part.name,
-      input: part.arguments,
-    }));
-  const out: CanonicalModelMessage = {
-    role: "assistant",
-    content: textFromPiContent(message.content),
-  };
-  if (toolCalls.length > 0) out.toolCalls = toolCalls;
-  return { message: out, finishReason: message.stopReason };
-}
-
-export function canonicalMessagesFromPi(messages: unknown): CanonicalModelMessage[] {
+export function hostMessagesFromPi(messages: unknown): HostMessage[] {
   if (!Array.isArray(messages)) return [];
-  const out: CanonicalModelMessage[] = [];
+  const out: HostMessage[] = [];
   for (const raw of messages) {
     if (!isRecord(raw)) continue;
     if (raw.role === "toolResult") {
@@ -334,7 +220,7 @@ export function canonicalMessagesFromPi(messages: unknown): CanonicalModelMessag
             )
             .map((part) => ({ id: part.id, name: part.name, input: part.arguments }))
         : [];
-    const message: CanonicalModelMessage = {
+    const message: HostMessage = {
       role: raw.role,
       content: textFromPiContent(raw.content),
     };
@@ -345,16 +231,16 @@ export function canonicalMessagesFromPi(messages: unknown): CanonicalModelMessag
 }
 
 export function memScribeMessagesFromPi(messages: unknown): MemFlywheelMessage[] {
-  const canonical = canonicalMessagesFromPi(messages);
+  const hostMessages = hostMessagesFromPi(messages);
   const outputs = new Map<string, string | null | undefined>();
-  for (const message of canonical) {
+  for (const message of hostMessages) {
     if (message.role === "tool" && message.toolCallId) {
       outputs.set(message.toolCallId, message.content);
     }
   }
 
   const out: MemFlywheelMessage[] = [];
-  for (const message of canonical) {
+  for (const message of hostMessages) {
     if (message.role !== "user" && message.role !== "assistant") continue;
     const text = typeof message.content === "string" ? message.content.trim() : "";
     const toolCalls =
@@ -407,41 +293,36 @@ function bindPiEvent(pi: PiExtensionApiLike, event: string, handler: PiExtension
   return () => undefined;
 }
 
-export function createPiModelCompletion(
-  options: CreatePiModelCompletionOptions,
-): CanonicalModelCompletion {
-  return {
-    async complete(req: CanonicalModelRequest): Promise<CanonicalModelResponse> {
-      const ctx = options.getContext?.();
-      const model = options.model ?? ctx?.model;
-      if (!model) {
-        throw new Error("Pi model completion requires a current Pi model");
-      }
+export function createPiAgentModelResolver(
+  options: CreatePiAgentModelResolverOptions,
+): ResolvePiAgentModel {
+  return async (): Promise<PiAgentModelBinding> => {
+    const ctx = options.getContext?.();
+    const model = options.model ?? ctx?.model;
+    if (!model) {
+      throw new Error("Pi memory agent requires a current Pi model");
+    }
 
-      const auth = await ctx?.modelRegistry?.getApiKeyAndHeaders?.(model);
-      if (auth && !auth.ok) {
-        throw new Error(`Pi model auth unavailable: ${auth.error ?? "unknown error"}`);
-      }
+    const auth = await ctx?.modelRegistry?.getApiKeyAndHeaders?.(model);
+    if (auth && !auth.ok) {
+      throw new Error(`Pi model auth unavailable: ${auth.error ?? "unknown error"}`);
+    }
 
-      const thinkingLevel = ctx?.getThinkingLevel?.();
-      const requestOptions: Record<string, unknown> = {
-        signal: req.signal ?? ctx?.signal,
-      };
-      if (auth?.apiKey) requestOptions.apiKey = auth.apiKey;
-      if (auth?.headers) requestOptions.headers = auth.headers;
-      if (typeof thinkingLevel === "string" && thinkingLevel !== "off") {
-        requestOptions.reasoning = thinkingLevel;
-      }
-      const sessionId = options.getSessionId?.();
-      if (sessionId) requestOptions.sessionId = sessionId;
-
-      const response = await options.completeSimple(
-        model,
-        piContextFromCanonical(req),
-        requestOptions,
-      );
-      return canonicalResponseFromPi(response);
-    },
+    const thinkingLevel = ctx?.getThinkingLevel?.();
+    const sessionId = options.getSessionId?.();
+    const api = isRecord(model) ? readString(model, "api") : undefined;
+    const shortLivedMode = ctx?.mode === "print" || ctx?.mode === "json";
+    return {
+      model: model as Model<Api>,
+      streamFn: options.streamSimple,
+      ...(auth?.apiKey ? { getApiKey: () => auth.apiKey } : {}),
+      ...(auth?.headers ? { request: { headers: auth.headers } } : {}),
+      ...(typeof thinkingLevel === "string"
+        ? { thinkingLevel: thinkingLevel as PiAgentModelBinding["thinkingLevel"] }
+        : {}),
+      ...(shortLivedMode && api === "openai-codex-responses" ? { transport: "sse" as const } : {}),
+      ...(sessionId ? { sessionId } : {}),
+    };
   };
 }
 
@@ -498,25 +379,24 @@ export function createPiHarnessPort(
     lastSessionId = resolvePiSessionId(options.sessionId, event, ctx ?? lastContext);
   };
 
-  const model =
-    options.model ??
-    (options.completeSimple
-      ? createPiModelCompletion({
-          completeSimple: options.completeSimple,
+  const resolveModel =
+    options.resolveModel ??
+    (options.streamSimple
+      ? createPiAgentModelResolver({
+          streamSimple: options.streamSimple,
           model: options.piModel,
           getContext: () => lastContext,
           getSessionId: () => isolatedBackgroundModelSessionId(lastSessionId),
         })
       : undefined);
-  if (!model) {
-    throw new Error("createPiHarnessPort requires either a canonical model or Pi completeSimple");
+  if (!resolveModel) {
+    throw new Error("createPiHarnessPort requires either resolveModel or Pi streamSimple");
   }
 
   const capabilities: HostCapability[] = [
     "prompt-build",
     "turn-end",
     "session-end",
-    "single-tool-completion",
     "agentic-tool-loop",
     "tool-trajectory",
   ];
@@ -540,7 +420,7 @@ export function createPiHarnessPort(
         rememberContext(event, ctx);
         await handler({
           sessionId: lastSessionId ?? "pi",
-          messages: canonicalMessagesFromPi(isRecord(event) ? event.messages : undefined),
+          messages: hostMessagesFromPi(isRecord(event) ? event.messages : undefined),
         });
         await options.afterTurnEnd?.();
       });
@@ -568,7 +448,7 @@ export function createPiHarnessPort(
   return {
     name: "pi",
     capabilities: createCapabilitySet(capabilities),
-    model,
+    resolveModel,
     lifecycle,
     telemetry: {
       onToolCall(handler) {

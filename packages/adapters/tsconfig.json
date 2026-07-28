@@ -5,5 +5,5 @@
     "outDir": "dist"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../model" }, { "path": "../sdk" }, { "path": "../skills" }]
+  "references": [{ "path": "../embeddings" }, { "path": "../sdk" }, { "path": "../skills" }]
 }

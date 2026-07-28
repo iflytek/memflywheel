@@ -1,0 +1,6 @@
+name: memflywheel-guard
+version: 0.1.0
+kind: standalone
+description: "Read-only host boundary for the MemFlywheel memory root."
+provides_hooks:
+  - pre_tool_call

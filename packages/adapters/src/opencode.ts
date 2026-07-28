@@ -38,7 +38,7 @@ export const opencodeAdapter: HostAdapter = makeAdapter({
   lifecycle,
   defaultConfigRelPath: ".config/opencode/opencode.json",
   integrationNote:
-    "Native OpenCode plugin hooks inject recall and read transcripts; MemFlywheel extraction/skill loops use the configured OpenAI-compatible model endpoint.",
+    "Native OpenCode plugin hooks inject recall and read transcripts; pi-ai maps the active OpenCode model transport into MemFlywheel's extraction and skill loops.",
   translators: {
     sessionId: (payload) => readString(payload, "sessionID") || readString(payload, "sessionId"),
     promptQuery: (payload) =>

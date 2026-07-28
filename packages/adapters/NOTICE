@@ -2,6 +2,10 @@ MemFlywheel
 Copyright 2026 iFLYTEK CO., LTD.
 
 This product includes software developed at:
+- proper-lockfile (https://github.com/moxystudio/node-proper-lockfile), licensed under MIT License
+- graceful-fs (https://github.com/isaacs/node-graceful-fs), licensed under ISC License
+- retry (https://github.com/tim-kos/node-retry), licensed under MIT License
+- signal-exit (https://github.com/tapjs/signal-exit), licensed under ISC License
 - TypeBox (https://github.com/sinclairzx81/typebox), licensed under MIT License
 - TypeScript (https://www.typescriptlang.org/), licensed under Apache License 2.0
 - DefinitelyTyped Node.js type definitions (https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node), licensed under MIT License

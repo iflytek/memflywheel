@@ -1,6 +1,6 @@
 {
   "name": "memflywheel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "File-native long-term memory layer for AI agents.",
   "license": "Apache-2.0",
@@ -12,7 +12,7 @@
     "typescript"
   ],
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.19"
   },
   "repository": {
     "type": "git",
@@ -36,6 +36,9 @@
     "publish:npm": "node scripts/publish-npm.mjs"
   },
   "devDependencies": {
+    "@memflywheel/embeddings": "workspace:*",
+    "@memflywheel/sdk": "workspace:*",
+    "@memflywheel/skills": "workspace:*",
     "@types/node": "^22.20.1",
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.65.0",

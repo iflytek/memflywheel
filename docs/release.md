@@ -31,12 +31,12 @@ GitHub Action.
 
 Internal workspace packages:
 
-| Package               | Purpose                                                                 |
-| --------------------- | ----------------------------------------------------------------------- |
-| `@memflywheel/core`   | File-backed memory kernel                                               |
-| `@memflywheel/model`  | Provider-neutral model protocol and OpenAI-compatible mappers           |
-| `@memflywheel/sdk`    | Host lifecycle SDK and memory/dream/skill loops                         |
-| `@memflywheel/skills` | Learned-skill package store, validation, finalize, rollback, and recall |
+| Package                   | Purpose                                                                 |
+| ------------------------- | ----------------------------------------------------------------------- |
+| `@memflywheel/core`       | File-backed memory kernel                                               |
+| `@memflywheel/embeddings` | Optional embedding pre-recall provider                                  |
+| `@memflywheel/sdk`        | Host lifecycle SDK and memory/dream/skill loops                         |
+| `@memflywheel/skills`     | Learned-skill package store, validation, finalize, rollback, and recall |
 
 Publish packages in dependency order:
 

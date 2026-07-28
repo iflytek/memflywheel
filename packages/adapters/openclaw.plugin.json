@@ -1,8 +1,10 @@
 {
   "id": "memflywheel",
   "activation": {
-    "onStartup": false
+    "onStartup": true,
+    "onCapabilities": ["hook"]
   },
+  "hooks": ["before_prompt_build", "before_tool_call", "agent_end", "session_end", "gateway_stop"],
   "kind": "memory",
   "contracts": {
     "tools": []

@@ -122,12 +122,32 @@ def _parse_tool_args(raw: Any) -> Any:
     return raw
 
 
+def _text_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    return "\n".join(
+        part.get("text", "")
+        for part in content
+        if isinstance(part, dict) and part.get("type") == "text"
+    )
+
+
 def _to_openai_message(message: dict) -> dict:
     role = message.get("role")
-    wire = {"role": role, "content": message.get("content")}
-    if message.get("toolCallId"):
-        wire["tool_call_id"] = message["toolCallId"]
-    calls = message.get("toolCalls") or []
+    if role == "toolResult":
+        return {
+            "role": "tool",
+            "tool_call_id": message.get("toolCallId"),
+            "content": _text_content(message.get("content")),
+        }
+    calls = [
+        part
+        for part in message.get("content", [])
+        if isinstance(part, dict) and part.get("type") == "toolCall"
+    ] if role == "assistant" else []
+    wire = {"role": role, "content": _text_content(message.get("content")) or None}
     if calls:
         wire["tool_calls"] = [
             {
@@ -135,7 +155,7 @@ def _to_openai_message(message: dict) -> dict:
                 "type": "function",
                 "function": {
                     "name": call["name"],
-                    "arguments": json.dumps(call.get("input") or {}, ensure_ascii=False),
+                    "arguments": json.dumps(call.get("arguments") or {}, ensure_ascii=False),
                 },
             }
             for call in calls
@@ -149,31 +169,49 @@ def _to_openai_tool(tool: dict) -> dict:
         "function": {
             "name": tool["name"],
             "description": tool.get("description", ""),
-            "parameters": tool["inputSchema"],
+            "parameters": tool["parameters"],
         },
     }
 
 
-def _canonical_response(response: Any) -> dict:
+def _pi_response(response: Any) -> dict:
     choice = _first_choice(response)
     raw_message = _get(choice, "message", {})
-    calls = []
+    content = []
+    text = _get(raw_message, "content")
+    if text:
+        content.append({"type": "text", "text": text})
     for raw_call in _get(raw_message, "tool_calls", []) or []:
         fn = _get(raw_call, "function", {})
-        calls.append(
+        content.append(
             {
+                "type": "toolCall",
                 "id": _get(raw_call, "id"),
                 "name": _get(fn, "name"),
-                "input": _parse_tool_args(_get(fn, "arguments")),
+                "arguments": _parse_tool_args(_get(fn, "arguments")),
             }
         )
-    message = {
+    usage = _get(response, "usage", {}) or {}
+    input_tokens = _get(usage, "prompt_tokens", 0) or 0
+    output_tokens = _get(usage, "completion_tokens", 0) or 0
+    has_tools = any(part.get("type") == "toolCall" for part in content)
+    return {
         "role": "assistant",
-        "content": _get(raw_message, "content"),
+        "content": content,
+        "api": "openai-completions",
+        "provider": "hermes",
+        "model": _get(response, "model", "host-active"),
+        "usage": {
+            "input": input_tokens,
+            "output": output_tokens,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": input_tokens + output_tokens,
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0},
+        },
+        "stopReason": "toolUse" if has_tools else "stop",
+        "timestamp": int(time.time() * 1000),
     }
-    if calls:
-        message["toolCalls"] = calls
-    return {"message": message, "finishReason": _get(choice, "finish_reason")}
 
 
 class _MemFlywheelBridge:
@@ -211,7 +249,9 @@ class _MemFlywheelBridge:
                     raise TimeoutError(f"MemFlywheel worker command timed out: {command}")
                 line = proc.stdout.readline()
                 if line == "":
-                    raise RuntimeError("MemFlywheel worker exited")
+                    detail = proc.stderr.read().strip() if proc.stderr else ""
+                    suffix = f": {detail}" if detail else ""
+                    raise RuntimeError(f"MemFlywheel worker exited{suffix}")
                 message = json.loads(line)
                 msg_type = message.get("type")
                 if msg_type == "model_request":
@@ -235,7 +275,7 @@ class _MemFlywheelBridge:
             ["node", str(_worker_path())],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             env=env,
@@ -374,13 +414,17 @@ class MemFlywheelMemoryProvider(MemoryProvider):
     def complete_model(self, request: dict) -> dict:
         from agent.auxiliary_client import call_llm
 
+        context = request.get("context", {})
+        messages = [_to_openai_message(m) for m in context.get("messages", [])]
+        if context.get("systemPrompt"):
+            messages.insert(0, {"role": "system", "content": context["systemPrompt"]})
         response = call_llm(
             task=None,
-            messages=[_to_openai_message(m) for m in request.get("messages", [])],
-            tools=[_to_openai_tool(t) for t in request.get("tools", [])],
+            messages=messages,
+            tools=[_to_openai_tool(t) for t in context.get("tools", [])],
             timeout=self._config.get("timeout", 180),
         )
-        return _canonical_response(response)
+        return _pi_response(response)
 
     def _request(self, command: str, payload: dict) -> Any:
         payload = {

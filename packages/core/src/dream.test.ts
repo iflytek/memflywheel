@@ -301,25 +301,27 @@ test("runDreamSession stamps the gate state and resets the session count", async
   }
 });
 
-test("a locked dream pass does not run and does not stamp the gate state", async () => {
+test("a contended dream pass waits for the writer and then runs", async () => {
   const root = await makeRoot();
   try {
     const ctx = ctxFor(root);
     await bumpDreamSessions(root, 3);
-    const { acquireLock, releaseLock } = await import("./lock.js");
+    const { acquireLock } = await import("./lock.js");
     const held = await acquireLock(root, "other");
-    assert.equal(held.acquired, true);
-    try {
-      const result = await runDreamSession({ ctx });
-      assert.equal(result.ran, false);
-      assert.equal(result.reason, "locked");
-      // State untouched: no stamp, counter preserved.
-      const st = await readDreamState(root);
-      assert.equal(st.lastConsolidatedAt, null);
-      assert.equal(st.sessionsSince, 3);
-    } finally {
-      await releaseLock(root);
-    }
+    let settled = false;
+    const pending = runDreamSession({ ctx }).then((result) => {
+      settled = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(settled, false);
+    await held.release();
+    const result = await pending;
+    assert.equal(result.ran, true);
+    assert.equal(result.reason, "ok");
+    const st = await readDreamState(root);
+    assert.notEqual(st.lastConsolidatedAt, null);
+    assert.equal(st.sessionsSince, 0);
   } finally {
     await cleanup(root);
   }

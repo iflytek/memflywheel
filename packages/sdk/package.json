@@ -1,6 +1,6 @@
 {
   "name": "@memflywheel/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Host lifecycle SDK for MemFlywheel extraction, recall, and consolidation.",
   "license": "Apache-2.0",
@@ -46,8 +46,10 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.82.1",
+    "@earendil-works/pi-ai": "^0.82.1",
     "@memflywheel/core": "workspace:*",
-    "@memflywheel/model": "workspace:*"
+    "@memflywheel/embeddings": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

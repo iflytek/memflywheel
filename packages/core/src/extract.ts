@@ -26,6 +26,8 @@ import { getTypedMemoryPath, normalizeRelativePath } from "./paths.js";
 import { readMemoryFrontmatterHeader } from "./internal-frontmatter.js";
 import { scanAllMemoryFiles, scanMemoryFiles, formatManifest } from "./scan.js";
 import { syncMemoryIndex } from "./index-file.js";
+import { redactPrivateSpans } from "./privacy.js";
+import { atomicWriteFile } from "./atomic.js";
 import {
   type FileTool,
   type FileToolContext,
@@ -38,7 +40,6 @@ export const EXTRACTION_CONTEXT_WINDOW_SIZE = 6;
 export const EXTRACTION_MAX_MESSAGES = 40;
 
 export enum ExtractionResult {
-  Queued = "queued",
   Completed = "completed",
   Skipped = "skipped",
   Failed = "failed",
@@ -166,6 +167,27 @@ export function isPreludeText(text: string): boolean {
   return PRELUDE_PATTERNS.some((re) => re.test(trimmed));
 }
 
+function redactPrivateValue(value: unknown): unknown {
+  if (typeof value === "string") return redactPrivateSpans(value);
+  if (Array.isArray(value)) return value.map(redactPrivateValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, redactPrivateValue(child)]),
+    );
+  }
+  return value;
+}
+
+function redactPrivateToolCalls(
+  toolCalls: ExtractionToolCall[] | undefined,
+): ExtractionToolCall[] | undefined {
+  return toolCalls?.map((call) => ({
+    name: call.name,
+    input: redactPrivateValue(call.input),
+    output: redactPrivateValue(call.output),
+  }));
+}
+
 /**
  * Strip <system-reminder> blocks + prelude patterns from user turns; keep
  * assistant turns verbatim. Empty user turns are dropped.
@@ -174,13 +196,17 @@ export function cleanMessages(messages: ExtractionMessage[]): ExtractionMessage[
   const out: ExtractionMessage[] = [];
   for (const m of messages) {
     if (m.role === "assistant") {
-      out.push(m);
+      out.push({
+        ...m,
+        text: redactPrivateSpans(m.text),
+        toolCalls: redactPrivateToolCalls(m.toolCalls),
+      });
       continue;
     }
-    const cleaned = stripSystemReminderBlocks(m.text);
+    const cleaned = redactPrivateSpans(stripSystemReminderBlocks(m.text));
     if (!cleaned || isPreludeText(cleaned)) continue;
     const rebuilt: ExtractionMessage = { role: "user", text: cleaned };
-    if (m.toolCalls) rebuilt.toolCalls = m.toolCalls;
+    if (m.toolCalls) rebuilt.toolCalls = redactPrivateToolCalls(m.toolCalls);
     if (m.timestamp) rebuilt.timestamp = m.timestamp;
     out.push(rebuilt);
   }
@@ -248,6 +274,21 @@ async function appendSourceTrace(
     await writeFile(absolutePath, `${previous}${separator}${newLines.join("\n")}\n`, "utf8");
   }
   return { relativePath, absolutePath, startLine, endLine };
+}
+
+async function redactExistingSourceTraces(root: string): Promise<void> {
+  const sourceDir = path.join(root, SOURCE_TRACE_DIR);
+  const entries = await readdir(sourceDir, { withFileTypes: true }).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  });
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+    const absolutePath = path.join(sourceDir, entry.name);
+    const current = await readFile(absolutePath, "utf8");
+    const redacted = redactPrivateSpans(current);
+    if (redacted !== current) await atomicWriteFile(absolutePath, redacted);
+  }
 }
 
 /**
@@ -377,27 +418,6 @@ export async function relocateRootFiles(ctx: StorageContext): Promise<string[]> 
 
 // ---- Full lifecycle ----
 
-const pendingExtractions = new Map<string, () => Promise<ExtractionResult>>();
-let draining = false;
-
-async function drainPending(): Promise<void> {
-  if (draining || pendingExtractions.size === 0) return;
-  draining = true;
-  try {
-    while (pendingExtractions.size > 0) {
-      const next = pendingExtractions.entries().next().value as
-        [string, () => Promise<ExtractionResult>] | undefined;
-      if (!next) break;
-      const [sessionId, run] = next;
-      pendingExtractions.delete(sessionId);
-      const result = await run();
-      if (result === ExtractionResult.Queued) break;
-    }
-  } finally {
-    draining = false;
-  }
-}
-
 export interface RunExtractionSessionOptions {
   ctx: StorageContext;
   /** The injected subagent driver (SDK's tool-calling loop). It writes via the tools. */
@@ -411,7 +431,7 @@ export interface RunExtractionSessionOptions {
 
 /**
  * Full extraction session closure — core owns everything except the LLM:
- *  1 acquireLock (else enqueue → Queued)
+ *  1 acquire the cross-process root lock (bounded wait; timeout throws)
  *  2 relocateRootFiles
  *  3 select window via cursor (over cleaned messages)
  *  4 before = scanMemoryFiles → manifest
@@ -420,7 +440,7 @@ export interface RunExtractionSessionOptions {
  *  6 relocateRootFiles again (catch any root-level write the subagent made)
  *  7 after = scanMemoryFiles → syncMemoryIndex
  *  8 advance cursor ONLY on success; stamp .last-extraction
- *  9 releaseLock; drain pending queue
+ *  9 release the root lock
  *
  * A thrown agent runner (e.g. network failure) ⇒ Failed, and the cursor does
  * NOT advance, so the window is retried next turn. Per-tool failures are
@@ -430,16 +450,13 @@ export async function runExtractionSession(
   opts: RunExtractionSessionOptions,
 ): Promise<ExtractionResult> {
   const { ctx, agent, messages, sessionId, cursorStore, refuseSecrets } = opts;
-  const { acquireLock, releaseLock } = await import("./lock.js");
+  const { acquireLock } = await import("./lock.js");
 
   const handle = await acquireLock(ctx.root, "extract");
-  if (!handle.acquired) {
-    pendingExtractions.set(sessionId, () => runExtractionSession(opts));
-    return ExtractionResult.Queued;
-  }
 
   try {
     await relocateRootFiles(ctx);
+    await redactExistingSourceTraces(ctx.root);
 
     const cleaned = cleanMessages(messages);
     const cursor = cursorStore.get(sessionId);
@@ -477,8 +494,7 @@ export async function runExtractionSession(
     const changedCount = countChanges(before, after);
     return changedCount > 0 ? ExtractionResult.Completed : ExtractionResult.Skipped;
   } finally {
-    await releaseLock(ctx.root);
-    void drainPending();
+    await handle.release();
   }
 }
 

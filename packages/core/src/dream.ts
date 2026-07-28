@@ -219,12 +219,9 @@ export interface DreamSessionResult {
  */
 export async function runDreamSession(opts: RunDreamSessionOptions): Promise<DreamSessionResult> {
   const { ctx, runner, coordination, refuseSecrets } = opts;
-  const { acquireLock, releaseLock } = await import("./lock.js");
+  const { acquireLock } = await import("./lock.js");
 
   const handle = await acquireLock(ctx.root, "dream");
-  if (!handle.acquired) {
-    return { ran: false, reason: "locked", deterministic: [], changed: [], deleted: [] };
-  }
 
   try {
     await ensureMemoryDir(ctx.root);
@@ -288,7 +285,7 @@ export async function runDreamSession(opts: RunDreamSessionOptions): Promise<Dre
       deleted: applied.deleted,
     };
   } finally {
-    await releaseLock(ctx.root);
+    await handle.release();
   }
 }
 

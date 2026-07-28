@@ -15,7 +15,8 @@ import { dirname, join } from "node:path";
 const adapters = await import(
   process.env.MEMFLYWHEEL_ADAPTERS_IMPORT || "@iflytekopensource/adapters"
 );
-const { createMemFlywheelHarnessRuntime, normalizeMessages } = adapters;
+const { createAssistantMessageEventStream, createMemFlywheelHarnessRuntime, normalizeMessages } =
+  adapters;
 
 let runtime;
 let runtimeKey = "";
@@ -57,6 +58,35 @@ async function complete(request) {
   });
 }
 
+const hermesModel = {
+  id: "host-active",
+  name: "Hermes active model",
+  api: "openai-completions",
+  provider: "hermes",
+  baseUrl: "hermes://auxiliary-client",
+  reasoning: false,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 128_000,
+  maxTokens: 16_384,
+};
+
+function resolveModel() {
+  return {
+    model: hermesModel,
+    streamFn: async (_model, context, options) => {
+      const message = await complete({ context, signal: options?.signal?.aborted === true });
+      const stream = createAssistantMessageEventStream();
+      if (message.stopReason === "error" || message.stopReason === "aborted") {
+        stream.push({ type: "error", reason: message.stopReason, error: message });
+      } else {
+        stream.push({ type: "done", reason: message.stopReason, message });
+      }
+      return stream;
+    },
+  };
+}
+
 function ensureRuntime(options = {}) {
   const root = options.root || process.env.MEMFLYWHEEL_HOME;
   const key = JSON.stringify({
@@ -72,7 +102,7 @@ function ensureRuntime(options = {}) {
       : undefined;
   runtime = createMemFlywheelHarnessRuntime({
     root,
-    model: { complete },
+    resolveModel,
     cursorStore: root ? createJsonCursorStore(root) : undefined,
     refuseSecrets: options.refuseSecrets === true,
     learnedSkills,

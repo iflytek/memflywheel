@@ -3,7 +3,7 @@
  *
  * Assembles core's memory-write tools into OpenAI tool specs and seeds the loop
  * with the extraction system prompt + a user message rendering the conversation
- * window and existing-memory manifest, then delegates to {@link runToolAgent}.
+ * window and existing-memory manifest, then delegates to {@link runMemoryAgent}.
  * The loop drives the model until it stops requesting tools or the step cap is
  * reached; tool calls WRITE FILES via core's handlers.
  *
@@ -21,22 +21,18 @@ import {
   buildExtractionAgentUserMessage,
 } from "@memflywheel/core";
 
-import type { CanonicalModelCompletion } from "@memflywheel/model";
 import {
-  type AgentToolCall,
-  type ToolAgentResult,
-  MAX_TOOL_AGENT_STEPS,
-  runToolAgent,
-} from "./tool-agent.js";
+  type MemoryAgentResult,
+  type ResolvePiAgentModel,
+  runMemoryAgent,
+} from "./agent-runner.js";
 
-export type { AgentToolCall };
-/** Hard cap on extraction loop rounds (alias of the shared tool-agent cap). */
-export const MAX_EXTRACTION_STEPS = MAX_TOOL_AGENT_STEPS;
+export type { MemoryAgentResult };
 
 /** Options for {@link runExtractionAgent}. */
 export interface RunExtractionAgentOptions {
-  /** The host-owned canonical model channel. */
-  model: CanonicalModelCompletion;
+  /** Resolve the host's active pi-ai model binding for this run. */
+  resolveModel: ResolvePiAgentModel;
   /** The file tools (from core.createFileTools()), advertised + executed. */
   tools: FileTool[];
   /** The context the handlers write through (shares the held lock). */
@@ -54,18 +50,22 @@ export interface RunExtractionAgentOptions {
 }
 
 /** Outcome of an extraction agent run (the shared tool-agent result shape). */
-export type ExtractionAgentResult = ToolAgentResult;
+export type ExtractionAgentResult = MemoryAgentResult;
 
 /** Run the tool-calling extraction loop. The subagent decides what to persist. */
 export async function runExtractionAgent(
   options: RunExtractionAgentOptions,
 ): Promise<ExtractionAgentResult> {
-  return runToolAgent({
-    model: options.model,
-    tools: options.tools,
-    toolCtx: options.toolCtx,
+  return runMemoryAgent({
+    resolveModel: options.resolveModel,
+    tools: options.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      execute: (args) => tool.handler(args, options.toolCtx),
+    })),
     systemPrompt: options.systemPrompt ?? DEFAULT_EXTRACTION_SYSTEM_PROMPT,
-    seedUserMessage: buildExtractionAgentUserMessage({
+    userMessage: buildExtractionAgentUserMessage({
       messages: options.messages,
       manifest: options.manifest,
     }),
@@ -76,8 +76,8 @@ export async function runExtractionAgent(
 
 /** Options for {@link createExtractionAgentRunner}. */
 export interface CreateExtractionAgentRunnerOptions {
-  /** The host-owned canonical model channel. */
-  model: CanonicalModelCompletion;
+  /** Resolve the host's active pi-ai model binding for this run. */
+  resolveModel: ResolvePiAgentModel;
   /** Override the tool-use system prompt. */
   systemPrompt?: string;
   /** Max model round-trips per extraction. Defaults to 12, hard-capped at 20. */
@@ -94,7 +94,7 @@ export function createExtractionAgentRunner(
 ): ExtractionAgentRunner {
   return async function agentRunner(input) {
     const result = await runExtractionAgent({
-      model: options.model,
+      resolveModel: options.resolveModel,
       tools: input.tools,
       toolCtx: input.toolCtx,
       systemPrompt: options.systemPrompt,

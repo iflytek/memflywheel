@@ -2,162 +2,213 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  canonicalMessagesFromOpenCodeSessionMessages,
+  hostMessagesFromOpenCodeSessionMessages,
+  configureOpenCodeMemoryPermission,
   createOpenCodeHarnessPort,
-  type OpenCodeClientLike,
+  piApiForOpenCodeTransport,
 } from "./opencode-port.js";
-import type { CanonicalModelCompletion } from "@memflywheel/model";
+import { resolveTestModel, type TestModelCompletion } from "./model-test-support.test.js";
 
-const fakeModel: CanonicalModelCompletion = {
+const fakeModel: TestModelCompletion = {
   async complete() {
     return { message: { role: "assistant", content: "done" } };
   },
 };
 
-function openCodeTranscript() {
+function openCodeModel(npm: string, id: string, url: string) {
   return {
-    data: [
-      {
-        info: { role: "user" },
-        parts: [{ type: "text", text: "please inspect files" }],
-      },
+    id,
+    providerID: "test-provider",
+    name: id,
+    api: { id, npm, url },
+    capabilities: { reasoning: false, input: { text: true, image: false } },
+    limit: { context: 128_000, output: 8_192 },
+    headers: {},
+  };
+}
+
+test("configureOpenCodeMemoryPermission grants every session the memory root", () => {
+  const config: { permission?: unknown } = {
+    permission: { read: { "*.env": "deny" }, external_directory: { "*": "ask" } },
+  };
+  configureOpenCodeMemoryPermission(config, "/Users/test/.config/opencode/memflywheel");
+  assert.deepEqual(config.permission, {
+    read: { "*.env": "deny" },
+    external_directory: {
+      "*": "ask",
+      "/Users/test/.config/opencode/memflywheel/*": "allow",
+    },
+  });
+});
+
+test("OpenCode transcript conversion preserves tool inputs and outputs", () => {
+  assert.deepEqual(
+    hostMessagesFromOpenCodeSessionMessages([
+      { info: { role: "user" }, parts: [{ type: "text", text: "remember tea" }] },
       {
         info: { role: "assistant" },
         parts: [
-          { type: "text", text: "I will inspect them." },
+          { type: "text", text: "working" },
           {
             type: "tool",
-            callID: "tool-1",
             tool: "read",
-            state: { status: "completed", input: { filePath: "README.md" }, output: "contents" },
+            callID: "c1",
+            state: { status: "completed", input: { path: "MEMORY.md" }, output: "empty" },
           },
         ],
       },
-    ],
-  };
-}
-
-function openCodeUserOnlyTranscript() {
-  return {
-    data: [
+    ]),
+    [
+      { role: "user", content: "remember tea" },
       {
-        info: { role: "user" },
-        parts: [{ type: "text", text: "remember apples" }],
+        role: "assistant",
+        content: "working",
+        toolCalls: [{ id: "c1", name: "read", input: { path: "MEMORY.md" } }],
       },
+      { role: "tool", toolCallId: "c1", content: "empty" },
     ],
-  };
-}
-
-test("canonicalMessagesFromOpenCodeSessionMessages folds tool parts into assistant messages", () => {
-  assert.deepEqual(canonicalMessagesFromOpenCodeSessionMessages(openCodeTranscript()), [
-    { role: "user", content: "please inspect files" },
-    {
-      role: "assistant",
-      content: "I will inspect them.",
-      toolCalls: [{ id: "tool-1", name: "read", input: { filePath: "README.md" } }],
-    },
-    { role: "tool", toolCallId: "tool-1", content: "contents" },
-  ]);
+  );
 });
 
-test("createOpenCodeHarnessPort injects prompt context and forwards idle transcript", async () => {
-  let readOptions: unknown;
-  const client: OpenCodeClientLike = {
+test("OpenCode port injects recall and forwards the real idle transcript", async () => {
+  const client = {
     session: {
-      async messages(options) {
-        readOptions = options;
-        return openCodeTranscript();
-      },
+      messages: async () => ({
+        data: [{ info: { role: "user" }, parts: [{ type: "text", text: "remember tea" }] }],
+      }),
     },
   };
-  const port = createOpenCodeHarnessPort(client, { model: fakeModel });
-  const seenTurns: unknown[] = [];
-  const seenPromptEvents: unknown[] = [];
-
-  port.lifecycle.onPromptBuild(async (event) => ({
-    systemPrompt: `system:${event.sessionId}:${event.query}`,
-    preludePrompt: "memory",
-    skillPreludePrompt: "skill",
+  const port = createOpenCodeHarnessPort(client, {
+    resolveModel: resolveTestModel(fakeModel),
+  });
+  port.lifecycle.onPromptBuild(async () => ({
+    systemPrompt: "rules",
+    preludePrompt: "index",
+    skillPreludePrompt: "skills",
   }));
-  port.lifecycle.onPromptBuild(async (event) => {
-    seenPromptEvents.push(event);
-    return {};
-  });
-  port.lifecycle.onTurnEnd(async (event) => {
-    seenTurns.push(event);
-  });
+  const turns: unknown[] = [];
+  port.lifecycle.onTurnEnd(async (turn) => void turns.push(turn));
 
   const output = { system: [] as string[] };
-  await port.hooks["chat.message"]({ sessionID: "oc-1" }, {});
-  await port.hooks["experimental.chat.system.transform"]({}, output);
-  await port.hooks["experimental.text.complete"](
-    { sessionID: "oc-1", messageID: "m1", partID: "p1" },
-    { text: "done" },
-  );
+  await port.hooks["experimental.chat.system.transform"]({ sessionID: "oc-1" }, output);
+  await port.hooks.event({ event: { type: "session.idle", properties: { sessionID: "oc-1" } } });
 
-  assert.deepEqual(output.system, ["system:oc-1:please inspect files", "memory", "skill"]);
-  assert.deepEqual(seenPromptEvents, [{ sessionId: "oc-1", query: "please inspect files" }]);
-  assert.deepEqual(readOptions, { path: { id: "oc-1" }, query: { limit: 200 } });
-  assert.deepEqual(seenTurns, [
-    {
-      sessionId: "oc-1",
-      messages: canonicalMessagesFromOpenCodeSessionMessages(openCodeTranscript()),
-    },
+  assert.deepEqual(output.system, ["rules", "index", "skills"]);
+  assert.deepEqual(turns, [
+    { sessionId: "oc-1", messages: [{ role: "user", content: "remember tea" }] },
   ]);
 });
 
-test("createOpenCodeHarnessPort deduplicates repeated text completion hooks", async () => {
-  const client: OpenCodeClientLike = {
-    session: {
-      async messages() {
-        return openCodeTranscript();
-      },
-    },
+test("OpenCode serializes text-complete and idle through one deduplicated turn submitter", async () => {
+  let transcript = {
+    data: [{ info: { role: "user" }, parts: [{ type: "text", text: "remember tea" }] }],
   };
-  const port = createOpenCodeHarnessPort(client, { model: fakeModel });
-  let turns = 0;
-  port.lifecycle.onTurnEnd(async () => {
-    turns += 1;
-  });
-
-  await port.hooks["experimental.text.complete"](
-    { sessionID: "oc-2", messageID: "m1", partID: "p1" },
-    { text: "done" },
+  const port = createOpenCodeHarnessPort(
+    { session: { messages: async () => transcript } },
+    { resolveModel: resolveTestModel(fakeModel) },
   );
-  await port.hooks["experimental.text.complete"](
-    { sessionID: "oc-2", messageID: "m1", partID: "p1" },
-    { text: "done" },
-  );
-
-  assert.equal(turns, 1);
-});
-
-test("createOpenCodeHarnessPort includes completed assistant text before session transcript catches up", async () => {
-  const client: OpenCodeClientLike = {
-    session: {
-      async messages() {
-        return openCodeUserOnlyTranscript();
-      },
-    },
-  };
-  const port = createOpenCodeHarnessPort(client, { model: fakeModel });
-  const seenTurns: unknown[] = [];
-  port.lifecycle.onTurnEnd(async (event) => {
-    seenTurns.push(event);
-  });
+  const turns: unknown[] = [];
+  port.lifecycle.onTurnEnd(async (turn) => void turns.push(turn));
 
   await port.hooks["experimental.text.complete"](
-    { sessionID: "oc-3", messageID: "m1", partID: "p1" },
+    { sessionID: "oc-idle", messageID: "m1", partID: "p1" },
     { text: "noted" },
   );
+  assert.equal(turns.length, 1);
 
-  assert.deepEqual(seenTurns, [
+  const idle = { event: { type: "session.idle", properties: { sessionID: "oc-idle" } } };
+  await Promise.all([port.hooks.event(idle), port.hooks.event(idle)]);
+  assert.deepEqual(turns, [
     {
-      sessionId: "oc-3",
+      sessionId: "oc-idle",
       messages: [
-        { role: "user", content: "remember apples" },
+        { role: "user", content: "remember tea" },
         { role: "assistant", content: "noted" },
       ],
     },
   ]);
+
+  transcript = {
+    data: [
+      { info: { role: "user" }, parts: [{ type: "text", text: "remember tea" }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "noted" }] },
+      { info: { role: "user" }, parts: [{ type: "text", text: "and coffee" }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "also noted" }] },
+    ],
+  };
+  await port.hooks.event(idle);
+  assert.equal(turns.length, 2);
+});
+
+test("OpenCode port fails before chat.params supplies the active model", async () => {
+  const port = createOpenCodeHarnessPort({});
+  await assert.rejects(
+    async () => port.resolveModel(),
+    /has not received OpenCode's active model context/,
+  );
+});
+
+test("OpenCode resolves DeepSeek and Anthropic directly into pi-ai model bindings", async () => {
+  for (const [npm, id, url, expectedApi, expectedBaseUrl] of [
+    [
+      "@ai-sdk/openai-compatible",
+      "deepseek-chat",
+      "https://api.deepseek.com",
+      "openai-completions",
+      "https://api.deepseek.com",
+    ],
+    [
+      "@ai-sdk/anthropic",
+      "x2p",
+      "https://anthropic-gateway.example.com/v1",
+      "anthropic-messages",
+      "https://anthropic-gateway.example.com",
+    ],
+  ] as const) {
+    const port = createOpenCodeHarnessPort({});
+    await port.hooks["chat.params"](
+      {
+        sessionID: "oc-model",
+        model: openCodeModel(npm, id, url),
+        provider: { id: expectedApi, source: "api", key: "host-owned", options: {} },
+      },
+      { maxOutputTokens: 4096, options: {} },
+    );
+    const binding = await port.resolveModel();
+    assert.equal(binding.model.api, expectedApi);
+    assert.equal(binding.model.baseUrl, expectedBaseUrl);
+    assert.equal(binding.model.id, id);
+    assert.equal(await binding.getApiKey?.(binding.model.provider), "host-owned");
+    assert.equal(binding.request?.maxTokens, 4096);
+  }
+});
+
+test("OpenCode transport mapping is exact and rejects unknown transports", () => {
+  assert.deepEqual(
+    [
+      "@ai-sdk/openai-compatible",
+      "@ai-sdk/openai",
+      "@ai-sdk/azure",
+      "@ai-sdk/anthropic",
+      "@ai-sdk/google",
+      "@ai-sdk/google-vertex",
+      "@ai-sdk/amazon-bedrock",
+      "@ai-sdk/mistral",
+    ].map((apiPackage) => piApiForOpenCodeTransport(apiPackage)),
+    [
+      "openai-completions",
+      "openai-responses",
+      "azure-openai-responses",
+      "anthropic-messages",
+      "google-generative-ai",
+      "google-vertex",
+      "bedrock-converse-stream",
+      "mistral-conversations",
+    ],
+  );
+  assert.throws(() => piApiForOpenCodeTransport("@ai-sdk/unknown"), /no exact pi-ai API mapping/);
+  assert.equal(
+    piApiForOpenCodeTransport("@ai-sdk/openai", "openai-codex"),
+    "openai-codex-responses",
+  );
 });

@@ -8,16 +8,7 @@
  * and actual changed skills agree.
  */
 
-import { clampSteps } from "./tool-agent.js";
-import type {
-  CanonicalModelCompletion,
-  CanonicalModelMessage,
-  CanonicalToolDefinition,
-  JsonSchemaObject,
-} from "@memflywheel/model";
-
-const DEFAULT_MAX_STEPS = 12;
-const MAX_TOOL_RESULT_CHARS = 4000;
+import { type ResolvePiAgentModel, runMemoryAgent } from "./agent-runner.js";
 
 export const DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT = `You are a learned-skill evolution agent. You improve durable, reusable executable methods by editing learned-skill files with ordinary file tools. You do NOT report decisions as JSON — the system derives exactly what you did from the files you change.
 
@@ -144,11 +135,16 @@ export interface SkillEvolutionTool {
   name: string;
   description: string;
   inputSchema:
-    | JsonSchemaObject
     | {
         type: "object";
         properties: Record<string, unknown>;
-        required?: string[];
+        required: readonly string[];
+        additionalProperties: false;
+      }
+    | {
+        type: "object";
+        properties: Record<string, unknown>;
+        required?: readonly string[];
         additionalProperties?: boolean;
       };
   handler: (args: unknown) => Promise<SkillEvolutionToolResult>;
@@ -186,7 +182,7 @@ export interface SkillEvolutionStore<TCheckpoint = unknown> {
 }
 
 export interface RunSkillEvolutionAgentOptions<TCheckpoint = unknown> {
-  model: CanonicalModelCompletion;
+  resolveModel: ResolvePiAgentModel;
   store: SkillEvolutionStore<TCheckpoint>;
   sessionId: string;
   reviewPacket: unknown;
@@ -203,14 +199,7 @@ export interface SkillEvolutionAgentResult extends LearnedSkillChangeSet {
   coordination: SkillEvolutionCoordination;
   learnedSkillIndex: LearnedSkillsCatalog;
   toolCalls: string[];
-  stoppedReason: "no-tool-calls" | "max-steps" | "aborted";
   steps: number;
-}
-
-function clipToolResult(text: string): string {
-  return text.length > MAX_TOOL_RESULT_CHARS
-    ? `${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n...(truncated)`
-    : text;
 }
 
 function assertRecord(value: unknown, label: string): Record<string, unknown> {
@@ -389,20 +378,6 @@ export function validateSkillEvolutionChangeSet(
   return changeSet;
 }
 
-function toToolSpecs(tools: SkillEvolutionTool[]): CanonicalToolDefinition[] {
-  return tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    strict: true,
-    inputSchema: {
-      type: "object",
-      properties: tool.inputSchema.properties,
-      required: tool.inputSchema.required ?? [],
-      additionalProperties: false,
-    },
-  }));
-}
-
 /**
  * Project the catalog down to relative, model-safe fields. Critically this DROPS the
  * absolute `skillsRoot` path (and any other absolute paths): the model must only ever
@@ -532,79 +507,6 @@ function deriveCoordination(input: {
   };
 }
 
-async function runSkillToolLoop(input: {
-  model: CanonicalModelCompletion;
-  tools: SkillEvolutionTool[];
-  systemPrompt: string;
-  seedUserMessage: string;
-  maxSteps?: number;
-  signal?: AbortSignal;
-}): Promise<{
-  steps: number;
-  toolCalls: string[];
-  finalContent: string | null;
-  stoppedReason: "no-tool-calls" | "max-steps" | "aborted";
-}> {
-  const maxSteps = clampSteps(
-    typeof input.maxSteps === "number" ? input.maxSteps : DEFAULT_MAX_STEPS,
-  );
-  const lookup = new Map(input.tools.map((tool) => [tool.name, tool]));
-  const messages: CanonicalModelMessage[] = [
-    { role: "system", content: input.systemPrompt },
-    { role: "user", content: input.seedUserMessage },
-  ];
-  const specs = toToolSpecs(input.tools);
-  const toolCalls: string[] = [];
-  let steps = 0;
-
-  for (let step = 0; step < maxSteps; step += 1) {
-    if (input.signal?.aborted)
-      return { steps, toolCalls, finalContent: null, stoppedReason: "aborted" };
-
-    const response = await input.model.complete({
-      messages,
-      tools: specs,
-      signal: input.signal,
-    });
-    steps += 1;
-    messages.push(response.message);
-
-    const calls = response.message.toolCalls ?? [];
-    if (calls.length === 0) {
-      return {
-        steps,
-        toolCalls,
-        finalContent:
-          typeof response.message.content === "string" ? response.message.content : null,
-        stoppedReason: "no-tool-calls",
-      };
-    }
-
-    for (const call of calls) {
-      const tool = lookup.get(call.name);
-      if (!tool) throw new Error(`unknown skill evolution tool: ${call.name}`);
-
-      let result: SkillEvolutionToolResult;
-      try {
-        result = await tool.handler(call.input ?? {});
-      } catch (error) {
-        result = {
-          ok: false,
-          text: error instanceof Error ? error.message : String(error),
-        };
-      }
-      toolCalls.push(call.name);
-      messages.push({
-        role: "tool",
-        toolCallId: call.id,
-        content: clipToolResult(result.ok ? result.text : `error: ${result.text}`),
-      });
-    }
-  }
-
-  return { steps, toolCalls, finalContent: null, stoppedReason: "max-steps" };
-}
-
 export async function runSkillEvolutionAgent<TCheckpoint>(
   options: RunSkillEvolutionAgentOptions<TCheckpoint>,
 ): Promise<SkillEvolutionAgentResult> {
@@ -622,11 +524,21 @@ export async function runSkillEvolutionAgent<TCheckpoint>(
 
   try {
     const tools = options.store.createFileTools(checkpoint);
-    const loop = await runSkillToolLoop({
-      model: options.model,
-      tools,
+    const loop = await runMemoryAgent({
+      resolveModel: options.resolveModel,
+      tools: tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: {
+          type: "object",
+          properties: tool.inputSchema.properties,
+          required: tool.inputSchema.required ?? [],
+          additionalProperties: false,
+        },
+        execute: (args) => tool.handler(args),
+      })),
       systemPrompt: options.systemPrompt ?? DEFAULT_SKILL_EVOLUTION_SYSTEM_PROMPT,
-      seedUserMessage: buildSkillEvolutionUserMessage({
+      userMessage: buildSkillEvolutionUserMessage({
         reviewPacket: options.reviewPacket,
         learnedSkillIndex,
         toolTrajectory: options.toolTrajectory,
@@ -665,8 +577,7 @@ export async function runSkillEvolutionAgent<TCheckpoint>(
       ...changeSet,
       coordination,
       learnedSkillIndex,
-      toolCalls: loop.toolCalls,
-      stoppedReason: loop.stoppedReason,
+      toolCalls: loop.toolCalls.map((call) => call.name),
       steps: loop.steps,
     };
   } catch (err) {

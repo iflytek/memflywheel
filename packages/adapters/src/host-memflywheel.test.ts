@@ -15,7 +15,11 @@ import {
   type ExtractionAgentRunner,
   type MemoryType,
 } from "@memflywheel/sdk";
-import type { CanonicalModelCompletion, CanonicalModelResponse } from "@memflywheel/model";
+import {
+  resolveTestModel,
+  type TestModelCompletion,
+  type TestModelResponse,
+} from "./model-test-support.test.js";
 import type {
   HostHarnessPort,
   HostPromptBuildEvent,
@@ -31,7 +35,7 @@ import { createFakeHost, tempDir } from "./test-helpers.js";
 const flush = () => new Promise((r) => setImmediate(r));
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const STOP: CanonicalModelResponse = {
+const STOP: TestModelResponse = {
   message: { role: "assistant", content: "done" },
   finishReason: "stop",
 };
@@ -129,7 +133,7 @@ function workflowAgent(): ExtractionAgentRunner {
  * memory via the ordinary write tool; on every subsequent round it stops. This is
  * deterministic and offline — no network, no key.
  */
-function savingModel(): CanonicalModelCompletion {
+function savingModel(): TestModelCompletion {
   let calls = 0;
   return {
     complete: async () => {
@@ -164,7 +168,7 @@ function toolCall(id: string, name: string, args: unknown) {
   return { id, name, input: args };
 }
 
-function learnedSkillLoopModel(): CanonicalModelCompletion {
+function learnedSkillLoopModel(): TestModelCompletion {
   let extractionStep = 0;
   let skillStep = 0;
   let dreamStep = 0;
@@ -270,7 +274,7 @@ function section(text: string, heading: string, nextHeading: string): string {
 }
 
 /** A subagent that declines: it calls no tools and replies with one sentence. */
-const decliningModel: CanonicalModelCompletion = { complete: async () => STOP };
+const decliningModel: TestModelCompletion = { complete: async () => STOP };
 
 async function writeManyMemories(root: string, count: number): Promise<void> {
   const dir = path.join(root, "preference");
@@ -346,9 +350,12 @@ async function withEnv<T>(values: Record<string, string>, run: () => Promise<T>)
   }
 }
 
-test("createMemFlywheelHarnessRuntime with a canonical model extracts and writes a memory end-to-end", async () => {
+test("createMemFlywheelHarnessRuntime with a Pi model resolver extracts and writes memory", async () => {
   const root = await tempDir();
-  const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({
+    resolveModel: resolveTestModel(savingModel()),
+    root,
+  });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   // Await the turn-end so the full lock→agent-loop→write chain completes.
@@ -366,9 +373,30 @@ test("createMemFlywheelHarnessRuntime with a canonical model extracts and writes
   assert.match(file, /green tea/);
 });
 
+test("adapter lifecycle evaluates and runs the Dream gate after session end", async () => {
+  const root = await tempDir();
+  const { scribe } = createMemFlywheelHarnessRuntime({
+    resolveModel: resolveTestModel(decliningModel),
+    root,
+  });
+
+  for (let index = 0; index < 5; index += 1) {
+    const sessionId = `dream-session-${index}`;
+    await scribe.onSessionStart({ sessionId });
+    await scribe.onSessionEnd({ sessionId });
+  }
+
+  const state = JSON.parse(await readFile(path.join(root, ".dream-state.json"), "utf8"));
+  assert.equal(state.sessionsSince, 0);
+  assert.equal(typeof state.lastConsolidatedAt, "number");
+});
+
 test("attach drives a real end-to-end extraction through host events", async () => {
   const root = await tempDir();
-  const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({
+    resolveModel: resolveTestModel(savingModel()),
+    root,
+  });
   const host = createFakeHost();
   const dispose = piAdapter.attach(scribe, host);
 
@@ -420,7 +448,7 @@ test("host harness folds telemetry tool calls into turn-end messages", async () 
   const port: HostHarnessPort = {
     name: "fake",
     capabilities: new Set(["prompt-build", "turn-end", "session-end", "agentic-tool-loop"]),
-    model: decliningModel,
+    resolveModel: resolveTestModel(decliningModel),
     lifecycle: {
       onPromptBuild(handler) {
         promptBuild = handler;
@@ -482,7 +510,10 @@ test("host harness folds telemetry tool calls into turn-end messages", async () 
 
 test("createMemFlywheelHarnessRuntime prompt build returns the two recall segments", async () => {
   const root = await tempDir();
-  const { scribe } = createMemFlywheelHarnessRuntime({ model: savingModel(), root });
+  const { scribe } = createMemFlywheelHarnessRuntime({
+    resolveModel: resolveTestModel(savingModel()),
+    root,
+  });
 
   const ctx = await scribe.onPromptBuild({ sessionId: "s1" });
   assert.equal(ctx.enabled, true);
@@ -504,7 +535,10 @@ test("createMemFlywheelHarnessRuntime enables index pre-recall from embedding en
         MEMFLYWHEEL_MEMORY_INDEX_RETRIEVAL_LIMIT: "3",
       },
       async () => {
-        const { scribe } = createMemFlywheelHarnessRuntime({ model: decliningModel, root });
+        const { scribe } = createMemFlywheelHarnessRuntime({
+          resolveModel: resolveTestModel(decliningModel),
+          root,
+        });
 
         const ctx = await scribe.onPromptBuild({
           sessionId: "s1",
@@ -598,7 +632,7 @@ test("createMemFlywheelHarnessRuntime learnedSkills assembly runs extraction, sk
   const skillsRoot = path.join(root, "skills");
   const { scribe } = createMemFlywheelHarnessRuntime({
     root: path.join(root, "memory"),
-    model: learnedSkillLoopModel(),
+    resolveModel: resolveTestModel(learnedSkillLoopModel()),
     learnedSkills: {
       skillsRoot,
       checkpointRoot: path.join(root, ".skill-checkpoints"),
@@ -657,7 +691,7 @@ test("createMemFlywheelHarnessRuntime learnedSkills caps prompt packet context",
   const root = await tempDir();
   let captured = "";
   let extractionStep = 0;
-  const model: CanonicalModelCompletion = {
+  const model: TestModelCompletion = {
     complete: async (req) => {
       const system = req.messages.find((message) => message.role === "system")?.content ?? "";
       if (system.includes("memory extraction engine")) {
@@ -693,7 +727,7 @@ test("createMemFlywheelHarnessRuntime learnedSkills caps prompt packet context",
   };
   const { scribe } = createMemFlywheelHarnessRuntime({
     root: path.join(root, "memory"),
-    model,
+    resolveModel: resolveTestModel(model),
     learnedSkills: {
       skillsRoot: path.join(root, "skills"),
       checkpointRoot: path.join(root, ".skill-checkpoints"),
@@ -737,7 +771,7 @@ test("createMemFlywheelHarnessRuntime learnedSkills caps prompt packet context",
 
 test("createMemFlywheelHarnessRuntime requires explicit recall-only mode when no model is present", async () => {
   const root = await tempDir();
-  assert.throws(() => createMemFlywheelHarnessRuntime({ root }), /requires a canonical model/);
+  assert.throws(() => createMemFlywheelHarnessRuntime({ root }), /requires a Pi model resolver/);
 
   const { scribe } = createMemFlywheelHarnessRuntime({ root, mode: "recall-only" });
 
@@ -759,7 +793,10 @@ test("createMemFlywheelHarnessRuntime requires explicit recall-only mode when no
 
 test("createMemFlywheelHarnessRuntime decline (no tool calls) writes nothing", async () => {
   const root = await tempDir();
-  const { scribe } = createMemFlywheelHarnessRuntime({ model: decliningModel, root });
+  const { scribe } = createMemFlywheelHarnessRuntime({
+    resolveModel: resolveTestModel(decliningModel),
+    root,
+  });
 
   await scribe.onSessionStart({ sessionId: "s1" });
   await scribe.onTurnEnd({
@@ -776,7 +813,7 @@ test("createMemFlywheelHarnessRuntime decline (no tool calls) writes nothing", a
 test("disabled scribe makes every hook a no-op", async () => {
   const root = await tempDir();
   const { scribe } = createMemFlywheelHarnessRuntime({
-    model: savingModel(),
+    resolveModel: resolveTestModel(savingModel()),
     root,
     enabled: false,
   });

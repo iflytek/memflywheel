@@ -1,6 +1,6 @@
 {
   "name": "@iflytekopensource/adapters",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Host lifecycle adapters for wiring MemFlywheel into agent runtimes.",
   "license": "Apache-2.0",
   "type": "module",
@@ -54,36 +54,34 @@
       "./openclaw-extension/index.mjs"
     ],
     "compat": {
-      "pluginApi": "2026.6.10"
+      "pluginApi": ">=2026.6.10"
     }
   },
   "publishConfig": {
     "access": "public"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.19"
   },
   "scripts": {
-    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b && tsup src/index.ts --format esm --target node22 --dts --dts-resolve --out-dir dist --no-splitting --clean false --tsconfig tsconfig.bundle.json --external @earendil-works/pi-ai --external openclaw --external 'openclaw/*'",
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -b && tsup src/index.ts --format esm --target node22 --dts --dts-resolve --out-dir dist --no-splitting --clean false --tsconfig tsconfig.bundle.json --external @earendil-works/pi-ai --external @earendil-works/pi-agent-core --external proper-lockfile --external openclaw --external 'openclaw/*'",
     "test": "pnpm run build && node --test \"dist/**/*.test.js\" \"pi-extension/**/*.test.mjs\"",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.82.1",
+    "@earendil-works/pi-ai": "^0.82.1",
+    "proper-lockfile": "^4.1.2"
+  },
   "devDependencies": {
-    "@memflywheel/model": "workspace:*",
-    "@memflywheel/sdk": "workspace:*",
-    "@memflywheel/skills": "workspace:*",
     "@types/node": "^22.20.1",
     "tsup": "^8.5.1",
     "typescript": "^5.5.4"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
     "openclaw": "*"
   },
   "peerDependenciesMeta": {
-    "@earendil-works/pi-ai": {
-      "optional": true
-    },
     "openclaw": {
       "optional": true
     }

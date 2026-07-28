@@ -125,14 +125,7 @@ export {
 } from "./file-tools.js";
 
 // Lock
-export {
-  LOCK_TIMEOUT_MS,
-  LOCK_FILE,
-  type LockHandle,
-  acquireLock,
-  releaseLock,
-  withLock,
-} from "./lock.js";
+export { LOCK_TIMEOUT_MS, LOCK_FILE, type LockHandle, acquireLock, withLock } from "./lock.js";
 
 // Atomic + audit
 export { atomicWriteFile, appendFileLine } from "./atomic.js";
