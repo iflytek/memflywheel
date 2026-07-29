@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   hostMessagesFromOpenCodeSessionMessages,
   configureOpenCodeMemoryPermission,
+  createOpenCodeHostModel,
   createOpenCodeHarnessPort,
   piApiForOpenCodeTransport,
 } from "./opencode-port.js";
@@ -140,6 +141,34 @@ test("OpenCode buffers text-complete without blocking output, then serializes id
   assert.equal(turns.length, 2);
 });
 
+test("OpenCode reports background lifecycle failures through the host logger", async () => {
+  const logs: unknown[] = [];
+  const port = createOpenCodeHarnessPort({
+    app: { log: async (entry) => void logs.push(entry) },
+    session: {
+      messages: async () => ({
+        data: [{ info: { role: "user" }, parts: [{ type: "text", text: "remember tea" }] }],
+      }),
+    },
+  });
+  port.lifecycle.onTurnEnd(async () => {
+    throw new Error("OAuth transport failed");
+  });
+
+  await assert.rejects(
+    port.hooks.event({ event: { type: "session.idle", properties: { sessionID: "oc-fail" } } }),
+    /OAuth transport failed/,
+  );
+  assert.deepEqual(logs[0], {
+    body: {
+      service: "memflywheel",
+      level: "error",
+      message: "OpenCode background lifecycle failed",
+      extra: { sessionId: "oc-fail", error: "Error: OAuth transport failed" },
+    },
+  });
+});
+
 test("OpenCode port fails before chat.params supplies the active model", async () => {
   const port = createOpenCodeHarnessPort({});
   await assert.rejects(
@@ -181,6 +210,94 @@ test("OpenCode resolves DeepSeek and Anthropic directly into pi-ai model binding
     assert.equal(await binding.getApiKey?.(binding.model.provider), "host-owned");
     assert.equal(binding.request?.maxTokens, 4096);
   }
+});
+
+test("OpenCode reuses its host-owned OpenAI OAuth transport without reading tokens", () => {
+  const hostFetch: typeof globalThis.fetch = async () => new Response("unused");
+  const binding = createOpenCodeHostModel(
+    {
+      model: {
+        ...openCodeModel("@ai-sdk/openai", "gpt-5.5", ""),
+        providerID: "openai",
+        api: { id: "gpt-5.5", npm: "@ai-sdk/openai" },
+      },
+      provider: { id: "openai", source: "custom", options: {} },
+    },
+    { options: { apiKey: "oauth", fetch: hostFetch } },
+  );
+
+  assert.equal(binding.model.api, "openai-responses");
+  assert.equal(binding.model.baseUrl, "https://api.openai.com/v1");
+  assert.equal(binding.request?.fetch, undefined);
+  assert.equal(binding.request?.maxTokens, undefined);
+  assert.equal(typeof binding.request?.onPayload, "function");
+  assert.equal(binding.request?.access, undefined);
+  assert.equal(binding.request?.refresh, undefined);
+});
+
+test("OpenCode OAuth transport drives the registry pi-ai provider and omits host-owned limits", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestPayload: Record<string, unknown> | undefined;
+  const hostFetch: typeof globalThis.fetch = async (_input, init) => {
+    requestPayload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    const sse = `data: ${JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: "resp_memflywheel_test",
+        status: "completed",
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+      },
+    })}\n\n`;
+    return new Response(sse, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  };
+  const binding = createOpenCodeHostModel(
+    {
+      model: {
+        ...openCodeModel("@ai-sdk/openai", "gpt-5.5", ""),
+        providerID: "openai",
+        api: { id: "gpt-5.5", npm: "@ai-sdk/openai" },
+      },
+      provider: { id: "openai", source: "custom", options: {} },
+    },
+    { options: { apiKey: "oauth", fetch: hostFetch } },
+  );
+
+  const stream = await binding.streamFn(
+    binding.model,
+    {
+      systemPrompt: "test",
+      messages: [{ role: "user", content: "test", timestamp: Date.now() }],
+    },
+    { ...binding.request, apiKey: "oauth" },
+  );
+  assert.equal(globalThis.fetch, originalFetch);
+  const result = await stream.result();
+
+  assert.equal(result.stopReason, "stop");
+  assert.equal(requestPayload?.model, "gpt-5.5");
+  assert.equal(requestPayload?.max_output_tokens, undefined);
+  assert.equal(globalThis.fetch, originalFetch);
+});
+
+test("OpenCode rejects an OpenAI model with neither endpoint nor host transport", () => {
+  assert.throws(
+    () =>
+      createOpenCodeHostModel(
+        {
+          model: {
+            ...openCodeModel("@ai-sdk/openai", "gpt-5.5", ""),
+            providerID: "openai",
+            api: { id: "gpt-5.5", npm: "@ai-sdk/openai" },
+          },
+          provider: { id: "openai", source: "custom", options: {} },
+        },
+        { options: {} },
+      ),
+    /neither a resolved endpoint nor host fetch/,
+  );
 });
 
 test("OpenCode transport mapping is exact and rejects unknown transports", () => {

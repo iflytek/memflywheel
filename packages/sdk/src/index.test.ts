@@ -568,7 +568,7 @@ test("onTurnEnd learning loop infers completed turns from a resumed transcript",
   }
 });
 
-test("agent that throws yields Failed and writes nothing; cursor does not advance", async () => {
+test("agent failure escapes, writes nothing, and leaves the cursor retryable", async () => {
   const root = await tempRoot();
   try {
     let calls = 0;
@@ -578,15 +578,16 @@ test("agent that throws yields Failed and writes nothing; cursor does not advanc
     };
     const scribe = createMemFlywheel({ root, agent: fn });
     await scribe.onSessionStart("s1");
-    const turn = await scribe.onTurnEnd("s1", userTurn("anything worth remembering"));
-    assert.equal(turn.result, ExtractionResult.Failed);
+    await assert.rejects(
+      scribe.onTurnEnd("s1", userTurn("anything worth remembering")),
+      /llm down/,
+    );
 
     const index = await readFile(path.join(root, "MEMORY.md"), "utf8").catch(() => "");
     assert.doesNotMatch(index, /\.md/);
 
     // Cursor did not advance: the next turn retries the same window.
-    const turn2 = await scribe.onTurnEnd("s1", []);
-    assert.equal(turn2.result, ExtractionResult.Failed);
+    await assert.rejects(scribe.onTurnEnd("s1", []), /llm down/);
     assert.equal(calls, 2);
   } finally {
     await rm(root, { recursive: true, force: true });

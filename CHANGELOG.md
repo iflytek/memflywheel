@@ -7,6 +7,19 @@ for published packages.
 
 ## [Unreleased]
 
+### Fixed
+
+- Reused OpenCode's host-owned OpenAI OAuth `fetch` transport for background
+  memory agent loops without reading, copying, or persisting OAuth tokens.
+- Reported OpenCode background lifecycle failures through the host logger instead
+  of silently losing extraction errors.
+- Removed extraction's catch-all `Failed` result so provider and Agent Loop
+  failures reach the host unchanged while the memory cursor remains retryable.
+- Made host-resolved request options authoritative over Pi Agent Core defaults
+  on every background turn.
+- Kept OpenCode model output limits as metadata without reintroducing a
+  `max_output_tokens` request field that the host OAuth hook explicitly removed.
+
 ## [0.1.1] - 2026-07-28
 
 ### Added

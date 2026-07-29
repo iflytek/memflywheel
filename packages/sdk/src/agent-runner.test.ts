@@ -25,3 +25,27 @@ test("runMemoryAgent releases pi-ai resources for its isolated session", async (
     unregister();
   }
 });
+
+test("host request options override undefined Agent Core defaults", async () => {
+  const scripted = scriptedBinding([stopTurn]);
+  let receivedTemperature: unknown;
+
+  await runMemoryAgent({
+    resolveModel: async () => {
+      const binding = await scripted.resolveModel();
+      return {
+        ...binding,
+        request: { temperature: 0.25 },
+        streamFn: (model, context, options) => {
+          receivedTemperature = (options as Record<string, unknown> | undefined)?.temperature;
+          return binding.streamFn(model, context, options);
+        },
+      };
+    },
+    tools: [],
+    systemPrompt: "test",
+    userMessage: "test",
+  });
+
+  assert.equal(receivedTemperature, 0.25);
+});
