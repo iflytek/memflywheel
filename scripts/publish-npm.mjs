@@ -80,7 +80,6 @@ function publishToGitHubPackages(publishArgs) {
       const pj = JSON.parse(readFileSync(pjPath, "utf8"));
 
       // Rewrite package name and dependency keys
-      const originalName = pj.name;
       pj.name = rewriteScope(pj.name);
       for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
         if (!pj[field]) continue;
