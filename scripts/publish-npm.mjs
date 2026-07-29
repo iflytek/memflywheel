@@ -55,6 +55,14 @@ function publishToNpm(publishArgs) {
   }
 }
 
+function versionExistsOnRegistry(name, version, registry) {
+  const r = spawnSync("npm", ["view", `${name}@${version}`, "version", "--registry", registry], {
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  return r.status === 0 && r.stdout.trim() === version;
+}
+
 function publishToGitHubPackages(publishArgs) {
   const staging = mkdtempSync(join(tmpdir(), "ghpkg-"));
   try {
@@ -97,6 +105,12 @@ function publishToGitHubPackages(publishArgs) {
               console.warn(`Warning: failed to rewrite ${rel}: ${err.message}`);
           }
         }
+      }
+
+      // Skip if this version already exists on GitHub Packages
+      if (versionExistsOnRegistry(pj.name, pj.version, GHP_REGISTRY)) {
+        console.log(`[SKIP] ${pj.name}@${pj.version} already exists on GitHub Packages — skipping`);
+        continue;
       }
 
       run("npm", [
