@@ -15,6 +15,16 @@ import { createPiAiModelBinding } from "./opencode-pi-model.js";
 type RawRecord = Record<string, unknown>;
 
 export interface OpenCodeClientLike {
+  readonly app?: {
+    readonly log?: (options: {
+      readonly body: {
+        readonly service: string;
+        readonly level: "error";
+        readonly message: string;
+        readonly extra?: RawRecord;
+      };
+    }) => Promise<unknown>;
+  };
   readonly session?: {
     readonly messages?: (options: unknown) => Promise<unknown>;
   };
@@ -121,6 +131,12 @@ function readNumber(value: unknown, key: string): number | undefined {
   if (!isRecord(value)) return undefined;
   const raw = value[key];
   return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+}
+
+function readFetch(value: unknown, key: string): typeof globalThis.fetch | undefined {
+  if (!isRecord(value)) return undefined;
+  const raw = value[key];
+  return typeof raw === "function" ? (raw as typeof globalThis.fetch) : undefined;
 }
 
 function stringRecord(value: unknown): Record<string, string> {
@@ -241,6 +257,13 @@ function openCodePiRequestOptions(
   return {};
 }
 
+function omitMaxOutputTokens(payload: unknown): unknown {
+  if (!isRecord(payload)) throw new Error("pi-ai produced a non-object OpenAI payload.");
+  const next = { ...payload };
+  delete next.max_output_tokens;
+  return next;
+}
+
 function openCodePiBaseUrl(
   api: ReturnType<typeof piApiForOpenCodeTransport>,
   endpoint: string,
@@ -256,6 +279,10 @@ const OPENAI_COMPATIBLE_TRANSPORT = {
   maxTokensField: "max_tokens" as const,
   supportsStrictMode: false,
 };
+
+// OpenCode's OAuth fetch rewrites this ordinary Responses URL to its host-owned
+// endpoint. MemFlywheel never receives or persists the underlying OAuth tokens.
+const OPENAI_RESPONSES_REQUEST_ORIGIN = "https://api.openai.com/v1";
 
 /** Build a pi-ai completion from OpenCode's resolved model and credential context. */
 export function createOpenCodeHostModel(
@@ -280,9 +307,16 @@ export function createOpenCodeHostModel(
 
   const endpoint =
     readString(providerOptions, "baseURL") ?? (api ? readString(api, "url") : undefined);
+  const hostFetch = readFetch(providerOptions, "fetch");
   const apiKey = readString(providerOptions, "apiKey") ?? readString(providerInfo, "key");
-  if (!endpoint && piApi !== "bedrock-converse-stream" && piApi !== "google-vertex") {
-    throw new Error(`OpenCode model ${modelId} has no resolved endpoint.`);
+  const hostTransportOwnsEndpoint = piApi === "openai-responses" && hostFetch !== undefined;
+  if (
+    !endpoint &&
+    !hostTransportOwnsEndpoint &&
+    piApi !== "bedrock-converse-stream" &&
+    piApi !== "google-vertex"
+  ) {
+    throw new Error(`OpenCode model ${modelId} has neither a resolved endpoint nor host fetch.`);
   }
   const capabilities = isRecord(input.model.capabilities) ? input.model.capabilities : {};
   const inputCapabilities = isRecord(capabilities.input) ? capabilities.input : {};
@@ -300,7 +334,10 @@ export function createOpenCodeHostModel(
     provider: providerId,
     model: api ? (readString(api, "id") ?? modelId) : modelId,
     name: readString(input.model, "name") ?? modelId,
-    baseUrl: openCodePiBaseUrl(piApi, endpoint ?? ""),
+    baseUrl: openCodePiBaseUrl(
+      piApi,
+      endpoint ?? (hostTransportOwnsEndpoint ? OPENAI_RESPONSES_REQUEST_ORIGIN : ""),
+    ),
     apiKey,
     headers: { ...modelHeaders, ...providerHeaders },
     env: openCodeProviderEnv(providerOptions),
@@ -308,6 +345,8 @@ export function createOpenCodeHostModel(
     input: ["text", ...(inputCapabilities.image === true ? (["image"] as const) : [])],
     contextWindow,
     maxTokens,
+    requestMaxTokens: output.maxOutputTokens,
+    fetch: hostFetch,
     ...(piApi === "openai-completions"
       ? {
           compat: OPENAI_COMPATIBLE_TRANSPORT,
@@ -315,7 +354,12 @@ export function createOpenCodeHostModel(
         }
       : {}),
     temperature: output.temperature,
-    requestOptions: openCodePiRequestOptions(piApi, providerOptions),
+    requestOptions: {
+      ...openCodePiRequestOptions(piApi, providerOptions),
+      ...(piApi === "openai-responses" && hostFetch && output.maxOutputTokens === undefined
+        ? { onPayload: omitMaxOutputTokens }
+        : {}),
+    },
   });
 }
 
@@ -484,6 +528,17 @@ export function createOpenCodeHarnessPort(
     }
   };
 
+  const reportLifecycleFailure = async (sessionId: string, error: unknown): Promise<void> => {
+    await client.app?.log?.({
+      body: {
+        service: "memflywheel",
+        level: "error",
+        message: "OpenCode background lifecycle failed",
+        extra: { sessionId, error: String(error) },
+      },
+    });
+  };
+
   const hooks: OpenCodeHooks = {
     async config(config) {
       configureOpenCodeMemoryPermission(config, options.root ?? defaultOpenCodeMemFlywheelRoot());
@@ -493,7 +548,12 @@ export function createOpenCodeHarnessPort(
       const sessionId = extractSessionId(event);
       if (sessionId) lastSessionId = sessionId;
       if (type === "session.idle" && sessionId) {
-        await dispatchCompletedTurn(sessionId);
+        try {
+          await dispatchCompletedTurn(sessionId);
+        } catch (error) {
+          await reportLifecycleFailure(sessionId, error);
+          throw error;
+        }
       }
       if (type === "session.deleted" && sessionId) {
         for (const handler of sessionEndHandlers) await handler({ sessionId });

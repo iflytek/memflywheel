@@ -42,7 +42,6 @@ export const EXTRACTION_MAX_MESSAGES = 40;
 export enum ExtractionResult {
   Completed = "completed",
   Skipped = "skipped",
-  Failed = "failed",
 }
 
 /**
@@ -442,8 +441,8 @@ export interface RunExtractionSessionOptions {
  *  8 advance cursor ONLY on success; stamp .last-extraction
  *  9 release the root lock
  *
- * A thrown agent runner (e.g. network failure) ⇒ Failed, and the cursor does
- * NOT advance, so the window is retried next turn. Per-tool failures are
+ * A thrown agent runner (e.g. network failure) escapes unchanged, and the cursor
+ * does NOT advance, so the window is retried next turn. Per-tool failures are
  * non-fatal (handlers return results) and simply leave files unchanged.
  */
 export async function runExtractionSession(
@@ -473,11 +472,7 @@ export async function runExtractionSession(
     const toolCtx = createMemoryFileToolContext({ ctx, refuseSecrets, sourceRef });
     const tools = createFileTools();
 
-    try {
-      await agent({ toolCtx, tools, messages: selected, manifest, root: ctx.root });
-    } catch {
-      return ExtractionResult.Failed;
-    }
+    await agent({ toolCtx, tools, messages: selected, manifest, root: ctx.root });
 
     await relocateRootFiles(ctx);
     const after = await scanMemoryFiles(ctx.root);

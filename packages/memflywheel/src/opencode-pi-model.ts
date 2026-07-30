@@ -22,6 +22,8 @@ export interface OpenCodePiModelConfig {
   readonly input: ("text" | "image")[];
   readonly contextWindow: number;
   readonly maxTokens: number;
+  readonly requestMaxTokens?: number;
+  readonly fetch?: typeof globalThis.fetch;
   readonly compat?: OpenAICompletionsCompat;
   readonly thinkingLevelMap?: ThinkingLevelMap;
   readonly temperature?: number;
@@ -29,6 +31,19 @@ export interface OpenCodePiModelConfig {
 }
 
 const zeroCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+function withProviderFetch<T>(fetchImpl: typeof globalThis.fetch, run: () => T): T {
+  // Provider SDKs capture the default fetch while streamSimple constructs their
+  // client. Restore it before any asynchronous network work can interleave.
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+  globalThis.fetch = fetchImpl;
+  try {
+    return run();
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "fetch", descriptor);
+    else delete (globalThis as { fetch?: typeof globalThis.fetch }).fetch;
+  }
+}
 
 async function loadApi(api: Api): Promise<ProviderStreams> {
   switch (api) {
@@ -80,11 +95,12 @@ export function createPiAiModelBinding(config: OpenCodePiModelConfig): PiAgentMo
       ...(config.headers ? { headers: config.headers } : {}),
       ...(config.env ? { env: config.env } : {}),
       ...(config.temperature === undefined ? {} : { temperature: config.temperature }),
-      maxTokens: config.maxTokens,
+      ...(config.requestMaxTokens === undefined ? {} : { maxTokens: config.requestMaxTokens }),
     },
     streamFn: async (activeModel, context, options) => {
       const api = await loadApi(activeModel.api);
-      return api.streamSimple(activeModel, context, options);
+      const stream = () => api.streamSimple(activeModel, context, options);
+      return config.fetch ? withProviderFetch(config.fetch, stream) : stream();
     },
   };
 }

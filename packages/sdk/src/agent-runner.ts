@@ -106,7 +106,7 @@ export async function runMemoryAgent(options: RunMemoryAgentOptions): Promise<Me
       messages: [],
     },
     streamFn: (model, context, streamOptions) =>
-      binding.streamFn(model, context, { ...binding.request, ...streamOptions }),
+      binding.streamFn(model, context, { ...streamOptions, ...binding.request }),
     getApiKey: binding.getApiKey,
     sessionId: binding.sessionId,
     transport: binding.transport,

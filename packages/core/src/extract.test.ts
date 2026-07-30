@@ -465,21 +465,23 @@ test("runExtractionSession returns Skipped when the agent writes nothing", async
   }
 });
 
-test("runExtractionSession returns Failed and does NOT advance cursor when agent throws", async () => {
+test("runExtractionSession exposes agent failure and does NOT advance cursor", async () => {
   const root = await makeRoot();
   try {
     const ctx = ctxFor(root);
     const cursorStore = createMemoryCursorStore();
-    const result = await runExtractionSession({
-      ctx,
-      agent: async () => {
-        throw new Error("llm down");
-      },
-      messages: [{ role: "user", text: "hi" }],
-      sessionId: "s2",
-      cursorStore,
-    });
-    assert.equal(result, ExtractionResult.Failed);
+    await assert.rejects(
+      runExtractionSession({
+        ctx,
+        agent: async () => {
+          throw new Error("llm down");
+        },
+        messages: [{ role: "user", text: "hi" }],
+        sessionId: "s2",
+        cursorStore,
+      }),
+      /llm down/,
+    );
     assert.equal(cursorStore.get("s2"), null);
   } finally {
     await cleanup(root);
