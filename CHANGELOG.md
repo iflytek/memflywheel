@@ -9,6 +9,10 @@ for published packages.
 
 ### Fixed
 
+- Moved Pi turn-end extraction, skill evolution, Dream, and learned-skill sync
+  onto a serialized background queue so completed answers no longer keep the
+  foreground `Working...` state active; session shutdown drains the queue and
+  surfaces background failures.
 - Reused OpenCode's host-owned OpenAI OAuth `fetch` transport for background
   memory agent loops without reading, copying, or persisting OAuth tokens.
 - Reported OpenCode background lifecycle failures through the host logger instead

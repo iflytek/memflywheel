@@ -69,6 +69,9 @@ export interface PiExtensionContextLike {
   };
   getThinkingLevel?(): unknown;
   isIdle?(): boolean;
+  ui?: {
+    notify?(message: string, type?: "info" | "warning" | "error"): void;
+  };
 }
 
 export type PiExtensionHandler = (
@@ -374,6 +377,10 @@ export function createPiHarnessPort(
 ): HostHarnessPort {
   let lastContext: PiExtensionContextLike | undefined;
   let lastSessionId: string | undefined;
+  let backgroundContext: PiExtensionContextLike | undefined;
+  let backgroundSessionId: string | undefined;
+  let backgroundTail = Promise.resolve();
+  const backgroundFailures: unknown[] = [];
   const rememberContext = (event?: unknown, ctx?: PiExtensionContextLike): void => {
     if (ctx) lastContext = ctx;
     lastSessionId = resolvePiSessionId(options.sessionId, event, ctx ?? lastContext);
@@ -385,13 +392,45 @@ export function createPiHarnessPort(
       ? createPiAgentModelResolver({
           streamSimple: options.streamSimple,
           model: options.piModel,
-          getContext: () => lastContext,
-          getSessionId: () => isolatedBackgroundModelSessionId(lastSessionId),
+          getContext: () => backgroundContext ?? lastContext,
+          getSessionId: () =>
+            isolatedBackgroundModelSessionId(backgroundSessionId ?? lastSessionId),
         })
       : undefined);
   if (!resolveModel) {
     throw new Error("createPiHarnessPort requires either resolveModel or Pi streamSimple");
   }
+
+  const reportBackgroundFailure = (error: unknown, ctx?: PiExtensionContextLike): void => {
+    const message = `MemFlywheel background learning failed: ${error instanceof Error ? error.message : String(error)}`;
+    if (ctx?.ui?.notify) ctx.ui.notify(message, "error");
+    else console.error(message);
+  };
+  const enqueueBackgroundTurn = (
+    sessionId: string,
+    ctx: PiExtensionContextLike | undefined,
+    task: () => Promise<void>,
+  ): void => {
+    backgroundTail = backgroundTail.then(async () => {
+      backgroundContext = ctx;
+      backgroundSessionId = sessionId;
+      try {
+        await task();
+      } catch (error) {
+        backgroundFailures.push(error);
+        reportBackgroundFailure(error, ctx);
+      } finally {
+        backgroundContext = undefined;
+        backgroundSessionId = undefined;
+      }
+    });
+  };
+  const drainBackgroundTurns = async (): Promise<void> => {
+    await backgroundTail;
+    if (backgroundFailures.length === 0) return;
+    const failures = backgroundFailures.splice(0);
+    throw new AggregateError(failures, "MemFlywheel background learning failed");
+  };
 
   const capabilities: HostCapability[] = [
     "prompt-build",
@@ -416,20 +455,36 @@ export function createPiHarnessPort(
       });
     },
     onTurnEnd(handler) {
-      return bindPiEvent(pi, "agent_end", async (event, ctx) => {
+      return bindPiEvent(pi, "agent_end", (event, ctx) => {
         rememberContext(event, ctx);
-        await handler({
-          sessionId: lastSessionId ?? "pi",
-          messages: hostMessagesFromPi(isRecord(event) ? event.messages : undefined),
+        const sessionId = lastSessionId ?? "pi";
+        const messages = hostMessagesFromPi(isRecord(event) ? event.messages : undefined);
+        enqueueBackgroundTurn(sessionId, ctx ?? lastContext, async () => {
+          await handler({ sessionId, messages });
+          await options.afterTurnEnd?.();
         });
-        await options.afterTurnEnd?.();
       });
     },
     onSessionEnd(handler) {
       return bindPiEvent(pi, "session_shutdown", async (event, ctx) => {
         rememberContext(event, ctx);
-        await handler({ sessionId: lastSessionId ?? "pi" });
-        await options.afterSessionEnd?.();
+        const sessionId = lastSessionId ?? "pi";
+        let drainError: unknown;
+        try {
+          await drainBackgroundTurns();
+        } catch (error) {
+          drainError = error;
+        }
+        backgroundContext = ctx ?? lastContext;
+        backgroundSessionId = sessionId;
+        try {
+          await handler({ sessionId });
+          await options.afterSessionEnd?.();
+        } finally {
+          backgroundContext = undefined;
+          backgroundSessionId = undefined;
+        }
+        if (drainError) throw drainError;
       });
     },
   };
