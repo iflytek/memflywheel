@@ -116,16 +116,69 @@ test("Pi context forwards the latest user query into progressive recall", async 
   assert.equal((result as { messages: unknown[] }).messages.length, 4);
 });
 
-test("Pi lifecycle hooks run only after host handlers complete", async () => {
+test("Pi turn-end learning runs off the foreground event and drains before shutdown", async () => {
   const { api, handlers } = fakePi();
   const order: string[] = [];
+  let releaseFirst: (() => void) | undefined;
+  const firstBlocked = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
   const port = createPiHarnessPort(api, {
     resolveModel: async () => {
       throw new Error("unused");
     },
     afterTurnEnd: () => void order.push("sync"),
   });
-  port.lifecycle.onTurnEnd(async () => void order.push("turn"));
-  await handlers.get("agent_end")?.({ messages: [] }, {});
-  assert.deepEqual(order, ["turn", "sync"]);
+  port.lifecycle.onTurnEnd(async (event) => {
+    order.push(`start:${event.sessionId}`);
+    if (event.sessionId === "s1") await firstBlocked;
+    order.push(`end:${event.sessionId}`);
+  });
+  port.lifecycle.onSessionEnd(async (event) => void order.push(`shutdown:${event.sessionId}`));
+
+  const firstReturn = handlers.get("agent_end")?.({ sessionId: "s1", messages: [] }, {});
+  const secondReturn = handlers.get("agent_end")?.({ sessionId: "s2", messages: [] }, {});
+  assert.equal(firstReturn, undefined);
+  assert.equal(secondReturn, undefined);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(order, ["start:s1"]);
+
+  const shutdown = handlers.get("session_shutdown")?.({ sessionId: "s2" }, {});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(order, ["start:s1"]);
+  releaseFirst?.();
+  await shutdown;
+  assert.deepEqual(order, [
+    "start:s1",
+    "end:s1",
+    "sync",
+    "start:s2",
+    "end:s2",
+    "sync",
+    "shutdown:s2",
+  ]);
+});
+
+test("Pi reports background learning failures and rejects shutdown after the final sweep", async () => {
+  const { api, handlers } = fakePi();
+  const notifications: string[] = [];
+  const order: string[] = [];
+  const port = createPiHarnessPort(api, {
+    resolveModel: async () => {
+      throw new Error("unused");
+    },
+  });
+  port.lifecycle.onTurnEnd(async () => {
+    throw new Error("model unavailable");
+  });
+  port.lifecycle.onSessionEnd(async () => void order.push("final-sweep"));
+
+  handlers.get("agent_end")?.(
+    { sessionId: "s1", messages: [] },
+    { ui: { notify: (message) => notifications.push(message) } },
+  );
+  const shutdown = Promise.resolve(handlers.get("session_shutdown")?.({ sessionId: "s1" }, {}));
+  await assert.rejects(shutdown, /background learning failed/);
+  assert.deepEqual(order, ["final-sweep"]);
+  assert.deepEqual(notifications, ["MemFlywheel background learning failed: model unavailable"]);
 });
