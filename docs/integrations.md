@@ -34,6 +34,10 @@ skill loops should fail fast instead of parsing free-form model text.
 | OpenClaw | Implemented plugin path      | Load the adapter as OpenClaw's memory slot; hooks provide recall, extraction, and skills |
 | OpenCode | Implemented plugin path      | Load the adapter as an OpenCode plugin; hooks provide recall, extraction, and skills     |
 
+For a capability and runtime cost comparison with each host's native long-term
+memory, see
+[Host-Native Long-Term Memory Comparison](native-memory-comparison.md).
+
 ## Large Index Pre-Recall
 
 By default, prompt recall injects the generated `MEMORY.md` index directly. That

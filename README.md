@@ -142,14 +142,15 @@ evolve. See [`docs/evaluation.md`](docs/evaluation.md).
 
 ## Documentation
 
-| Document                                                           | Content                                                                           |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries         |
-| [`docs/integrations.md`](docs/integrations.md)                     | Pi, Hermes, OpenCode, OpenClaw, embedding pre-recall, SDK hooks, adapter boundary |
-| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                                       |
-| [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                                |
-| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release notes for public npm package versions                                     |
-| [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                                 |
+| Document                                                               | Content                                                                           |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [`docs/architecture.md`](docs/architecture.md)                         | Storage layout, recall, extraction, dream, skill loop, package boundaries         |
+| [`docs/integrations.md`](docs/integrations.md)                         | Pi, Hermes, OpenCode, OpenClaw, embedding pre-recall, SDK hooks, adapter boundary |
+| [`docs/native-memory-comparison.md`](docs/native-memory-comparison.md) | Host-native long-term memory capabilities and cost                                |
+| [`docs/evaluation.md`](docs/evaluation.md)                             | LoCoMo position and local regression checks                                       |
+| [`docs/release.md`](docs/release.md)                                   | Versioning, npm release channel, publish checklist                                |
+| [`CHANGELOG.md`](CHANGELOG.md)                                         | Release notes for public npm package versions                                     |
+| [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES)     | Project notice and third-party license disclosure                                 |
 
 ## Open-Source Boundary
 
