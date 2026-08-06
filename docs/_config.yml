@@ -1,0 +1,11 @@
+title: MemFlywheel — File-Native Long-Term Memory for AI Agents
+description: Open-source agent memory with auditable Markdown storage, progressive recall, post-run learning, and integrations for Pi, Hermes, OpenCode, and OpenClaw.
+theme: jekyll-theme-cayman
+lang: en-US
+url: https://iflytek.github.io
+baseurl: /memflywheel
+repository: iflytek/memflywheel
+github:
+  is_project_page: true
+  repository_url: https://github.com/iflytek/memflywheel
+  owner_url: https://github.com/iflytek

@@ -137,14 +137,27 @@ MemFlywheel 使用面向 LoCoMo 的回归检查，让长期记忆能力在召回
 | [`docs/integrations.md`](docs/integrations.md)                     | Pi、Hermes、OpenCode、OpenClaw、embedding 预召回、SDK hooks、adapter 边界 |
 | [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo 定位和本地回归检查                                                 |
 | [`docs/release.md`](docs/release.md)                               | 版本规范、npm 发布渠道、发布检查清单                                      |
+| [项目网站](https://iflytek.github.io/memflywheel/)                 | 面向搜索收录的项目介绍、快速开始和贡献入口                                |
 | [`CHANGELOG.md`](CHANGELOG.md)                                     | 公开 npm 包版本变更记录                                                   |
 | [`NOTICE`](NOTICE)、[`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | 项目版权告知和三方 license 披露                                           |
+
+## 参与贡献
+
+欢迎通过代码、测试、文档、问题复现和 PR 审阅参与 MemFlywheel：
+
+- 阅读英文版 [`CONTRIBUTING.md`](CONTRIBUTING.md)，了解开发环境、仓库结构、设计边界与 PR 检查项；
+- 浏览 [`good first issue`](https://github.com/iflytek/memflywheel/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22) 和 [`help wanted`](https://github.com/iflytek/memflywheel/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22help%20wanted%22)；
+- [提交 Bug](https://github.com/iflytek/memflywheel/issues/new?template=bug_report.md)、[提出功能建议](https://github.com/iflytek/memflywheel/issues/new?template=feature_request.md)，或参与[开放 PR](https://github.com/iflytek/memflywheel/pulls)审阅。
+
+提交 PR 前请运行 `pnpm run ci`。所有社区参与均遵循 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。
 
 ## 开源边界
 
 MemFlywheel 的目标是成为 Agent Harness 里的长期记忆和技能学习基础组件。它保持文件原生、模型无关、宿主优先，不把主 Agent、模型服务、工具权限或技能执行吞进自己内部。
 
 ## 💬 社区交流
+
+如有公开问题、Bug 或功能建议，请优先使用 [GitHub Issues](https://github.com/iflytek/memflywheel/issues)，并在分享日志或记忆样例前阅读 [`SUPPORT.md`](SUPPORT.md)。
 
 欢迎加入 Astron 开源交流群（企业微信），与我们交流与合作：
 
