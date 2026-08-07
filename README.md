@@ -146,6 +146,7 @@ evolve. See [`docs/evaluation.md`](docs/evaluation.md).
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries         |
 | [`docs/integrations.md`](docs/integrations.md)                     | Pi, Hermes, OpenCode, OpenClaw, embedding pre-recall, SDK hooks, adapter boundary |
+| [`docs/comparison.md`](docs/comparison.md)                         | What changes vs host-native memory, runtime overhead, when to use which           |
 | [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                                       |
 | [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                                |
 | [`CHANGELOG.md`](CHANGELOG.md)                                     | Release notes for public npm package versions                                     |
