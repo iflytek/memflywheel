@@ -52,7 +52,7 @@ Add the upstream repository so your branch can stay current:
 ```sh
 git remote add upstream https://github.com/iflytek/memflywheel.git
 git fetch upstream
-git switch -c type/short-description upstream/main
+git switch -c feat/short-description upstream/main
 ```
 
 Use a focused branch name such as `feat/...`, `fix/...`, `docs/...`, `test/...`,
