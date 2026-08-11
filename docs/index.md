@@ -62,19 +62,22 @@ opencode plugin @iflytekopensource/memflywheel --global
 ```sh
 openclaw plugins install npm:@iflytekopensource/memflywheel
 openclaw config set plugins.slots.memory memflywheel
+openclaw config set plugins.entries.memflywheel.hooks.allowConversationAccess true
+openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
+openclaw gateway run --force
 ```
 
 Node.js 22.19 or later is required. Continue with the
-[full integration and troubleshooting guide](integrations.md).
+[full integration and troubleshooting guide](integrations.html).
 
 ## Learn more
 
-- [Architecture](architecture.md): storage, recall, extraction, consolidation, and
+- [Architecture](architecture.html): storage, recall, extraction, consolidation, and
   package boundaries
-- [Integrations](integrations.md): Pi, Hermes, OpenCode, OpenClaw, and optional
+- [Integrations](integrations.html): Pi, Hermes, OpenCode, OpenClaw, and optional
   embedding pre-recall
-- [Evaluation](evaluation.md): LoCoMo-oriented long-term-memory regression checks
-- [Releases](release.md): versioning and npm release workflow
+- [Evaluation](evaluation.html): LoCoMo-oriented long-term-memory regression checks
+- [Releases](release.html): versioning and npm release workflow
 
 ## Contribute
 
