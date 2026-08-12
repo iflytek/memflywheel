@@ -75,7 +75,9 @@ export function createOpenClawHostModel(
           }),
         );
         const stream = createAssistantMessageEventStream();
-        if (message.stopReason === "error" || message.stopReason === "aborted") {
+        if (message.stopReason === "pending") {
+          throw new Error("OpenClaw native completion returned before reaching a terminal state.");
+        } else if (message.stopReason === "error" || message.stopReason === "aborted") {
           stream.push({ type: "error", reason: message.stopReason, error: message });
         } else {
           stream.push({ type: "done", reason: message.stopReason, message });
