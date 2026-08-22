@@ -374,6 +374,27 @@ test("createOpenClawHostModel uses one host-native structured completion", async
   assert.ok(response.content.some((part) => part.type === "toolCall" && part.name === "write"));
 });
 
+test("createOpenClawHostModel rejects non-terminal native completions", async () => {
+  const runtime: OpenClawNativeModelRuntime = {
+    currentConfig: () => ({}),
+    resolveDefaultAgentId: () => "main",
+    prepareForAgent: async () => ({ model: {}, auth: {} }),
+    completePrepared: async () => ({ role: "assistant", content: [], stopReason: "pending" }),
+  };
+  const binding = await createOpenClawHostModel(runtime, () => ({}))();
+
+  await assert.rejects(
+    Promise.resolve(
+      binding.streamFn(
+        binding.model,
+        { systemPrompt: "Extract memory.", messages: [], tools: [] },
+        {},
+      ),
+    ),
+    /before reaching a terminal state/,
+  );
+});
+
 test("createOpenClawHarnessPort fails without the host native model runtime", () => {
   assert.throws(
     () => createOpenClawHarnessPort(createFakeApi().api),
