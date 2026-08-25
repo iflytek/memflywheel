@@ -56,7 +56,7 @@ async function hermesWaitForSetup() {
 
 function hermesVerifySetup() {
   try {
-    const version = kubectlExec(HERMES_NS, HERMES_POD, "hermes", "version");
+    const version = kubectlExec(HERMES_NS, HERMES_POD, "hermes", "--version");
     check("hermes binary available", Boolean(version), version?.slice(0, 50));
   } catch (e) {
     check("hermes binary available", false, e.message?.slice(0, 100));
