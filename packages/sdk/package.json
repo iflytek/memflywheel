@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.84.2",
-    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-ai": "^0.84.3",
     "@memflywheel/core": "workspace:*",
     "@memflywheel/embeddings": "workspace:*"
   },
