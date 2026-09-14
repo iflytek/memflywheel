@@ -84,7 +84,7 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.84.3",
+    "@earendil-works/pi-agent-core": "^0.85.1",
     "@earendil-works/pi-ai": "^0.84.4",
     "proper-lockfile": "^4.1.2"
   },
