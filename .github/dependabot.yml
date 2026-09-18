@@ -16,6 +16,12 @@ updates:
       prefix: "deps"
       include: "scope"
     groups:
+      # pi-agent-core depends on pi-ai; bumping them in separate PRs leaves two
+      # pi-ai copies in the workspace and breaks the StreamFn types.
+      pi:
+        patterns:
+          - "@earendil-works/pi-ai"
+          - "@earendil-works/pi-agent-core"
       typescript:
         patterns:
           - "typescript"
