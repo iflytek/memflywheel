@@ -1,5 +1,6 @@
 {
   "name": "memflywheel",
+  "description": "Self-hosted marketplace for the MemFlywheel Claude Code plugin.",
   "owner": {
     "name": "iFLYTEK",
     "url": "https://github.com/iflytek"
