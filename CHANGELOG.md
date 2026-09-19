@@ -7,6 +7,13 @@ for published packages.
 
 ## [Unreleased]
 
+### Added
+
+- Added a recall-only Claude Code plugin and a self-hosted marketplace:
+  `SessionStart` injects the stable memory rules and `UserPromptSubmit` injects
+  query-aware `MEMORY.md` cues. Write-side loops stay disabled until a
+  structured host-model binding exists.
+
 ### Fixed
 
 - Moved Pi turn-end extraction, skill evolution, Dream, and learned-skill sync

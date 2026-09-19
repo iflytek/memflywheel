@@ -27,12 +27,13 @@ skill loops should fail fast instead of parsing free-form model text.
 
 ## Host Status
 
-| Host     | Status                       | Notes                                                                                    |
-| -------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
-| Pi       | Implemented first-class path | Adapter, HarnessPort, lifecycle mapping, and native pi-ai model binding are implemented  |
-| Hermes   | Implemented plugin path      | MemoryProvider plugin uses Hermes' host-owned model/auth channel for write-side loops    |
-| OpenClaw | Implemented plugin path      | Load the adapter as OpenClaw's memory slot; hooks provide recall, extraction, and skills |
-| OpenCode | Implemented plugin path      | Load the adapter as an OpenCode plugin; hooks provide recall, extraction, and skills     |
+| Host        | Status                       | Notes                                                                                     |
+| ----------- | ---------------------------- | ----------------------------------------------------------------------------------------- |
+| Pi          | Implemented first-class path | Adapter, HarnessPort, lifecycle mapping, and native pi-ai model binding are implemented   |
+| Hermes      | Implemented plugin path      | MemoryProvider plugin uses Hermes' host-owned model/auth channel for write-side loops     |
+| OpenClaw    | Implemented plugin path      | Load the adapter as OpenClaw's memory slot; hooks provide recall, extraction, and skills  |
+| OpenCode    | Implemented plugin path      | Load the adapter as an OpenCode plugin; hooks provide recall, extraction, and skills      |
+| Claude Code | Recall-only plugin path      | `SessionStart`/`UserPromptSubmit` hooks inject recall; write-side loops are not wired yet |
 
 ## Large Index Pre-Recall
 
@@ -319,6 +320,59 @@ pi-ai stream; Pi Agent Core remains the only tool-loop implementation.
 After a real session, MemFlywheel files should appear under
 `~/.openclaw/memflywheel/`, including `MEMORY.md`, typed memory documents,
 source traces, and learned skills.
+
+## Claude Code Integration
+
+```sh
+claude plugin marketplace add iflytek/memflywheel
+claude plugin install memflywheel@memflywheel
+```
+
+The repository root is a self-hosted Claude Code marketplace
+(`.claude-plugin/marketplace.json`); the plugin itself lives in
+`packages/memflywheel/claude-code-plugin/`. The integration level is **Recall**:
+
+| Claude Code event  | MemFlywheel call                     | Injected as `additionalContext`                 |
+| ------------------ | ------------------------------------ | ----------------------------------------------- |
+| `SessionStart`     | `onSessionStart` + `onPromptBuild`   | Stable memory rules                             |
+| `UserPromptSubmit` | `onPromptBuild` with the prompt text | `MEMORY.md` cues (with pre-recall when enabled) |
+
+No model credential is read. `Stop`/`SessionEnd` extraction, dream, and skill
+evolution are not mapped: Claude Code hooks do not expose a structured
+tool-call model binding, and MemFlywheel does not parse free-form model text or
+fall back to a hidden provider. Memory is therefore written by the other hosts
+or by explicit SDK calls against the same root. The injected rules are the SDK's
+shared rules and still say memory is saved automatically; under Claude Code
+alone, a "remember this" request is acknowledged but not persisted.
+
+Runtime state:
+
+| Item          | Location                                                                                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Memory root   | `MEMFLYWHEEL_HOME` when set, otherwise `$CLAUDE_CONFIG_DIR/memflywheel` (default `~/.claude/memflywheel`)                                                 |
+| npm runtime   | `${CLAUDE_PLUGIN_DATA}`; the first `SessionStart` after install or update runs `npm install` of the pinned `@iflytekopensource/memflywheel` version there |
+| Local package | Set `MEMFLYWHEEL_MODULE` to a built `packages/memflywheel/dist/index.js` to skip the npm install while developing                                         |
+
+The memory root is kept outside `${CLAUDE_PLUGIN_DATA}` on purpose:
+`claude plugin uninstall memflywheel@memflywheel` deletes the plugin data
+directory (only the npm runtime) unless `--keep-data` is passed, and never
+touches the memory root. Remove the memory root yourself to erase memories.
+
+Recall asks the main Agent to read memory files under the memory root, which is
+outside the project directory. To read them without a permission prompt, add a
+narrow allow rule to your Claude Code settings, for example:
+
+```json
+{
+  "permissions": {
+    "allow": ["Read(~/.claude/memflywheel/**)"]
+  }
+}
+```
+
+Hooks fail open: when the npm install has not finished or the memory store is
+unreadable, the hook prints a `memflywheel:` message to stderr and the prompt
+continues without recall.
 
 ## Adapter Rules
 

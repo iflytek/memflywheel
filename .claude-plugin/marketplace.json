@@ -1,0 +1,14 @@
+{
+  "name": "memflywheel",
+  "owner": {
+    "name": "iFLYTEK",
+    "url": "https://github.com/iflytek"
+  },
+  "plugins": [
+    {
+      "name": "memflywheel",
+      "source": "./packages/memflywheel/claude-code-plugin",
+      "description": "File-native long-term memory recall for Claude Code (recall-only)."
+    }
+  ]
+}
