@@ -46,6 +46,13 @@ jobs:
       - name: Format check
         run: pnpm run format:check
 
+      - name: Validate Claude Code plugin and marketplace
+        env:
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/claude-config
+        run: |
+          npx --yes @anthropic-ai/claude-code plugin validate packages/memflywheel/claude-code-plugin --strict
+          npx --yes @anthropic-ai/claude-code plugin validate . --strict
+
   test:
     needs: lint
     strategy:

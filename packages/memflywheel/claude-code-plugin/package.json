@@ -1,0 +1,11 @@
+{
+  "name": "memflywheel-claude-code-plugin-runtime",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Runtime dependencies the MemFlywheel Claude Code plugin installs into ${CLAUDE_PLUGIN_DATA}.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "@iflytekopensource/memflywheel": "0.1.1"
+  }
+}
