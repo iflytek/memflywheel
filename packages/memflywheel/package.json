@@ -89,7 +89,7 @@
     "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
-    "@types/node": "^22.20.2",
+    "@types/node": "^22.20.3",
     "tsup": "^8.5.1",
     "typescript": "^5.5.4"
   },
