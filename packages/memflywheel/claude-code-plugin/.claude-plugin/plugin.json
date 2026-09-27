@@ -1,0 +1,14 @@
+{
+  "name": "memflywheel",
+  "displayName": "MemFlywheel",
+  "version": "0.1.1",
+  "description": "File-native long-term memory recall for Claude Code (recall-only: injects MemFlywheel memory rules and MEMORY.md cues; no extraction or dream).",
+  "author": {
+    "name": "iFLYTEK",
+    "url": "https://github.com/iflytek"
+  },
+  "homepage": "https://github.com/iflytek/memflywheel/blob/main/docs/integrations.md#claude-code-integration",
+  "repository": "https://github.com/iflytek/memflywheel",
+  "license": "Apache-2.0",
+  "keywords": ["agent-memory", "memory", "recall", "memflywheel"]
+}

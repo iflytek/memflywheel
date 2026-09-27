@@ -43,8 +43,12 @@ Use a single repository version for the release train.
 
 1. Update the root `package.json` version.
 2. Update every `packages/*/package.json` version to the same value.
-3. Keep internal workspace packages private.
-4. Create the release tag as `v<version>`, for example `v0.1.0`.
+3. Update the Claude Code plugin under `packages/memflywheel/claude-code-plugin/`
+   to the same value: `.claude-plugin/plugin.json` `version`, and the
+   `package.json` `version` plus its pinned `@iflytekopensource/memflywheel`
+   dependency. A package test enforces this.
+4. Keep internal workspace packages private.
+5. Create the release tag as `v<version>`, for example `v0.1.0`.
 
 Do not publish independent per-package versions unless the repository adopts a
 dedicated release manager in a later change.

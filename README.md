@@ -106,6 +106,13 @@ openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
 openclaw gateway run --force
 ```
 
+Claude Code (recall-only):
+
+```sh
+claude plugin marketplace add iflytek/memflywheel
+claude plugin install memflywheel@memflywheel
+```
+
 MemFlywheel installs into each host as a native memory plugin. The host keeps
 owning models, tools, permissions, and sessions; MemFlywheel adds recall,
 turn-end extraction, dream consolidation, and learned skills.
@@ -142,15 +149,15 @@ evolve. See [`docs/evaluation.md`](docs/evaluation.md).
 
 ## Documentation
 
-| Document                                                           | Content                                                                           |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries         |
-| [`docs/integrations.md`](docs/integrations.md)                     | Pi, Hermes, OpenCode, OpenClaw, embedding pre-recall, SDK hooks, adapter boundary |
-| [`docs/comparison.md`](docs/comparison.md)                         | What changes vs host-native memory, runtime overhead, when to use which           |
-| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                                       |
-| [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                                |
-| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release notes for public npm package versions                                     |
-| [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                                 |
+| Document                                                           | Content                                                                                        |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| [`docs/architecture.md`](docs/architecture.md)                     | Storage layout, recall, extraction, dream, skill loop, package boundaries                      |
+| [`docs/integrations.md`](docs/integrations.md)                     | Pi, Hermes, OpenCode, OpenClaw, Claude Code, embedding pre-recall, SDK hooks, adapter boundary |
+| [`docs/comparison.md`](docs/comparison.md)                         | What changes vs host-native memory, runtime overhead, when to use which                        |
+| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo position and local regression checks                                                    |
+| [`docs/release.md`](docs/release.md)                               | Versioning, npm release channel, publish checklist                                             |
+| [`CHANGELOG.md`](CHANGELOG.md)                                     | Release notes for public npm package versions                                                  |
+| [`NOTICE`](NOTICE), [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | Project notice and third-party license disclosure                                              |
 
 ## Open-Source Boundary
 

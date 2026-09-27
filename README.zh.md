@@ -102,6 +102,13 @@ openclaw config set plugins.entries.memflywheel.hooks.allowPromptInjection true
 openclaw gateway run --force
 ```
 
+Claude Code（仅召回）：
+
+```sh
+claude plugin marketplace add iflytek/memflywheel
+claude plugin install memflywheel@memflywheel
+```
+
 MemFlywheel 会作为原生记忆插件接入各宿主。宿主继续负责模型、工具、权限和会话；MemFlywheel 补上召回、
 turn-end 提取、dream 整理和 learned skills。
 
@@ -131,15 +138,15 @@ MemFlywheel 使用面向 LoCoMo 的回归检查，让长期记忆能力在召回
 
 ## 文档
 
-| 文档                                                               | 内容                                                                      |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| [`docs/architecture.md`](docs/architecture.md)                     | 存储布局、召回、提取、dream、技能闭环、包边界                             |
-| [`docs/integrations.md`](docs/integrations.md)                     | Pi、Hermes、OpenCode、OpenClaw、embedding 预召回、SDK hooks、adapter 边界 |
-| [`docs/comparison.md`](docs/comparison.md)                         | 与宿主原生记忆的差异、运行时开销、选型建议                                |
-| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo 定位和本地回归检查                                                 |
-| [`docs/release.md`](docs/release.md)                               | 版本规范、npm 发布渠道、发布检查清单                                      |
-| [`CHANGELOG.md`](CHANGELOG.md)                                     | 公开 npm 包版本变更记录                                                   |
-| [`NOTICE`](NOTICE)、[`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | 项目版权告知和三方 license 披露                                           |
+| 文档                                                               | 内容                                                                                   |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| [`docs/architecture.md`](docs/architecture.md)                     | 存储布局、召回、提取、dream、技能闭环、包边界                                          |
+| [`docs/integrations.md`](docs/integrations.md)                     | Pi、Hermes、OpenCode、OpenClaw、Claude Code、embedding 预召回、SDK hooks、adapter 边界 |
+| [`docs/comparison.md`](docs/comparison.md)                         | 与宿主原生记忆的差异、运行时开销、选型建议                                             |
+| [`docs/evaluation.md`](docs/evaluation.md)                         | LoCoMo 定位和本地回归检查                                                              |
+| [`docs/release.md`](docs/release.md)                               | 版本规范、npm 发布渠道、发布检查清单                                                   |
+| [`CHANGELOG.md`](CHANGELOG.md)                                     | 公开 npm 包版本变更记录                                                                |
+| [`NOTICE`](NOTICE)、[`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES) | 项目版权告知和三方 license 披露                                                        |
 
 ## 开源边界
 
