@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/command/with-contenv bash
 # s6-overlay cont-init script: install memflywheel plugin into HERMES_HOME.
 #
 # Runs as root after 01-hermes-setup (which creates $HERMES_HOME and seeds
