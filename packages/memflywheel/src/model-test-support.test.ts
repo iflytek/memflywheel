@@ -1,10 +1,16 @@
-import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+  type AssistantMessage,
+  type JsonObject,
+} from "@earendil-works/pi-ai";
 import type { ResolvePiAgentModel } from "@memflywheel/sdk";
 
 export interface TestModelMessage {
   role: "system" | "user" | "assistant" | "tool";
   content?: string | null;
-  toolCalls?: Array<{ id: string; name: string; input: unknown }>;
+  toolCalls?: Array<{ id: string; name: string; input: JsonObject }>;
   toolCallId?: string;
 }
 
@@ -51,7 +57,7 @@ function assistant(response: TestModelResponse): AssistantMessage {
       type: "toolCall",
       id: call.id,
       name: call.name,
-      arguments: call.input as Record<string, unknown>,
+      arguments: call.input,
     });
   }
   return {
@@ -72,7 +78,8 @@ export function resolveTestModel(completion: TestModelCompletion): ResolvePiAgen
     model,
     streamFn: async (_model, context, options) => {
       const messages: TestModelMessage[] = [];
-      if (context.systemPrompt) messages.push({ role: "system", content: context.systemPrompt });
+      const systemPrompt = getCurrentSystemPrompt(context.messages);
+      if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
       for (const message of context.messages) {
         if (message.role === "user") {
           messages.push({
@@ -96,7 +103,7 @@ export function resolveTestModel(completion: TestModelCompletion): ResolvePiAgen
                 : [],
             ),
           });
-        } else {
+        } else if (message.role === "toolResult") {
           messages.push({
             role: "tool",
             toolCallId: message.toolCallId,
@@ -109,15 +116,16 @@ export function resolveTestModel(completion: TestModelCompletion): ResolvePiAgen
       const response = assistant(
         await completion.complete({
           messages,
-          tools: (context.tools ?? []).map((tool) => ({
+          tools: getCurrentTools(context.messages).map((tool) => ({
             name: tool.name,
             description: tool.description,
-            inputSchema: tool.parameters as never,
+            inputSchema: tool.parameters,
           })),
           signal: options?.signal,
         }),
       );
       const stream = createAssistantMessageEventStream();
+      stream.push({ type: "start", partial: response });
       stream.push({
         type: "done",
         reason: response.stopReason === "toolUse" ? "toolUse" : "stop",

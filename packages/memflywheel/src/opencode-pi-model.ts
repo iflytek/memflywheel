@@ -3,6 +3,7 @@ import type {
   Model,
   OpenAICompletionsCompat,
   ProviderStreams,
+  SimpleStreamOptions,
   ThinkingLevelMap,
 } from "@earendil-works/pi-ai";
 import type { PiAgentModelBinding } from "@memflywheel/sdk";
@@ -31,19 +32,6 @@ export interface OpenCodePiModelConfig {
 }
 
 const zeroCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-
-function withProviderFetch<T>(fetchImpl: typeof globalThis.fetch, run: () => T): T {
-  // Provider SDKs capture the default fetch while streamSimple constructs their
-  // client. Restore it before any asynchronous network work can interleave.
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "fetch");
-  globalThis.fetch = fetchImpl;
-  try {
-    return run();
-  } finally {
-    if (descriptor) Object.defineProperty(globalThis, "fetch", descriptor);
-    else delete (globalThis as { fetch?: typeof globalThis.fetch }).fetch;
-  }
-}
 
 async function loadApi(api: Api): Promise<ProviderStreams> {
   switch (api) {
@@ -98,9 +86,28 @@ export function createPiAiModelBinding(config: OpenCodePiModelConfig): PiAgentMo
       ...(config.requestMaxTokens === undefined ? {} : { maxTokens: config.requestMaxTokens }),
     },
     streamFn: async (activeModel, context, options) => {
+      const streamOptions: SimpleStreamOptions = {
+        ...options,
+        ...(config.fetch ? { fetch: config.fetch } : {}),
+      };
+      if (streamOptions.fetch) {
+        if (
+          activeModel.api === "bedrock-converse-stream" ||
+          activeModel.api === "google-generative-ai" ||
+          activeModel.api === "google-vertex"
+        ) {
+          throw new Error(`OpenCode host fetch is not supported by ${activeModel.api}.`);
+        }
+        if (activeModel.api === "openai-codex-responses") {
+          const transport = streamOptions.transport;
+          if (transport !== undefined && transport !== "auto" && transport !== "sse") {
+            throw new Error("OpenCode host fetch requires SSE for the Codex transport.");
+          }
+          streamOptions.transport = "sse";
+        }
+      }
       const api = await loadApi(activeModel.api);
-      const stream = () => api.streamSimple(activeModel, context, options);
-      return config.fetch ? withProviderFetch(config.fetch, stream) : stream();
+      return api.streamSimple(activeModel, context, streamOptions);
     },
   };
 }

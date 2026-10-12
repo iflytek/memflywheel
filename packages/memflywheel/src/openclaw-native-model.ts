@@ -1,7 +1,10 @@
 import {
   createAssistantMessageEventStream,
+  getCurrentSystemPrompt,
+  getCurrentTools,
   type Api,
   type AssistantMessage,
+  type Context,
   type Model,
 } from "@earendil-works/pi-ai";
 import type { ResolvePiAgentModel } from "@memflywheel/sdk";
@@ -24,7 +27,7 @@ export interface OpenClawNativeModelRuntime {
   readonly completePrepared: (input: {
     readonly model: unknown;
     readonly auth: unknown;
-    readonly context: unknown;
+    readonly context: Context;
     readonly cfg: unknown;
     readonly options: { readonly signal?: AbortSignal };
   }) => Promise<unknown>;
@@ -69,7 +72,12 @@ export function createOpenClawHostModel(
           await runtime.completePrepared({
             model: prepared.model,
             auth: prepared.auth,
-            context,
+            // The host completion API still accepts the pre-transcript context shape.
+            context: {
+              systemPrompt: getCurrentSystemPrompt(context.messages),
+              messages: context.messages.filter((entry) => entry.role !== "system"),
+              tools: getCurrentTools(context.messages),
+            },
             cfg,
             options: { signal: options?.signal },
           }),
@@ -80,6 +88,7 @@ export function createOpenClawHostModel(
         } else if (message.stopReason === "error" || message.stopReason === "aborted") {
           stream.push({ type: "error", reason: message.stopReason, error: message });
         } else {
+          stream.push({ type: "start", partial: message });
           stream.push({ type: "done", reason: message.stopReason, message });
         }
         return stream;
