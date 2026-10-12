@@ -53,10 +53,14 @@ export {
 export { type AdapterSpec, makeAdapter, readString, normalizeMessages } from "./make-adapter.js";
 
 // Hermes installs its bridge worker outside the pnpm workspace. Re-export the
-// pi-ai stream primitive through this already-resolved adapter entrypoint so
+// pi-ai stream and transcript helpers through this already-resolved entrypoint so
 // the installed worker has one dependency boundary instead of reaching back
 // into workspace node_modules by package name.
-export { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+export {
+  createAssistantMessageEventStream,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+} from "@earendil-works/pi-ai";
 
 // Host harness port: stable host boundary + capability gates.
 export {

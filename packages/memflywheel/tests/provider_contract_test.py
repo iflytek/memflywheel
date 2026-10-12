@@ -204,6 +204,10 @@ class Obj:
 
 
 def call_llm(*, messages, tools, **kwargs):
+    assert {tool["function"]["name"] for tool in tools} >= {"read", "write"}
+    system_messages = [message for message in messages if message.get("role") == "system"]
+    assert len(system_messages) == 1
+    assert system_messages[0]["content"]
     has_tool_result = any(message.get("role") == "tool" for message in messages)
     if has_tool_result:
         return Obj(
