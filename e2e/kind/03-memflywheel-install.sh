@@ -29,7 +29,7 @@ if [ -f "$CONFIG" ] && ! grep -q "disabled_toolsets" "$CONFIG"; then
 fi
 
 # Run the install script (installed globally from @iflytekopensource/memflywheel)
-memflywheel-hermes-install || {
+/usr/local/bin/memflywheel-hermes-install || {
     echo "[memflywheel] ERROR: memflywheel-hermes-install failed"
     exit 1
 }

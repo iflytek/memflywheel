@@ -12,8 +12,10 @@ USER root
 # Copy the unified memflywheel package
 COPY e2e/packages/iflytekopensource-memflywheel-*.tgz /tmp/memflywheel.tgz
 
-# Install it globally so memflywheel-hermes-install is available
-RUN npm install --global /tmp/memflywheel.tgz
+# Keep the install prefix stable when the base image uses a managed Node binary.
+RUN npm install --global --prefix /usr/local /tmp/memflywheel.tgz \
+  && test -x /usr/local/bin/memflywheel-hermes-install \
+  && /usr/local/bin/memflywheel-hermes-install --help
 
 # Make globally-installed packages resolvable from any working directory
 ENV NODE_PATH=/usr/local/lib/node_modules
