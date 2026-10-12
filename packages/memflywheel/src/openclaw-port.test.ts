@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { normalizeContext, Type, type Context } from "@earendil-works/pi-ai";
 
 import {
   hostMessagesFromOpenClawMessages,
@@ -349,11 +350,11 @@ test("createOpenClawHostModel uses one host-native structured completion", async
   const response = await (
     await binding.streamFn(
       binding.model,
-      {
+      normalizeContext({
         systemPrompt: "Extract durable memory.",
         messages: [{ role: "user", content: "Remember tea.", timestamp: Date.now() }],
         tools: [],
-      },
+      }),
       {},
     )
   ).result();
@@ -387,7 +388,7 @@ test("createOpenClawHostModel rejects non-terminal native completions", async ()
     Promise.resolve(
       binding.streamFn(
         binding.model,
-        { systemPrompt: "Extract memory.", messages: [], tools: [] },
+        normalizeContext({ systemPrompt: "Extract memory.", messages: [], tools: [] }),
         {},
       ),
     ),
@@ -400,4 +401,67 @@ test("createOpenClawHarnessPort fails without the host native model runtime", ()
     () => createOpenClawHarnessPort(createFakeApi().api),
     /requires OpenClaw's native structured model runtime/,
   );
+});
+
+test("OpenClaw replays transcript instructions and tools for the host completion API", async () => {
+  const removedTool = { name: "old", description: "old tool", parameters: Type.Object({}) };
+  const activeTool = {
+    name: "lookup",
+    description: "look up memory",
+    parameters: Type.Object({ query: Type.String() }),
+  };
+  const context = normalizeContext({
+    systemPrompt: "Base instructions.",
+    tools: [removedTool],
+    messages: [
+      { role: "user", content: "Remember tea.", timestamp: 1 },
+      {
+        role: "system",
+        content: "Updated instructions.",
+        toolsAdded: [activeTool],
+        toolsRemoved: [{ name: "old" }],
+        timestamp: 2,
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "old",
+        content: [
+          { type: "text", text: "Tea label" },
+          { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+        ],
+        isError: false,
+        timestamp: 3,
+      },
+    ],
+  });
+  const originalMessages = structuredClone(context.messages);
+  const controller = new AbortController();
+  let receivedContext: Context | undefined;
+  let receivedSignal: AbortSignal | undefined;
+  const binding = await createOpenClawHostModel(
+    {
+      currentConfig: () => ({}),
+      resolveDefaultAgentId: () => "main",
+      prepareForAgent: async () => ({ model: {}, auth: {} }),
+      completePrepared: async (input) => {
+        receivedContext = input.context;
+        receivedSignal = input.options.signal;
+        return { role: "assistant", content: [], stopReason: "stop" };
+      },
+    },
+    () => ({}),
+  )();
+  const stream = await binding.streamFn(binding.model, context, { signal: controller.signal });
+  const events: string[] = [];
+  for await (const event of stream) events.push(event.type);
+
+  assert.ok(receivedContext);
+  assert.match(receivedContext.systemPrompt ?? "", /Base instructions\./);
+  assert.match(receivedContext.systemPrompt ?? "", /Updated instructions\./);
+  assert.deepEqual(receivedContext.tools, [activeTool]);
+  assert.deepEqual(receivedContext.messages, [originalMessages[1], originalMessages[3]]);
+  assert.deepEqual(context.messages, originalMessages);
+  assert.strictEqual(receivedSignal, controller.signal);
+  assert.deepEqual(events, ["start", "done"]);
 });

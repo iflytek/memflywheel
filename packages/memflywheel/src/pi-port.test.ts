@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  normalizeContext,
+  Type,
+  type AssistantMessage,
+} from "@earendil-works/pi-ai";
 
 import { createPiHarnessPort, type PiExtensionHandler, type PiStreamSimple } from "./pi-port.js";
 
@@ -54,9 +59,12 @@ function assistant(): AssistantMessage {
 test("Pi port resolves the active model, auth, thinking level, and isolated session", async () => {
   const { api, handlers } = fakePi();
   let capturedApiKey: string | undefined;
-  const streamSimple: PiStreamSimple = (_model, _context, options) => {
+  let capturedContext: Parameters<PiStreamSimple>[1] | undefined;
+  const streamSimple: PiStreamSimple = (_model, context, options) => {
     capturedApiKey = options?.apiKey;
+    capturedContext = context;
     const stream = createAssistantMessageEventStream();
+    stream.push({ type: "start", partial: assistant() });
     stream.push({ type: "done", reason: "stop", message: assistant() });
     return stream;
   };
@@ -81,14 +89,16 @@ test("Pi port resolves the active model, auth, thinking level, and isolated sess
   assert.equal(binding.thinkingLevel, "high");
   assert.equal(binding.transport, "sse");
   assert.equal(binding.sessionId, "memflywheel:chat-1");
+  const context = normalizeContext({
+    systemPrompt: "Remember durable facts.",
+    tools: [{ name: "remember", description: "store facts", parameters: Type.Object({}) }],
+    messages: [{ role: "user", content: "Remember tea.", timestamp: 1 }],
+  });
   const response = await (
-    await binding.streamFn(
-      binding.model,
-      { messages: [] },
-      { apiKey: await binding.getApiKey?.("x") },
-    )
+    await binding.streamFn(binding.model, context, { apiKey: await binding.getApiKey?.("x") })
   ).result();
   assert.equal(capturedApiKey, "host-oauth");
+  assert.strictEqual(capturedContext, context);
   assert.equal(response.usage.totalTokens, 17);
   assert.equal(response.responseId, "resp_native");
 });

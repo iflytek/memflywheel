@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { normalizeContext, Type } from "@earendil-works/pi-ai";
 
 import {
   hostMessagesFromOpenCodeSessionMessages,
@@ -267,10 +268,11 @@ test("OpenCode OAuth transport drives the registry pi-ai provider and omits host
 
   const stream = await binding.streamFn(
     binding.model,
-    {
+    normalizeContext({
       systemPrompt: "test",
       messages: [{ role: "user", content: "test", timestamp: Date.now() }],
-    },
+      tools: [{ name: "lookup", description: "look up memory", parameters: Type.Object({}) }],
+    }),
     { ...binding.request, apiKey: "oauth" },
   );
   assert.equal(globalThis.fetch, originalFetch);
@@ -279,6 +281,8 @@ test("OpenCode OAuth transport drives the registry pi-ai provider and omits host
   assert.equal(result.stopReason, "stop");
   assert.equal(requestPayload?.model, "gpt-5.5");
   assert.equal(requestPayload?.max_output_tokens, undefined);
+  assert.ok(Array.isArray(requestPayload?.tools));
+  assert.ok(requestPayload.tools.some((tool) => tool.name === "lookup"));
   assert.equal(globalThis.fetch, originalFetch);
 });
 

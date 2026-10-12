@@ -286,6 +286,14 @@ id, endpoint, credential, headers, token limits, and relevant provider options
 still come from OpenCode. An unmapped transport fails during model binding
 instead of silently switching models or protocols.
 
+When OpenCode supplies a custom `fetch` for authentication or routing, the bridge
+passes it to the provider without changing the process-wide fetch function.
+The Codex transport uses SSE in this mode; an explicit WebSocket request is
+rejected. Custom fetch is not supported by the Google Gemini, Google Vertex,
+or Amazon Bedrock transports, so those combinations fail before making a
+provider request. Their ordinary host-resolved credential paths remain available
+when no custom fetch is supplied.
+
 For `@ai-sdk/anthropic`, configure OpenCode's `baseURL` through the `/v1` prefix.
 OpenCode appends `/messages`; the MemFlywheel bridge removes that terminal `/v1`
 before handing the same endpoint to pi-ai, whose Anthropic SDK appends

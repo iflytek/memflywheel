@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
+import type { JsonObject } from "@earendil-works/pi-ai";
 
 import {
   attachMemFlywheelToHostPort,
@@ -164,7 +165,7 @@ function savingModel(): TestModelCompletion {
   };
 }
 
-function toolCall(id: string, name: string, args: unknown) {
+function toolCall(id: string, name: string, args: JsonObject) {
   return { id, name, input: args };
 }
 

@@ -15,8 +15,13 @@ import { dirname, join } from "node:path";
 const memflywheel = await import(
   process.env.MEMFLYWHEEL_PACKAGE_IMPORT || "@iflytekopensource/memflywheel"
 );
-const { createAssistantMessageEventStream, createMemFlywheelHarnessRuntime, normalizeMessages } =
-  memflywheel;
+const {
+  createAssistantMessageEventStream,
+  createMemFlywheelHarnessRuntime,
+  getCurrentSystemPrompt,
+  getCurrentTools,
+  normalizeMessages,
+} = memflywheel;
 
 let runtime;
 let runtimeKey = "";
@@ -75,11 +80,19 @@ function resolveModel() {
   return {
     model: hermesModel,
     streamFn: async (_model, context, options) => {
-      const message = await complete({ context, signal: options?.signal?.aborted === true });
+      const message = await complete({
+        context: {
+          systemPrompt: getCurrentSystemPrompt(context.messages),
+          messages: context.messages.filter((entry) => entry.role !== "system"),
+          tools: getCurrentTools(context.messages),
+        },
+        signal: options?.signal?.aborted === true,
+      });
       const stream = createAssistantMessageEventStream();
       if (message.stopReason === "error" || message.stopReason === "aborted") {
         stream.push({ type: "error", reason: message.stopReason, error: message });
       } else {
+        stream.push({ type: "start", partial: message });
         stream.push({ type: "done", reason: message.stopReason, message });
       }
       return stream;

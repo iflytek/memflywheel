@@ -1,7 +1,10 @@
 import {
   createAssistantMessageEventStream,
+  getCurrentSystemPrompt,
+  getCurrentTools,
   type AssistantMessage,
   type Context,
+  type JsonObject,
   type Model,
 } from "@earendil-works/pi-ai";
 
@@ -32,7 +35,7 @@ const usage = {
 export interface ScriptedToolCall {
   id: string;
   name: string;
-  arguments: Record<string, unknown>;
+  arguments: JsonObject;
 }
 
 export interface ScriptedTurn {
@@ -40,7 +43,7 @@ export interface ScriptedTurn {
   toolCalls?: ScriptedToolCall[];
 }
 
-export function toolTurn(name: string, args: Record<string, unknown>, id = "c1"): ScriptedTurn {
+export function toolTurn(name: string, args: JsonObject, id = "c1"): ScriptedTurn {
   return { toolCalls: [{ id, name, arguments: args }] };
 }
 
@@ -66,9 +69,11 @@ export function scriptedBinding(
       streamFn: (_model, context, streamOptions) => {
         seenApiKeys.push(streamOptions?.apiKey);
         seen.push({
-          systemPrompt: context.systemPrompt,
-          messages: structuredClone(context.messages),
-          tools: context.tools ? [...context.tools] : undefined,
+          systemPrompt: getCurrentSystemPrompt(context.messages),
+          messages: structuredClone(
+            context.messages.filter((message) => message.role !== "system"),
+          ),
+          tools: getCurrentTools(context.messages),
         });
         const turn = turns[index++];
         if (!turn) throw new Error("unexpected test model call");
@@ -88,6 +93,7 @@ export function scriptedBinding(
           timestamp: Date.now(),
         };
         const stream = createAssistantMessageEventStream();
+        stream.push({ type: "start", partial: message });
         stream.push({
           type: "done",
           reason: turn.toolCalls?.length ? "toolUse" : "stop",
