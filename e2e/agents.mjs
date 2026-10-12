@@ -24,6 +24,32 @@ const HERMES_POD = "hermes-agent";
 const HERMES_HOME = "/opt/data";
 const PLUGIN_DIR = `${HERMES_HOME}/plugins/memflywheel`;
 
+const HERMES_MEMORY_PROVIDER = `
+import json
+import sys
+from ruamel.yaml import YAML
+yaml = YAML(typ='safe')
+yaml.version = (1, 1)
+with open(sys.argv[1]) as source:
+    config = yaml.load(source) or {}
+print(json.dumps((config.get('memory') or {}).get('provider', '')))
+`;
+
+function hermesMemoryProvider() {
+  return JSON.parse(
+    kubectlExec(
+      HERMES_NS,
+      HERMES_POD,
+      "bash",
+      "-c",
+      'exec "${HERMES_PYTHON:?HERMES_PYTHON is required}" -c "$1" "$2"',
+      "_",
+      HERMES_MEMORY_PROVIDER,
+      `${HERMES_HOME}/config.yaml`,
+    ),
+  );
+}
+
 function hermesChat(prompt) {
   return kubectlExec(
     HERMES_NS,
@@ -41,7 +67,11 @@ async function hermesWaitForSetup() {
   for (let i = 0; i < 30; i++) {
     try {
       const listing = kubectlExec(HERMES_NS, HERMES_POD, "ls", PLUGIN_DIR);
-      if (listing.includes("__init__.py") && listing.includes("worker.mjs")) {
+      if (
+        listing.includes("__init__.py") &&
+        listing.includes("worker.mjs") &&
+        hermesMemoryProvider() === "memflywheel"
+      ) {
         installed = true;
         break;
       }
@@ -50,7 +80,11 @@ async function hermesWaitForSetup() {
     }
     await delay(2000);
   }
-  check("memflywheel plugin installed", installed, installed ? "files present" : "timed out");
+  check(
+    "memflywheel plugin installed",
+    installed,
+    installed ? "files and configuration ready" : "timed out",
+  );
   if (!installed) process.exit(1);
 }
 
@@ -72,10 +106,10 @@ function hermesVerifySetup() {
     check("plugin install.json present", false);
   }
   try {
-    const config = kubectlExec(HERMES_NS, HERMES_POD, "cat", `${HERMES_HOME}/config.yaml`);
-    check("memory.provider configured", /provider:\s*memflywheel/m.test(config), "memflywheel");
-  } catch {
-    check("memory.provider configured", false, "config.yaml not found");
+    const provider = hermesMemoryProvider();
+    check("memory.provider configured", provider === "memflywheel", provider || "unset");
+  } catch (e) {
+    check("memory.provider configured", false, e.message?.slice(0, 100));
   }
 }
 
