@@ -9,6 +9,9 @@ FROM nousresearch/hermes-agent:latest
 
 USER root
 
+# Verify the configuration writer uses the Python environment supplied by Hermes.
+RUN "${HERMES_PYTHON:?HERMES_PYTHON is required}" -c "from ruamel.yaml import YAML"
+
 # Copy the unified memflywheel package
 COPY e2e/packages/iflytekopensource-memflywheel-*.tgz /tmp/memflywheel.tgz
 

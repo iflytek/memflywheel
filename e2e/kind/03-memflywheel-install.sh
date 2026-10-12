@@ -42,16 +42,21 @@ if [ -d "$PLUGIN_DIR" ]; then
     ln -sf /usr/local/lib/node_modules "${PLUGIN_DIR}/node_modules" 2>/dev/null || true
 fi
 
-# Update the model and memory config in $HERMES_HOME/config.yaml.
-# `hermes config set` writes to a different location (.hermes/config.yaml),
-# so we modify the YAML directly.
+# Use the host's Python/YAML runtime to update $HERMES_HOME/config.yaml.
 CONFIG="${HERMES_HOME}/config.yaml"
 if [ -f "$CONFIG" ]; then
-    python3 -c "
-import yaml
+    "${HERMES_PYTHON:?HERMES_PYTHON is required}" -c "
+from ruamel.yaml import YAML
+yaml = YAML(typ='safe')
+yaml.version = (1, 1)
+yaml.default_flow_style = False
 with open('${CONFIG}') as f:
-    cfg = yaml.safe_load(f) or {}
-cfg.setdefault('model', {})
+    cfg = yaml.load(f) or {}
+model = cfg.get('model')
+if model is None or isinstance(model, str):
+    cfg['model'] = {}
+elif not isinstance(model, dict):
+    raise TypeError('model must be a string or mapping')
 cfg['model']['default'] = 'mock-llm'
 cfg['model']['provider'] = 'custom'
 cfg['model']['base_url'] = 'http://mock-llm.default.svc.cluster.local:8080/v1'
@@ -61,9 +66,12 @@ cfg['memory']['provider'] = 'memflywheel'
 cfg.setdefault('agent', {})
 cfg['agent']['disabled_toolsets'] = ['memory']
 with open('${CONFIG}', 'w') as f:
-    yaml.dump(cfg, f, default_flow_style=False)
+    yaml.dump(cfg, f)
 print('[memflywheel] Config updated: model=mock-llm, memory.provider=memflywheel, disabled_toolsets=[memory]')
-" || echo "[memflywheel] WARNING: Failed to update config.yaml"
+"
+else
+    echo "[memflywheel] ERROR: config.yaml is missing"
+    exit 1
 fi
 
 # Ensure the plugin directory is owned by hermes (we're running as root)
