@@ -28,8 +28,8 @@ if [ -f "$CONFIG" ] && ! grep -q "disabled_toolsets" "$CONFIG"; then
     echo "[memflywheel] Added agent.disabled_toolsets to config.yaml"
 fi
 
-# Run the install script (installed globally from @iflytekopensource/memflywheel)
-memflywheel-hermes-install || {
+# Use the entry point installed at the Dockerfile's explicit global prefix.
+/usr/local/bin/memflywheel-hermes-install || {
     echo "[memflywheel] ERROR: memflywheel-hermes-install failed"
     exit 1
 }
