@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Runnable minimal host integration examples for MemFlywheel.",
   "scripts": {
-    "smoke": "node --check pi/extension.mjs && node --check hermes/plugin-register.mjs && node --check openclaw/plugin.mjs"
+    "smoke": "node --check pi/extension.mjs && node --check hermes/plugin-register.mjs && node --check openclaw/plugin.mjs && node --check clickhouse/schema-memory.mjs",
+    "test": "node --test clickhouse/schema-memory.test.mjs"
   },
   "dependencies": {
     "@memflywheel/core": "workspace:*",
