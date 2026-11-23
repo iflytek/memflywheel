@@ -5,7 +5,10 @@
 #   e2e/packages/iflytekopensource-memflywheel-*.tgz
 #   e2e/kind/03-memflywheel-install.sh
 
-FROM nousresearch/hermes-agent:latest
+# Pin the compatibility fixture used by the last successful main-branch run:
+# https://github.com/iflytek/memflywheel/actions/runs/36331901720
+# Update the digest with a deliberate host-compatibility run, not a moving tag.
+FROM nousresearch/hermes-agent@sha256:d4da4a40cd7a28aba983775d9fd31d94cbf153eeb0cb9e844d6d0f612b7c24db
 
 USER root
 
