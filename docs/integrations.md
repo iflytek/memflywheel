@@ -332,3 +332,8 @@ source traces, and learned skills.
 
 Adapters must not invent retrieval, silently parse model text as tool calls, or
 execute learned skills inside MemFlywheel.
+
+For a concrete tool-result boundary, see the
+[ClickHouse MCP schema observation example](../examples/clickhouse/README.md).
+It keeps `DESCRIBE` response headings separate from business fields and supplies
+the actual schema observation time to extraction.

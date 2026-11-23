@@ -5,15 +5,20 @@
 #   e2e/packages/iflytekopensource-memflywheel-*.tgz
 #   e2e/kind/03-memflywheel-install.sh
 
-FROM nousresearch/hermes-agent:latest
+# Pin the compatibility fixture used by the last successful main-branch run:
+# https://github.com/iflytek/memflywheel/actions/runs/36331901720
+# Update the digest with a deliberate host-compatibility run, not a moving tag.
+FROM nousresearch/hermes-agent@sha256:d4da4a40cd7a28aba983775d9fd31d94cbf153eeb0cb9e844d6d0f612b7c24db
 
 USER root
 
 # Copy the unified memflywheel package
 COPY e2e/packages/iflytekopensource-memflywheel-*.tgz /tmp/memflywheel.tgz
 
-# Install it globally so memflywheel-hermes-install is available
-RUN npm install --global /tmp/memflywheel.tgz
+# Keep the global prefix aligned with NODE_PATH and the startup entry point.
+# The base image may configure a user-specific npm prefix outside s6's PATH.
+RUN npm install --global --prefix /usr/local /tmp/memflywheel.tgz \
+    && /usr/local/bin/memflywheel-hermes-install --help
 
 # Make globally-installed packages resolvable from any working directory
 ENV NODE_PATH=/usr/local/lib/node_modules
